@@ -1,5 +1,7 @@
 # compression-utils
 
+![Static Badge](https://img.shields.io/badge/Status-Under_Construction-red?style=flat)
+
 `compression-utils` aims to simplify data compression by offering a unified interface across various algorithms and languages, while maintaining best-in-class performance. 
 
 ## Features
