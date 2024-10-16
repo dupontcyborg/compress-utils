@@ -1,0 +1,1 @@
+## CMake for `zstd` algorithm

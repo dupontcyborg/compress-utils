@@ -1,0 +1,35 @@
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+IncludeCategories:
+  # 1. The source file's own header (should come first)
+  - Regex: '^"(.*/)?[^/]+\.h"$'
+    Priority: 0  # Highest priority for the source file's own header
+    SortPriority: 0
+    CaseSensitive: false
+  - Regex: '^"(.*/)?[^/]+\.hpp"$'
+    Priority: 0  # Highest priority for the source file's own header
+    SortPriority: 0
+    CaseSensitive: false
+  - Regex: '^"(.*/)?[^/]+\.cuh"$'
+    Priority: 0  # Same priority for .cuh file if it's the corresponding file's header
+    SortPriority: 0
+    CaseSensitive: false
+
+  # 2. C++ Standard Library headers (second)
+  - Regex: '^<.*>$'  # Any header included with angle brackets is considered a system or standard library header
+    Priority: 1
+    SortPriority: 1
+    CaseSensitive: false
+
+  # 3. Other project headers (third)
+  - Regex: '^".*"$'  # All remaining project headers included with double quotes
+    Priority: 2
+    SortPriority: 2
+    CaseSensitive: false
+
+SortIncludes: true  # Keep headers sorted within their priority groups
+IncludeIsMainRegex: '([-_](test|unittest))?$'

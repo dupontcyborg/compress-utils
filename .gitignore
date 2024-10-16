@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Output files
+build/
+dist/
+algorithms/dist/
+algorithms/*/src/
+algorithms/*/build/
+algorithms/*/dist/
