@@ -55,4 +55,4 @@ This project is distributed under the MIT License. [Read more >](LICENSE)
 
 ## Third-Party Code
 
-This project utilizes several open-source compression algorithms. [Read more >](ACKNOWLEDGEMENTS.md)
+This project utilizes several open-source compression algorithms. [Read more >](ACKNOWLEDGMENTS.md)
