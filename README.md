@@ -2,7 +2,7 @@
 
 ![Static Badge](https://img.shields.io/badge/Status-Under_Construction-red?style=flat)
 
-`compression-utils` aims to simplify data compression by offering a unified interface across various algorithms and languages, while maintaining best-in-class performance. 
+`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
 ## Features
 
@@ -16,10 +16,10 @@
 
 ## Built-in Compression Algorithms
 
-| Algorithm | Description |
-|:---:|---|
-| [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) |
-| [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm |
+| Algorithm | Description | Benchmarks |
+|:---:|---|:---:|
+| [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) | [Benchmarks](#benchmarks) |
+| [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm | [Benchmarks](#benchmarks) |
 
 ## Supported Languages
 
