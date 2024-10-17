@@ -54,6 +54,9 @@ if (NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
+# Enum for algorithms
+set(ALGORITHMS_ENUM "")
+
 # Zstd Algorithm
 if (INCLUDE_ZSTD)
     message(STATUS "Including Zstd algorithm")
@@ -66,6 +69,8 @@ if (INCLUDE_ZSTD)
     # Add source files for Zstd
     file(GLOB ZSTD_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${ZSTD_SOURCE_FILES})
+    # Add Zstd to the enum
+    list(APPEND ALGORITHMS_ENUM "ZSTD")
 endif()
 
 # zlib Algorithm
@@ -80,6 +85,8 @@ if (INCLUDE_ZLIB)
     # Add source files for zlib
     file(GLOB ZLIB_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${ZLIB_SOURCE_FILES})
+    # Add zlib to the enum
+    list(APPEND ALGORITHMS_ENUM "ZLIB")
 endif()
 
 ######### MAIN LIBRARY #########
@@ -89,6 +96,40 @@ target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
 
 # Define COMPRESSION_UTILS_EXPORTS for the build
 target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
+
+
+######### INSTALL #########
+
+# Set the output directory for the library and header files
+set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
+set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
+
+# Copy the library after building it
+add_custom_command(TARGET compress_utils POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_DIST_LIB_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:compress_utils> ${CPP_DIST_LIB_DIR}
+)
+
+# Copy the headers after the library is built
+add_custom_command(TARGET compress_utils POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_DIST_INCLUDE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp ${CPP_DIST_INCLUDE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp ${CPP_DIST_INCLUDE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/algorithms.hpp ${CPP_DIST_INCLUDE_DIR}  # Use the processed version of algorithms.hpp
+)
+
+# Configure the header with enum
+string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
+
+# Prepend string with four spaces
+set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
+
+# Configure the header file
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
+    @ONLY
+)
 
 ######### TESTS #########
 

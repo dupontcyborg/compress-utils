@@ -6,8 +6,8 @@ namespace compression_utils {
 /**
  * @brief Enum class that defines the available compression algorithms
  *
- * @note This gets overwritten by the build system to include only the algorithms that are available
- * and remove the preprocessor directives
+ * @note A copy of this enum is present in `algorithms.hpp.in` which gets overwritten by the build
+ * system to include only the algorithms that are available and remove the preprocessor directives
  */
 enum class Algorithm {
 #ifdef INCLUDE_ZLIB
