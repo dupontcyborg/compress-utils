@@ -1,0 +1,15 @@
+#ifndef ALGORITHMS_HPP_
+#define ALGORITHMS_HPP_
+
+namespace compression_utils {
+
+/**
+ * @brief Enum class that defines the available compression algorithms
+ */
+enum class Algorithm {
+@ALGORITHM_LIST@
+};
+
+}  // namespace compression_utils
+
+#endif  // ALGORITHMS_HPP_
