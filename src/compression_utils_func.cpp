@@ -1,6 +1,5 @@
-#include "algorithms/zlib.hpp"
-#include "algorithms/zstd.hpp"
 #include "compression_utils_func.hpp"
+#include "utils/algorithms_router.hpp"
 
 namespace compression_utils {
 
@@ -11,31 +10,19 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, const Algorithm 
         throw std::invalid_argument("Compression level must be between 1 and 10");
     }
 
-    // Route the request to the appropriate compression algorithm
-    switch (algorithm) {
-#ifdef INCLUDE_ZLIB
-        case Algorithm::ZLIB:
-            return zlib::Compress(data, level);
-#endif
-#ifdef INCLUDE_ZSTD
-        case Algorithm::ZSTD:
-            return zstd::Compress(data, level);
-#endif
-        default:
-            throw std::invalid_argument("Unsupported compression algorithm");
-    }
+    // Get the compression functions for the specified algorithm
+    auto functions = internal::GetCompressionFunctions(algorithm);
+
+    // Call the compression function
+    return functions.Compress(data, level);
 }
 
 std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data, const Algorithm algorithm) {
-    // Route the request to the appropriate decompression algorithm
-    switch (algorithm) {
-        case Algorithm::ZLIB:
-            return zlib::Decompress(data);
-        case Algorithm::ZSTD:
-            return zstd::Decompress(data);
-        default:
-            throw std::invalid_argument("Unsupported compression algorithm");
-    }
+    // Get the decompression functions for the specified algorithm
+    auto functions = internal::GetCompressionFunctions(algorithm);
+
+    // Call the decompression function
+    return functions.Decompress(data);
 }
 
 }  // namespace compression_utils
