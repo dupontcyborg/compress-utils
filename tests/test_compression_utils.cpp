@@ -1,54 +1,140 @@
+#include "compression_utils.hpp"
+
 #include <gtest/gtest.h>
-#include "compression_utils.hpp"  // Your Compressor class
+#include <random>  // For generating random binary data
 
-using namespace compression_utils;
+// Helper function to generate random data
+std::vector<uint8_t> GenerateData(size_t size_in_bytes) {
+    std::vector<uint8_t> data(size_in_bytes);
+    std::mt19937 rng(42);  // Use a fixed seed for reproducibility
+    std::uniform_int_distribution<int> dist(0, 255);
+    for (size_t i = 0; i < size_in_bytes; ++i) {
+        data[i] = static_cast<uint8_t>(dist(rng));
+    }
+    return data;
+}
 
-// Dummy data for testing (adjust for real test data as needed)
-const std::vector<uint8_t> sample_data = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+// Helper function to generate repetitive data
+std::vector<uint8_t> GenerateRepetitiveData(size_t size_in_bytes, uint8_t value) {
+    return std::vector<uint8_t>(size_in_bytes, value);
+}
 
-class CompressorTest : public ::testing::TestWithParam<Algorithm> {
+const std::vector<uint8_t> SAMPLE_DATA = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
+
+class CompressorTest : public ::testing::TestWithParam<compression_utils::Algorithm> {
    protected:
-    Compressor compressor{GetParam()};  // GetParam() provides the algorithm (ZLIB or ZSTD)
+    compression_utils::Compressor compressor{GetParam()};
 };
 
 // Helper function to ensure the data is decompressed correctly
-void CheckCompressionAndDecompression(Compressor& compressor, const std::vector<uint8_t>& data) {
-    // Compress the data
-    std::vector<uint8_t> compressed_data = compressor.Compress(data, 5);
+void CheckCompressionAndDecompression(compression_utils::Compressor& compressor,
+                                      const std::vector<uint8_t>& data, int level = 3) {
+    std::vector<uint8_t> compressed_data = compressor.Compress(data, level);
     ASSERT_FALSE(compressed_data.empty()) << "Compression failed, compressed data is empty.";
-
-    // Decompress the data
     std::vector<uint8_t> decompressed_data = compressor.Decompress(compressed_data);
     ASSERT_EQ(decompressed_data, data) << "Decompression failed, data doesn't match the original.";
 }
 
 // Parameterized test for compression and decompression
 TEST_P(CompressorTest, CompressDecompress) {
-    CheckCompressionAndDecompression(compressor, sample_data);
+    CheckCompressionAndDecompression(compressor, SAMPLE_DATA);
 }
 
-// Parameterized test for handling empty data
+// Test compression and decompression of empty data
 TEST_P(CompressorTest, CompressDecompressEmpty) {
-    std::vector<uint8_t> empty_data;
+    const std::vector<uint8_t> empty_data;
     CheckCompressionAndDecompression(compressor, empty_data);
+}
+
+// Test compression and decompression of small inputs
+TEST_P(CompressorTest, CompressDecompress1B) {
+    const std::vector<uint8_t> small_data = {'A'};
+    CheckCompressionAndDecompression(compressor, small_data);
+}
+
+// Test compression and decompression of medium inputs
+TEST_P(CompressorTest, CompressDecompress1MB) {
+    auto large_data = GenerateData(1024 * 1024);  // 1 MB of random data
+    CheckCompressionAndDecompression(compressor, large_data);
+}
+
+// Test compression and decompression of large inputs
+TEST_P(CompressorTest, CompressDecompress100MB) {
+    auto large_data = GenerateData(1024 * 1024 * 100);  // 100 MB of random data
+    CheckCompressionAndDecompression(compressor, large_data, 1); // Use fastest compression level
+}
+
+// Test invalid compression level handling
+TEST_P(CompressorTest, InvalidCompressionLevel) {
+    const std::vector<uint8_t> data = {'D', 'a', 't', 'a'};
+    EXPECT_THROW(compressor.Compress(data, 0), std::invalid_argument);   // Invalid level (0)
+    EXPECT_THROW(compressor.Compress(data, 11), std::invalid_argument);  // Invalid level (11)
+}
+
+// Test behavior with corrupted compressed data
+TEST_P(CompressorTest, CorruptedCompressedData) {
+    const std::vector<uint8_t> corrupted_data = {'C', 'o', 'r', 'r', 'u', 'p', 't', 'e', 'd'};
+    EXPECT_THROW(compressor.Decompress(corrupted_data), std::runtime_error);  // Should throw
+}
+
+// Test compression and decompression of repetitive data
+TEST_P(CompressorTest, CompressDecompressRepetitiveData) {
+    auto repetitive_data = GenerateRepetitiveData(1024 * 1024, 'A');  // 1 MB of repetitive 'A'
+    CheckCompressionAndDecompression(compressor, repetitive_data);
+}
+
+// Test every compression level
+TEST_P(CompressorTest, CompressionLevels) {
+    for (int level = 1; level <= 9; ++level) {
+        auto compressed_data = compressor.Compress(SAMPLE_DATA, level);
+        ASSERT_FALSE(compressed_data.empty()) << "Compression failed, compressed data is empty.";
+        auto decompressed_data = compressor.Decompress(compressed_data);
+        ASSERT_EQ(decompressed_data, SAMPLE_DATA) << "Decompression failed, data doesn't match the original.";
+    }
+}
+
+// Test compressing already compressed data
+TEST_P(CompressorTest, CompressCompressedData) {
+    auto compressed_data = compressor.Compress(SAMPLE_DATA, 5);
+    ASSERT_FALSE(compressed_data.empty()) << "Compression failed, compressed data is empty.";
+    auto double_compressed_data = compressor.Compress(compressed_data, 5);
+    ASSERT_FALSE(double_compressed_data.empty()) << "Compression failed, compressed data is empty.";
+    auto decompressed_data = compressor.Decompress(double_compressed_data);
+    ASSERT_EQ(decompressed_data, compressed_data) << "Decompression failed, data doesn't match the original.";
+}
+
+// Helper function to generate test names based on the Algorithm enum
+std::string AlgorithmToString(const ::testing::TestParamInfo<compression_utils::Algorithm>& info) {
+    switch (info.param) {
+#ifdef INCLUDE_ZLIB
+        case compression_utils::Algorithm::ZLIB:
+            return "ZLIB";
+#endif
+#ifdef INCLUDE_ZSTD
+        case compression_utils::Algorithm::ZSTD:
+            return "ZSTD";
+#endif
+        default:
+            return "UnknownAlgorithm";
+    }
 }
 
 // Conditionally instantiate the test suite only if there are algorithms to test
 #if defined(INCLUDE_ZLIB) || defined(INCLUDE_ZSTD)
-    INSTANTIATE_TEST_SUITE_P(
-        CompressionTests,  // Test suite name
-        CompressorTest,
-        ::testing::Values(
+INSTANTIATE_TEST_SUITE_P(CompressionTests,  // Test suite name
+                         CompressorTest,
+                         ::testing::Values(
 #ifdef INCLUDE_ZLIB
-            Algorithm::ZLIB,
+                             compression_utils::Algorithm::ZLIB,
 #endif
 #ifdef INCLUDE_ZSTD
-            Algorithm::ZSTD
+                             compression_utils::Algorithm::ZSTD
 #endif
-        )
-    );
+                             ),
+                         AlgorithmToString  // Custom name generator function
+);
 #else
-    TEST(CompressorTest, NoAlgorithmsAvailable) {
-        GTEST_SKIP() << "No compression algorithms were included in the build.";
-    }
+TEST(CompressorTest, NoAlgorithmsAvailable) {
+    GTEST_SKIP() << "No compression algorithms were included in the build.";
+}
 #endif
