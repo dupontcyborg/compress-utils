@@ -66,9 +66,13 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data) {
 
     // Check if the decompression was successful
     if (result != Z_OK) {
-        throw std::runtime_error("zlib decompression failed: " + std::to_string(result));
+        if (result == Z_BUF_ERROR) {
+            throw std::runtime_error("zlib decompression failed: Buffer too small after multiple retries.");
+        } else {
+            throw std::runtime_error("zlib decompression failed: " + std::to_string(result));
+        }
     }
-
+    
     // Resize the buffer to the actual decompressed size
     decompressed_data.resize(decompressed_size);
 
