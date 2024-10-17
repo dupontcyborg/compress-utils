@@ -131,13 +131,14 @@ configure_file(
     @ONLY
 )
 
+
 ######### TESTS #########
 
-# if (ENABLE_TESTS)
-#     message(STATUS "Building tests")
-#     enable_testing()
-#     add_subdirectory(tests)
-# endif()
+# Add tests if the option is enabled
+if (ENABLE_TESTS)
+    message(STATUS "Tests are enabled. Including the tests directory.")
+    add_subdirectory(tests)
+endif()
 
 ######### BINDINGS #########
 

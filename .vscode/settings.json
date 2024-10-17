@@ -66,7 +66,14 @@
     "unordered_map": "cpp",
     "unordered_set": "cpp",
     "variant": "cpp",
-    "algorithm": "cpp"
+    "algorithm": "cpp",
+    "__tree": "cpp",
+    "any": "cpp",
+    "cinttypes": "cpp",
+    "condition_variable": "cpp",
+    "map": "cpp",
+    "set": "cpp",
+    "span": "cpp"
   },
   "C_Cpp.errorSquiggles": "disabled"
 }

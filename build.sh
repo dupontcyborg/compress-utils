@@ -138,5 +138,11 @@ cmake .. $CMAKE_OPTIONS
 echo "Building the project..."
 cmake --build .
 
+# Run tests if not skipped
+if [ "$SKIP_TESTS" = false ]; then
+    echo "Running tests..."
+    tests/run_tests
+fi
+
 # Return to the original directory
 cd ..
