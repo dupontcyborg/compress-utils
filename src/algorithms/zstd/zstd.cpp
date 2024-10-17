@@ -1,7 +1,7 @@
 #include "zstd.hpp"
+#include "zstd/zstd.h"
 
 #include <stdexcept>
-#include <zstd.h>
 
 namespace compression_utils::zstd {
 
