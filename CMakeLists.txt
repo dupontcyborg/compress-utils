@@ -47,6 +47,11 @@ target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 
 ######### ALGORITHMS #########
 
+# Check if no algorithms are included, and throw an error
+if (NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
+    message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
+endif()
+
 # Zstd Algorithm
 if (INCLUDE_ZSTD)
     message(STATUS "Including Zstd algorithm")
