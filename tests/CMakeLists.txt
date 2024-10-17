@@ -13,7 +13,12 @@ ExternalProject_Add(
     GIT_TAG origin/main
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${GTEST_INSTALL_DIR} -DCMAKE_BUILD_TYPE=Release
     BUILD_IN_SOURCE 0
-    INSTALL_COMMAND make install
+    INSTALL_COMMAND ""
+    LOG_DOWNLOAD OFF     # Suppress download logs
+    LOG_UPDATE OFF       # Suppress update logs
+    LOG_CONFIGURE OFF    # Suppress configure logs
+    LOG_BUILD OFF        # Suppress build logs
+    LOG_INSTALL OFF      # Suppress install logs
 )
 
 # Get all test files
