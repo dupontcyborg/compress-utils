@@ -8,7 +8,7 @@
 namespace compression_utils::zlib {
 
 /**
- * @brief Compresses the input data using Zstandard
+ * @brief Compresses the input data using zlib
  *
  * @param data Input data to compress
  * @param algorithm Compression algorithm to use
@@ -18,7 +18,7 @@ namespace compression_utils::zlib {
 std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level = 3);
 
 /**
- * @brief Decompresses the input data using Zstandard
+ * @brief Decompresses the input data using zlib
  *
  * @param data Input data to decompress
  * @param algorithm Compression algorithm to use
