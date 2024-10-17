@@ -63,6 +63,9 @@ done
 if [ "$CLEAN_BUILD" = true ]; then
     echo "Cleaning build directory..."
     rm -rf "$BUILD_DIR"
+
+    # Remove the build directories under `algorithms/`
+    rm -rf algorithms/*/build
 fi
 
 # Create the build directory if it doesn't exist
