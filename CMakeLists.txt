@@ -39,8 +39,11 @@ file(GLOB_RECURSE COMPRESSION_UTILS_SOURCES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${C
 
 ######### MAIN LIBRARY #########
 
-# Add the main library target for compress_utils, linking all the source files in src/
-add_library(compress_utils STATIC ${COMPRESSION_UTILS_SOURCES})
+# Build compress_utils as a shared (dynamic) library
+add_library(compress_utils SHARED ${COMPRESSION_UTILS_SOURCES})
+
+# Define COMPRESSION_UTILS_EXPORTS for the build
+target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 
 ######### ALGORITHMS #########
 
@@ -102,3 +105,7 @@ endif()
 #     COMMAND ${CMAKE_COMMAND} -E make_directory ${INCLUDE_OUTPUT_DIR}
 #     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src ${INCLUDE_OUTPUT_DIR}
 # )
+
+######### INSTALL #########
+
+# Future: Add install targets

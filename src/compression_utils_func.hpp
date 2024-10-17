@@ -6,6 +6,17 @@
 #include <string>
 #include <vector>
 
+// Platform-specific macros for exporting and importing symbols
+#if defined(_WIN32) || defined(_WIN64)
+    #if defined(COMPRESSION_UTILS_EXPORTS)
+        #define COMPRESSION_API __declspec(dllexport)  // Export when building the DLL
+    #else
+        #define COMPRESSION_API __declspec(dllimport)  // Import when using the DLL
+    #endif
+#else
+    #define COMPRESSION_API __attribute__((visibility("default")))  // For non-Windows platforms (Linux/macOS)
+#endif
+
 namespace compression_utils {
 
 // Functional Interface
@@ -20,7 +31,7 @@ namespace compression_utils {
  *
  * @todo Make this auto-default to ZSTD?
  */
-std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, const Algorithm algorithm,
+COMPRESSION_API std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, const Algorithm algorithm,
                               int level = 3);
 
 /**
@@ -32,7 +43,7 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, const Algorithm 
  *
  * @todo Make this smarter by trying to auto-detect the compressed format?
  */
-std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data, const Algorithm algorithm);
+COMPRESSION_API std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data, const Algorithm algorithm);
 
 }  // namespace compression_utils
 

@@ -6,6 +6,17 @@
 #include <string>
 #include <vector>
 
+// Platform-specific macros for exporting and importing symbols
+#if defined(_WIN32) || defined(_WIN64)
+    #if defined(COMPRESSION_UTILS_EXPORTS)
+        #define COMPRESSION_API __declspec(dllexport)  // Export when building the DLL
+    #else
+        #define COMPRESSION_API __declspec(dllimport)  // Import when using the DLL
+    #endif
+#else
+    #define COMPRESSION_API __attribute__((visibility("default")))  // For non-Windows platforms (Linux/macOS)
+#endif
+
 namespace compression_utils {
 
 // OOP Interface
@@ -16,7 +27,7 @@ namespace compression_utils {
  * The class provides two methods, Compress and Decompress, that can be used to compress and
  * decompress
  */
-class Compressor {
+class COMPRESSION_API Compressor {
    public:
     /**
      * @brief Construct a new Compressor object
@@ -43,7 +54,7 @@ class Compressor {
     std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data);
 
    private:
-    std::string algorithm_;
+    Algorithm algorithm_;
 };
 
 }  // namespace compression_utils
