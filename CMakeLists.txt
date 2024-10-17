@@ -74,7 +74,7 @@ if (INCLUDE_ZLIB)
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    target_link_libraries(compress_utils PRIVATE zlib_library)
+    target_link_libraries(compress_utils PRIVATE ${ALGORITHMS_LIB_DIR}/libz.a)
     # Define preprocessor directive to include zlib in the code
     target_compile_definitions(compress_utils PRIVATE INCLUDE_ZLIB)
     # Add source files for zlib
