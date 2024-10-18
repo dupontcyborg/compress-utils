@@ -156,7 +156,7 @@ cmake --build .
 # Run tests if not skipped
 if [ "$SKIP_TESTS" = false ]; then
     echo "Running tests..."
-    tests/run_tests
+    ctest --output-on-failure
 fi
 
 # Return to the original directory
