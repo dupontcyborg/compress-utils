@@ -1,7 +1,8 @@
 #include "zlib.hpp"
 
-#include <stdexcept>  // For exception handling
-#include <zlib.h>     // zlib library header
+#include <stdexcept>
+#include <vector>
+#include <zlib.h>
 
 namespace compression_utils::zlib {
 
@@ -19,7 +20,7 @@ inline int GetCompressionLevel(int level) {
     return level;
 }
 
-std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     // Get zlib compression level (1-9)
     int zlib_level = GetCompressionLevel(level);
 
@@ -44,7 +45,7 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     // Start with a buffer 4 times the size of the compressed data
     size_t initial_size = data.size() * 4;
     std::vector<uint8_t> decompressed_data(initial_size);
@@ -67,12 +68,13 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data) {
     // Check if the decompression was successful
     if (result != Z_OK) {
         if (result == Z_BUF_ERROR) {
-            throw std::runtime_error("zlib decompression failed: Buffer too small after multiple retries.");
+            throw std::runtime_error(
+                "zlib decompression failed: Buffer too small after multiple retries.");
         } else {
             throw std::runtime_error("zlib decompression failed: " + std::to_string(result));
         }
     }
-    
+
     // Resize the buffer to the actual decompressed size
     decompressed_data.resize(decompressed_size);
 
