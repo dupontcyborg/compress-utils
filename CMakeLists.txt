@@ -134,6 +134,11 @@ configure_file(
     @ONLY
 )
 
+# Copy the README from bindings/cpp/README.md to the dist/cpp directory
+add_custom_command(TARGET compress_utils POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md ${CMAKE_SOURCE_DIR}/dist/cpp/README.md
+)
+
 ######### TESTS #########
 
 # Add tests if the option is enabled

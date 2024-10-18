@@ -49,6 +49,11 @@ add_custom_command(TARGET compress_utils_c POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h ${C_DIST_INCLUDE_DIR}
 )
 
+# Copy the README from bindings/c/README.md to the dist/c directory
+add_custom_command(TARGET compress_utils_c POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${C_BINDING_DIR}/README.md ${CMAKE_SOURCE_DIR}/dist/c/README.md
+)
+
 ######### TESTS #########
 
 # Add tests if the option is enabled

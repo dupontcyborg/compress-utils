@@ -80,15 +80,6 @@ DEFINE_ALGO_TESTS(ZLIB)
 DEFINE_ALGO_TESTS(ZSTD)
 #endif
 
-// Test invalid compression level
-void test_invalid_compression_level(void) {
-    uint8_t small_data[4] = {'D', 'a', 't', 'a'};
-    uint8_t* compressed_data = NULL;
-    int64_t compressed_size = compress(small_data, 4, &compressed_data, ZLIB, 11);  // Invalid level
-    CU_ASSERT(compressed_size == -1);
-    free(compressed_data);
-}
-
 #ifdef INCLUDE_ZLIB
 void RegisterZlibTests(CU_pSuite suite) {
     CU_add_test(suite, "Sample Data Compression/Decompression", test_compress_decompress_sample_ZLIB);
