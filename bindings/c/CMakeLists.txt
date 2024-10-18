@@ -1,5 +1,10 @@
 ## CMake for C language bindings
 
+######### BINDING SETUP #########
+
+# Set C standard
+set(CMAKE_C_STANDARD 17)
+
 # Set the C binding directory
 set(C_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/c")
 
@@ -15,10 +20,11 @@ target_include_directories(compress_utils_c PRIVATE ${C_BINDING_DIR})
 # Link the C++ core library with the C binding
 target_link_libraries(compress_utils_c PRIVATE compress_utils)
 
+######### INSTALL #########
+
 # Set the install directories for the C binding
 set(C_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/c/lib")
 set(C_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/c/include")
-
 
 # Configure the header file
 configure_file(
@@ -42,3 +48,13 @@ add_custom_command(TARGET compress_utils_c POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${C_BINDING_DIR}/compression_utils.h ${C_DIST_INCLUDE_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h ${C_DIST_INCLUDE_DIR}
 )
+
+######### TESTS #########
+
+# Add tests if the option is enabled
+if (ENABLE_TESTS)
+    message(STATUS "Tests are enabled. Including the tests directory.")
+    add_subdirectory(tests)
+else()
+    message(STATUS "Tests are disabled. Skipping the tests directory.")
+endif()

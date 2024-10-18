@@ -138,46 +138,21 @@ configure_file(
 
 # Add tests if the option is enabled
 if (ENABLE_TESTS)
+    enable_testing()
     message(STATUS "Tests are enabled. Including the tests directory.")
     add_subdirectory(tests)
-endif()
-
-######### C BINDING #########
-
-if (BUILD_C_BINDINGS)
-    message(STATUS "Building C binding...")
-    add_subdirectory(bindings/c)
+else()
+    message(STATUS "Tests are disabled. Skipping the tests directory.")
 endif()
 
 ######### BINDINGS #########
 
-# Placeholder for language bindings setup
-# Example:
-# if (BUILD_JS_BINDINGS)
-#     add_subdirectory(bindings/js)
-# endif()
-# if (BUILD_PYTHON_BINDINGS)
-#     add_subdirectory(bindings/python)
-# endif()
+# C Bindings
+if (BUILD_C_BINDINGS)
+    message(STATUS "Building C binding...")
+    add_subdirectory(bindings/c)
 
-######### COPY OUTPUTS #########
+    # Ensure that the C bindings are built after the core C++ library
+    add_dependencies(compress_utils_c compress_utils)
+endif()
 
-# # Set output directories
-# set(LIB_OUTPUT_DIR ${CMAKE_SOURCE_DIR}/dist/cpp/lib)
-# set(INCLUDE_OUTPUT_DIR ${CMAKE_SOURCE_DIR}/dist/cpp/include/compression-utils)
-
-# # Copy the output libraries to the output directory
-# add_custom_command(TARGET compress_utils POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E make_directory ${LIB_OUTPUT_DIR}
-#     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:compress_utils> ${LIB_OUTPUT_DIR}
-# )
-
-# # Copy the header files to the output directory ()
-# add_custom_command(TARGET compress_utils POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E make_directory ${INCLUDE_OUTPUT_DIR}
-#     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src ${INCLUDE_OUTPUT_DIR}
-# )
-
-######### INSTALL #########
-
-# Future: Add install targets
