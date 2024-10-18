@@ -11,7 +11,7 @@
 - [Standardized API](#usage) across all algorithms & languages
 - Portable & cross-platform (Linux, macOS, Windows, WASM)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
-- Native or near-native [compression & decompression performance](#Benchmarks)
+- Native or near-native [compression & decompression performance](#benchmarks)
 - Lightweight binary (30 kB with single algorithm, 4 MB with all)
 
 ## Built-in Compression Algorithms
