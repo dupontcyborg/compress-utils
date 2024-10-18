@@ -45,7 +45,22 @@ _To be added_
 
 ### Build From Source
 
-_To be added_
+1. Make sure you have `CMake` installed
+2. Clone & build
+
+```
+git clone https://github.com/dupontcyborg/compression-utils.git
+cd compression-utils
+build.sh
+```
+
+A number of configuration parameters are available for `build.sh`:
+
+- `--clean` - performs a clean rebuild of `compression-utils`
+- `--algorithms=` - set which algorithms to include in the build (e.g., `build.sh --algorithms=zlib,zstd`)
+- `--languages=` - set which language bindings to build (e.g., `build.sh --languages=python,js`)
+- `--release` - build release version (higher optimization level)
+- `--skip-tests` - skip building & running unit tests
 
 ## Benchmarks
 
