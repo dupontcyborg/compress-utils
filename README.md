@@ -11,7 +11,7 @@
 - [Standardized API](#usage) across all algorithms & languages
 - Portable & cross-platform (Linux, macOS, Windows, WASM)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
-- Native or near-native [compression & decompression performance](#Benchmarks)
+- Native or near-native [compression & decompression performance](#benchmarks)
 - Lightweight binary (30 kB with single algorithm, 4 MB with all)
 
 ## Built-in Compression Algorithms
@@ -23,91 +23,57 @@
 
 ## Supported Languages
 
-| Language | Package | Code Examples |
+| Language | Package | Code Examples & Docs |
 |:---:|:---:|:---:|
-| C++ | _TBD_ | [C++ Code](#cpp-usage) |
-| C | _TBD_ | [C Code](#c-usage)
+| C++ | _TBD_ | [C++ Code](bindings/cpp/README.md) |
+| C | _TBD_ | [C Code](bindings/c/README.md)
 
 ## Usage
 
-<a name="cpp-usage"></a>
-### C++ Usage
+This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compression-utils` API is made available in two flavors:
 
-OOP example:
+- Object-Oriented (OOP)
+- Functional
 
-```cpp
-#include "compression_utils.hpp"
+Both of these APIs are made dead simple. Here's an OOP example in Python:
 
-// Select algorithm
-compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+```py
+import compression-utils as comp
 
-// Create Compressor object
-compression_utils::Compressor compressor(algorithm);
+# Create a 'zstd' compressor object
+compressor = comp.compressor('zstd')
 
-// Compress data
-std::vector<uint8_t> compressed_data = compressor.Compress(data);
+# Compress data
+compressed_data = compressor.compress(data)
 
-// Compress data with a compression level (1-10)
-std::vector<uint8_t> compressed_data = compressor.Compress(data, 5);
+# Compress data with a compression level (1-10)
+compressed_data = compressor.compress(data, 5)
 
-// Decompress data
-std::vector<uint8_t> decompressed_data = compressor.Decompress(compressed_data);
+# Decompress data
+decompressed_data = compressor.decompress(compressed_data)
 ```
 
-Functional example:
+Functional usage is similarly simple:
 
-```cpp
-#include "compression_utils_func.hpp"
+```py
+import compression-utils as comp
 
-// Select algorithm
-compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+# Compress data using `zstd`
+compressed_data = compressor.compress(data, 'zstd')
 
-// Compress data
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm);
+# Compress data with a compression level (1-10)
+compressed_data = compressor.compress(data, 'zstd', 5)
 
-// Compress data with a compression level (1-10)
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm, 5);
-
-// Decompress data
-std::vector<uint8_t> decompressed_data = compression_utils::Decompress(compressed_data, algorithm);
+# Decompress data
+decompressed_data = compressor.decompress(compressed_data, 'zstd')
 ```
 
-[C++ API Docs >](bindings/cpp/README.md)
+## Language-Specific Examples
 
-<a name="c-usage"></a>
-### C Usage
+You can find language-specific code examples below:
 
-```c
-#include "compression_utils.h"
-
-// Select algorithm
-Algorithm algorithm = ZSTD;
-
-// Compress data
-uint8_t* comp_data = NULL;
-int level = 3;  // Compression level: 1 (fastest) to 10 (smallest)
-int64_t comp_size = compress(data, data_size, &comp_data, algorithm, level);
-
-// Check if compression succeeded
-if (comp_size == -1) {
-    // Handle compression error
-}
-
-// Decompress data
-uint8_t* decompressed_data = NULL;
-int64_t decompressed_size = decompress(comp_data, comp_size, &decompressed_data, algorithm);
-
-// Check if decompression succeeded
-if (decompressed_size == -1) {
-    // Handle decompression error
-}
-
-// Clean up
-free(comp_data);
-free(decompressed_data);
-```
-
-[C API Docs >](bindings/c/README.md)
+- [C++ API Docs >](bindings/cpp/README.md)
+- [C API Docs >](bindings/c/README.md)
 
 ## Setup
 

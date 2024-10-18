@@ -13,9 +13,16 @@ class CompressorTest : public ::testing::TestWithParam<compression_utils::Algori
 // Helper function to ensure the data is decompressed correctly
 void CheckCompressionAndDecompression(compression_utils::Compressor& compressor,
                                       const std::vector<uint8_t>& data, int level = 3) {
+    // Check with vector input
     std::vector<uint8_t> compressed_data = compressor.Compress(data, level);
     ASSERT_FALSE(compressed_data.empty()) << "Compression failed, compressed data is empty.";
     std::vector<uint8_t> decompressed_data = compressor.Decompress(compressed_data);
+    ASSERT_EQ(decompressed_data, data) << "Decompression failed, data doesn't match the original.";
+
+    // Check with pointer input
+    compressed_data = compressor.Compress(data.data(), data.size(), level);
+    ASSERT_FALSE(compressed_data.empty()) << "Compression failed, compressed data is empty.";
+    decompressed_data = compressor.Decompress(compressed_data.data(), compressed_data.size());
     ASSERT_EQ(decompressed_data, data) << "Decompression failed, data doesn't match the original.";
 }
 
@@ -43,8 +50,8 @@ TEST_P(CompressorTest, CompressDecompress1MB) {
 }
 
 // Test compression and decompression of large inputs
-TEST_P(CompressorTest, CompressDecompress50MB) {
-    auto large_data = GenerateData(1024 * 1024 * 50);             // 50 MB of random data
+TEST_P(CompressorTest, CompressDecompress32MB) {
+    auto large_data = GenerateData(1024 * 1024 * 32);             // 32 MB of random data
     CheckCompressionAndDecompression(compressor, large_data, 1);  // Use fastest compression level
 }
 

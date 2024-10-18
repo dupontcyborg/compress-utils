@@ -2,6 +2,7 @@
 #include "zstd/zstd.h"
 
 #include <stdexcept>
+#include <vector>
 
 namespace compression_utils::zstd {
 
@@ -25,7 +26,7 @@ inline int GetCompressionLevel(int level) {
     return level;
 }
 
-std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     // Get Zstd compression level
     int zstd_level = GetCompressionLevel(level);
 
@@ -51,7 +52,7 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     // Get the decompressed size (Zstd allows embedding this information in the compressed data)
     unsigned long long decompressed_size = ZSTD_getFrameContentSize(data.data(), data.size());
 

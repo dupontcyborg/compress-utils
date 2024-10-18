@@ -3,7 +3,7 @@
 
 #ifdef INCLUDE_ZLIB
 
-#include <vector>
+#include <span>
 
 namespace compression_utils::zlib {
 
@@ -15,7 +15,7 @@ namespace compression_utils::zlib {
  * @param level Compression level (1 = fastest; 10 = smallest; default = 3)
  * @return std::vector<uint8_t> Compressed data
  */
-std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level = 3);
+std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level = 3);
 
 /**
  * @brief Decompresses the input data using zlib
@@ -24,7 +24,7 @@ std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, int level = 3);
  * @param algorithm Compression algorithm to use
  * @return std::vector<uint8_t> Decompressed data
  */
-std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data);
+std::vector<uint8_t> Decompress(std::span<const uint8_t>& data);
 
 }  // namespace compression_utils::zlib
 

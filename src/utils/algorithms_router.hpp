@@ -6,6 +6,7 @@
 #include "algorithms/zstd/zstd.hpp"
 
 #include <functional>
+#include <span>
 
 namespace compression_utils::internal {
 
@@ -13,8 +14,8 @@ namespace compression_utils::internal {
  * @brief Struct that holds the compression and decompression functions for a specific algorithm
  */
 struct CompressionFunctions {
-    std::vector<uint8_t> (*Compress)(const std::vector<uint8_t>& data, int level);
-    std::vector<uint8_t> (*Decompress)(const std::vector<uint8_t>& data);
+    std::vector<uint8_t> (*Compress)(std::span<const uint8_t>& data, int level);
+    std::vector<uint8_t> (*Decompress)(std::span<const uint8_t>& data);
 };
 
 /**
