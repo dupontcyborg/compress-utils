@@ -1,9 +1,6 @@
-# tests/CMakeLists.txt
+## CMake for Main C++ Tests
 
 include(ExternalProject)
-
-# Define where to build and install GoogleTest
-set(GTEST_INSTALL_DIR "${CMAKE_BINARY_DIR}/external/gtest_install")
 
 # Add an external project to download and build GoogleTest
 ExternalProject_Add(
@@ -11,7 +8,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/external/gtest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG origin/main
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${GTEST_INSTALL_DIR} -DCMAKE_BUILD_TYPE=Release
+    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
     BUILD_IN_SOURCE 0
     INSTALL_COMMAND ""
     LOG_DOWNLOAD OFF     # Suppress download logs
