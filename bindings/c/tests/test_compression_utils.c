@@ -64,10 +64,16 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
         CheckCompressionAndDecompression(ALGO, large_data, 1024 * 1024, 5); \
         free(large_data);                                                \
     }                                                                    \
+    void test_compress_decompress_32MB_##ALGO(void) {                     \
+        uint8_t* large_data = GenerateData(1024 * 1024 * 32);                 \
+        CU_ASSERT_PTR_NOT_NULL(large_data);                              \
+        CheckCompressionAndDecompression(ALGO, large_data, 1024 * 1024 * 32, 1); \
+        free(large_data);                                                \
+    }                                                                    \
     void test_compress_decompress_repetitive_##ALGO(void) {              \
         uint8_t* repetitive_data = GenerateRepetitiveData(1024 * 1024, 'A'); \
         CU_ASSERT_PTR_NOT_NULL(repetitive_data);                         \
-        CheckCompressionAndDecompression(ALGO, repetitive_data, 1024 * 1024, 5); \
+        CheckCompressionAndDecompression(ALGO, repetitive_data, 1024 * 1024, 1); \
         free(repetitive_data);                                           \
     }
 
@@ -86,6 +92,7 @@ void RegisterZlibTests(CU_pSuite suite) {
     CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_ZLIB);
     CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_ZLIB);
     CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_ZLIB);
+    CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_ZLIB);
     CU_add_test(suite, "Repetitive Data Compression/Decompression", test_compress_decompress_repetitive_ZLIB);
 }
 #endif
@@ -96,6 +103,7 @@ void RegisterZstdTests(CU_pSuite suite) {
     CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_ZSTD);
     CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_ZSTD);
     CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_ZSTD);
+    CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_ZSTD);
     CU_add_test(suite, "Repetitive Data Compression/Decompression", test_compress_decompress_repetitive_ZSTD);
 }
 #endif

@@ -13,13 +13,12 @@ extern "C" {
 // Platform-specific macros for exporting and importing symbols
 #if defined(_WIN32) || defined(_WIN64)
 #if defined(COMPRESSION_UTILS_EXPORTS)
-#define COMPRESSION_API __declspec(dllexport)  // Export when building the DLL
+#define EXPORT __declspec(dllexport)  // Export when building the DLL
 #else
-#define COMPRESSION_API __declspec(dllimport)  // Import when using the DLL
+#define EXPORT __declspec(dllimport)  // Import when using the DLL
 #endif
 #else
-#define COMPRESSION_API \
-    __attribute__((visibility("default")))  // For non-Windows platforms (Linux/macOS)
+#define EXPORT __attribute__((visibility("default")))  // For non-Windows platforms (Linux/macOS)
 #endif
 
 /**
@@ -32,8 +31,8 @@ extern "C" {
  * @param level Compression level (1 = fastest; 10 = smallest)
  * @return int64_t Compressed data size, or -1 if an error occurred
  */
-int64_t compress(const uint8_t* data, const size_t size, uint8_t** output,
-                 const Algorithm algorithm, const int level);
+EXPORT int64_t compress(const uint8_t* data, size_t size, uint8_t** output,
+                        const Algorithm algorithm, int level);
 
 /**
  * @brief Decompresses the input data using the specified algorithm
@@ -44,8 +43,8 @@ int64_t compress(const uint8_t* data, const size_t size, uint8_t** output,
  * @param algorithm Compression algorithm to use
  * @return int64_t Compressed data size, or -1 if an error occurred
  */
-int64_t decompress(const uint8_t* data, const size_t size, uint8_t** output,
-                   const Algorithm algorithm);
+EXPORT int64_t decompress(const uint8_t* data, size_t size, uint8_t** output,
+                          const Algorithm algorithm);
 
 #ifdef __cplusplus
 }

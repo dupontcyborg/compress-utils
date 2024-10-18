@@ -2,25 +2,28 @@
 
 #include "compression_utils.h"
 #include "compression_utils_func.hpp"
-#include <cstdlib>   // For malloc/free
-#include <cstring>   // For memcpy
-#include <stdexcept> // For error handling
+
+#include <cstdlib>
+#include <cstring>
+#include <span>
+#include <stdexcept>
 
 extern "C" {
 
 // Compression function implementation
-int64_t compress(const uint8_t* data, const size_t size, uint8_t** output, const Algorithm algorithm, const int level) {
+int64_t compress(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm,
+                 int level) {
     try {
-        // Convert the input C array into a C++ std::vector<uint8_t>
-        std::vector<uint8_t> input_data(data, data + size);
-
         // Call the C++ Compress function
-        std::vector<uint8_t> compressed_data = compression_utils::Compress(input_data, static_cast<compression_utils::Algorithm>(algorithm), level);
+        std::vector<uint8_t> compressed_data = compression_utils::Compress(
+            data, size, static_cast<compression_utils::Algorithm>(algorithm), level);
 
         // Allocate memory for the output buffer
         *output = static_cast<uint8_t*>(malloc(compressed_data.size()));
+        
+        // Return -1 if memory allocation fails
         if (*output == nullptr) {
-            return -1;  // Return -1 if memory allocation fails
+            return -1;  
         }
 
         // Copy the compressed data to the output buffer
@@ -35,18 +38,18 @@ int64_t compress(const uint8_t* data, const size_t size, uint8_t** output, const
 }
 
 // Decompression function implementation
-int64_t decompress(const uint8_t* data, const size_t size, uint8_t** output, const Algorithm algorithm) {
+int64_t decompress(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm) {
     try {
-        // Convert the input C array into a C++ std::vector<uint8_t>
-        std::vector<uint8_t> input_data(data, data + size);
-
         // Call the C++ Decompress function
-        std::vector<uint8_t> decompressed_data = compression_utils::Decompress(input_data, static_cast<compression_utils::Algorithm>(algorithm));
+        std::vector<uint8_t> decompressed_data = compression_utils::Decompress(
+            data, size, static_cast<compression_utils::Algorithm>(algorithm));
 
         // Allocate memory for the output buffer
         *output = static_cast<uint8_t*>(malloc(decompressed_data.size()));
+
+        // Return -1 if memory allocation fails
         if (*output == nullptr) {
-            return -1;  // Return -1 if memory allocation fails
+            return -1;
         }
 
         // Copy the decompressed data to the output buffer
@@ -60,4 +63,4 @@ int64_t decompress(const uint8_t* data, const size_t size, uint8_t** output, con
     }
 }
 
-}
+}  // extern "C"
