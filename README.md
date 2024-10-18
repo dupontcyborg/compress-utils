@@ -31,10 +31,43 @@
 
 ### C++ Usage
 
-_To be added_
+OOP example:
 
+```cpp
+#include "compression_utils.hpp"
+
+// Select algorithm
+compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+
+// Create Compressor object
+compression_utils::Compressor compressor(algorithm);
+
+// Compress data
+std::vector<uint8_t> compressed_data = compressor.Compress(data);
+
+// Compress data with a compression level (1-10)
+std::vector<uint8_t> compressed_data = compressor.Compress(data, 5);
+
+// Decompress data
+std::vector<uint8_t> decompressed_data = compressor.Decompress(compressed_data);
 ```
-// C++ code example
+
+Functional example:
+
+```cpp
+#include "compression_utils_func.hpp"
+
+// Select algorithm
+compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+
+// Compress data
+std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm);
+
+// Compress data with a compression level (1-10)
+std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm, 5);
+
+// Decompress data
+std::vector<uint8_t> decompressed_data = compression_utils::Decompress(compressed_data, algorithm);
 ```
 
 ## Setup
@@ -53,6 +86,8 @@ git clone https://github.com/dupontcyborg/compression-utils.git
 cd compression-utils
 build.sh
 ```
+
+3. The build library/libraries will be in `dist/<language>`
 
 A number of configuration parameters are available for `build.sh`:
 
