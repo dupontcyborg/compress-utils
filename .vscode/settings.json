@@ -73,7 +73,9 @@
     "condition_variable": "cpp",
     "map": "cpp",
     "set": "cpp",
-    "span": "cpp"
+    "span": "cpp",
+    "csignal": "cpp",
+    "list": "cpp"
   },
   "C_Cpp.errorSquiggles": "disabled"
 }

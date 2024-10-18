@@ -18,10 +18,10 @@ usage() {
     echo "  --clean                    Clean the build directory before building."
     echo "  --skip-tests               Skip building and running tests."
     echo "  --release                  Build the project in release mode."
-    echo "  --algorithms=LIST          Comma-separated list of algorithms to include."
+    echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
     echo "                             Available algorithms: zstd, zlib"
-    echo "  --languages=LIST           Comma-separated list of language bindings to build."
-    echo "                             Available languages: js, python"
+    echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
+    echo "                             Available languages: c, js, python"
     echo "  -h, --help                 Show this help message and exit."
     echo ""
     echo "Examples:"
@@ -127,6 +127,9 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
                 ;;
             python)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
+                ;;
+            c)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
                 ;;
             *)
                 echo "Unknown language binding: $lang"

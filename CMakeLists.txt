@@ -24,6 +24,9 @@ option(ENABLE_TESTS "Enable building tests" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 
+# Options to build bindings
+option(BUILD_C_BINDINGS "Build C bindings" ON)
+
 ######### INCLUDE DIRECTORIES #########
 
 # Include main src directory
@@ -131,13 +134,19 @@ configure_file(
     @ONLY
 )
 
-
 ######### TESTS #########
 
 # Add tests if the option is enabled
 if (ENABLE_TESTS)
     message(STATUS "Tests are enabled. Including the tests directory.")
     add_subdirectory(tests)
+endif()
+
+######### C BINDING #########
+
+if (BUILD_C_BINDINGS)
+    message(STATUS "Building C binding...")
+    add_subdirectory(bindings/c)
 endif()
 
 ######### BINDINGS #########

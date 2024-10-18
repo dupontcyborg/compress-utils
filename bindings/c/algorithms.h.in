@@ -1,0 +1,19 @@
+#ifndef ALGORITHMS_H_
+#define ALGORITHMS_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Enum class that defines the available compression algorithms
+ */
+typedef enum {
+@ALGORITHM_LIST@
+} Algorithm;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  // ALGORITHMS_H_
