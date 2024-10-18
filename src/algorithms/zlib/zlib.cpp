@@ -54,7 +54,7 @@ std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data) {
     int result = uncompress(decompressed_data.data(), &decompressed_size, data.data(), data.size());
 
     // If the buffer was too small, keep resizing it and try again (max 4 times)
-    int retries = 4;
+    int retries = 10;
     while (result == Z_BUF_ERROR && retries-- > 0) {
         // Resize the buffer (double the size)
         decompressed_data.resize(decompressed_data.size() * 2);

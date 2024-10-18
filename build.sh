@@ -59,10 +59,19 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# Check if CMake is installed
+if ! command -v cmake &> /dev/null; then
+    echo "CMake is required to build the project."
+    exit 1
+fi
+
 # Clean the build directory if requested
 if [ "$CLEAN_BUILD" = true ]; then
     echo "Cleaning build directory..."
     rm -rf "$BUILD_DIR"
+
+    # Remove the build directories under `algorithms/`
+    rm -rf algorithms/*/build
 fi
 
 # Create the build directory if it doesn't exist
@@ -106,12 +115,15 @@ fi
 # Handle language bindings
 if [ ${#LANGUAGES[@]} -gt 0 ]; then
     # Disable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
     # Enable specified bindings
     for lang in "${LANGUAGES[@]}"; do
         case $lang in
             js)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_BINDINGS=ON"
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
+                ;;
+            ts)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
                 ;;
             python)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
@@ -124,7 +136,7 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
     done
 else
     # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
 fi
 
 # Move into the build directory
