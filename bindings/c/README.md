@@ -1,5 +1,9 @@
 # Compression Utils - C API
 
+`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+
+These docs cover the C binding.
+
 ## Basic Usage
 
 ```c
@@ -31,5 +35,3 @@ if (decompressed_size == -1) {
 free(comp_data);
 free(decompressed_data);
 ```
-
-## More docs incoming...

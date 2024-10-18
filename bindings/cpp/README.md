@@ -1,5 +1,9 @@
 # Compression Utils - C++ API
 
+`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+
+These docs cover the C++ binding (not really a binding, per se, as the original library is written in C++).
+
 ## Basic Usage - OOP
 
 ```cpp
