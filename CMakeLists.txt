@@ -73,8 +73,11 @@ file(GLOB_RECURSE ALL_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOUR
 file(GLOB_RECURSE ALGO_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/*.hpp")
 list(REMOVE_ITEM ALL_SOURCE_FILES ${ALGO_SOURCE_FILES})
 
-# Create library target
+# Create library target (shared)
 add_library(compress_utils SHARED)
+
+# Create library target (static, used by bindings)
+add_library(compress_utils_static STATIC)
 
 ######### ALGORITHMS #########
 
@@ -83,8 +86,10 @@ if (NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
-# Enum for algorithms
+# Dependency lists
 set(ALGORITHMS_ENUM "")
+set(TARGET_LIBS "")
+set(TARGET_DEFINITIONS "")
 
 # Zstd Algorithm
 if (INCLUDE_ZSTD)
@@ -92,9 +97,9 @@ if (INCLUDE_ZSTD)
     # Add the subdirectory for zstd which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zstd)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    target_link_libraries(compress_utils PRIVATE ${ALGORITHMS_LIB_DIR}/libzstd.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libzstd.a)
     # Define preprocessor directive to include Zstd in the code
-    target_compile_definitions(compress_utils PRIVATE INCLUDE_ZSTD)
+    list(APPEND TARGET_DEFINITIONS INCLUDE_ZSTD)
     # Add source files for Zstd
     file(GLOB ZSTD_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${ZSTD_SOURCE_FILES})
@@ -108,9 +113,9 @@ if (INCLUDE_ZLIB)
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    target_link_libraries(compress_utils PRIVATE ${ALGORITHMS_LIB_DIR}/libz.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libz.a)
     # Define preprocessor directive to include zlib in the code
-    target_compile_definitions(compress_utils PRIVATE INCLUDE_ZLIB)
+    list(APPEND TARGET_DEFINITIONS INCLUDE_ZLIB)
     # Add source files for zlib
     file(GLOB ZLIB_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${ZLIB_SOURCE_FILES})
@@ -118,14 +123,20 @@ if (INCLUDE_ZLIB)
     list(APPEND ALGORITHMS_ENUM "ZLIB")
 endif()
 
+# Apply the libraries and definitions to both libraries
+target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
+target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
+target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
+target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
+
 ######### MAIN LIBRARY #########
 
-# Build compress_utils as a shared (dynamic) library
+# Add source files to the dynamic and static libraries
 target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
+target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
 
-# Define COMPRESSION_UTILS_EXPORTS for the build
+# Define COMPRESSION_UTILS_EXPORTS for the dynamic library
 target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
-
 
 ######### INSTALL #########
 
@@ -133,19 +144,21 @@ target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
 set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
 
-# Copy the library after building it
-add_custom_command(TARGET compress_utils POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_DIST_LIB_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:compress_utils> ${CPP_DIST_LIB_DIR}
+# Install libraries (dynamic and static)
+install(TARGETS compress_utils compress_utils_static
+    LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Dynamic lib
+    ARCHIVE DESTINATION ${CPP_DIST_LIB_DIR}  # Static lib
 )
 
-# Copy the headers after the library is built
-add_custom_command(TARGET compress_utils POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CPP_DIST_INCLUDE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp ${CPP_DIST_INCLUDE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp ${CPP_DIST_INCLUDE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/algorithms.hpp ${CPP_DIST_INCLUDE_DIR}  # Use the processed version of algorithms.hpp
-)
+# Install the headers
+install(FILES ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
+              ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
+              ${CMAKE_BINARY_DIR}/algorithms.hpp
+        DESTINATION ${CPP_DIST_INCLUDE_DIR})
+
+# Copy the README from bindings/cpp/README.md to the dist/cpp directory
+install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
+        DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
 
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
@@ -158,11 +171,6 @@ configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
     ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
     @ONLY
-)
-
-# Copy the README from bindings/cpp/README.md to the dist/cpp directory
-add_custom_command(TARGET compress_utils POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md ${CMAKE_SOURCE_DIR}/dist/cpp/README.md
 )
 
 ######### TESTS #########

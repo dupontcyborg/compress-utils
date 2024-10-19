@@ -153,6 +153,10 @@ cmake .. $CMAKE_OPTIONS
 echo "Building the project..."
 cmake --build .
 
+# Install the project (this will trigger the CMake install() commands)
+echo "Installing the project..."
+cmake --install .
+
 # Run tests if not skipped
 if [ "$SKIP_TESTS" = false ]; then
     echo "Running tests..."
@@ -166,4 +170,4 @@ cd ..
 echo ""
 echo "Sizes of the built libraries:"
 echo "-----------------------------"
-ls -lh dist/*/lib/ | awk '$9 != "" {print $9 ": " $5}'
+find dist/*/lib/ -type f -exec du -sh {} + | awk '{print $2 ": " $1}'
