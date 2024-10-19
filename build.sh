@@ -6,7 +6,7 @@
 BUILD_DIR="build"
 CLEAN_BUILD=false
 SKIP_TESTS=false
-BUILD_MODE="Debug"
+BUILD_MODE="Release"
 ALGORITHMS=()
 LANGUAGES=()
 
@@ -17,7 +17,7 @@ usage() {
     echo "Options:"
     echo "  --clean                    Clean the build directory before building."
     echo "  --skip-tests               Skip building and running tests."
-    echo "  --release                  Build the project in release mode."
+    echo "  --debug                    Build the project in debug mode."
     echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
     echo "                             Available algorithms: zstd, zlib"
     echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
@@ -39,8 +39,8 @@ while [[ "$#" -gt 0 ]]; do
         --skip-tests)
             SKIP_TESTS=true
             ;;
-        --release)
-            BUILD_MODE="Release"
+        --debug)
+            BUILD_MODE="Debug"
             ;;
         --algorithms=*)
             IFS=',' read -ra ALGORITHMS <<< "${1#*=}"
@@ -153,6 +153,10 @@ cmake .. $CMAKE_OPTIONS
 echo "Building the project..."
 cmake --build .
 
+# Install the project (this will trigger the CMake install() commands)
+echo "Installing the project..."
+cmake --install .
+
 # Run tests if not skipped
 if [ "$SKIP_TESTS" = false ]; then
     echo "Running tests..."
@@ -161,3 +165,9 @@ fi
 
 # Return to the original directory
 cd ..
+
+# Print the sizes of the built libraries
+echo ""
+echo "Sizes of the built libraries:"
+echo "-----------------------------"
+find dist/*/lib/ -type f -exec du -sh {} + | awk '{print $2 ": " $1}'

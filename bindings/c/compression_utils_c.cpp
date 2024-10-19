@@ -11,7 +11,7 @@
 extern "C" {
 
 // Compression function implementation
-int64_t compress(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm,
+int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm,
                  int level) {
     try {
         // Call the C++ Compress function
@@ -38,7 +38,7 @@ int64_t compress(const uint8_t* data, size_t size, uint8_t** output, Algorithm a
 }
 
 // Decompression function implementation
-int64_t decompress(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm) {
+int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm) {
     try {
         // Call the C++ Decompress function
         std::vector<uint8_t> decompressed_data = compression_utils::Decompress(

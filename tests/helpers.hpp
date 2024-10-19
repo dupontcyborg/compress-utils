@@ -38,4 +38,17 @@ inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_
     }
 }
 
+// Helper function to populate the test suite with the available algorithms
+inline std::vector<compression_utils::Algorithm> GetAlgorithms() {
+    std::vector<compression_utils::Algorithm> algorithms;
+#ifdef INCLUDE_ZLIB
+    algorithms.push_back(compression_utils::Algorithm::ZLIB);
+#endif
+#ifdef INCLUDE_ZSTD
+    algorithms.push_back(compression_utils::Algorithm::ZSTD);
+#endif
+    // Add more algorithms here as needed in the future
+    return algorithms;
+}
+
 #endif  // TESTS_HELPERS_HPP_

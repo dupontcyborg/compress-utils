@@ -97,18 +97,12 @@ TEST_P(CompressorTest, CompressCompressedData) {
 }
 
 // Conditionally instantiate the test suite only if there are algorithms to test
-#if defined(INCLUDE_ZLIB) || defined(INCLUDE_ZSTD)
-INSTANTIATE_TEST_SUITE_P(CompressionTests,  // Test suite name
-                         CompressorTest,
-                         ::testing::Values(
-#ifdef INCLUDE_ZLIB
-                             compression_utils::Algorithm::ZLIB,
-#endif
-#ifdef INCLUDE_ZSTD
-                             compression_utils::Algorithm::ZSTD
-#endif
-                             ),
-                         AlgorithmToString  // Custom name generator function
+#if defined(INCLUDE_ZLIB) || defined(INCLUDE_ZSTD)  // Add future algorithms here
+INSTANTIATE_TEST_SUITE_P(
+    CompressionTests,  // Test suite name
+    CompressorTest,
+    ::testing::ValuesIn(GetAlgorithms()),  // Use ValuesIn to avoid trailing comma issues
+    AlgorithmToString                      // Custom name generator function
 );
 #else
 TEST(CompressorTest, NoAlgorithmsAvailable) {
