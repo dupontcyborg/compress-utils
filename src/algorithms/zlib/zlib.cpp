@@ -1,8 +1,8 @@
+#include "zlib.h"
 #include "zlib.hpp"
 
 #include <stdexcept>
 #include <vector>
-#include <zlib.h>
 
 namespace compression_utils::zlib {
 
