@@ -12,16 +12,32 @@ set(ZSTD_BUILD_DIR "${ALGORITHMS_DIR}/zstd/build")
 set(ZSTD_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(ZSTD_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/zstd")
 
+# Inherit the build type from the parent project
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)  # Default to Release if none is set
+endif()
+
+# Propagate the C/C++ flags, linker flags, and build type from the parent
+set(PARENT_C_FLAGS "${CMAKE_C_FLAGS}")
+set(PARENT_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+set(PARENT_LD_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+set(PARENT_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+
 # Add an external project to download, configure, and build Zstd
 ExternalProject_Add(
     zstd_external
     PREFIX ${ZSTD_BUILD_DIR}
     GIT_REPOSITORY https://github.com/facebook/zstd.git
-    GIT_TAG v1.5.6  # Specify the desired version
-    CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
-               -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-               -DZSTD_BUILD_STATIC=ON
-               -DZSTD_BUILD_SHARED=OFF
+    GIT_TAG v1.5.6
+    GIT_SHALLOW TRUE
+    CMAKE_ARGS 
+        -DCMAKE_BUILD_TYPE=${PARENT_BUILD_TYPE}
+        -DCMAKE_C_FLAGS=${PARENT_C_FLAGS}
+        -DCMAKE_CXX_FLAGS=${PARENT_CXX_FLAGS}
+        -DCMAKE_EXE_LINKER_FLAGS=${PARENT_LD_FLAGS}
+        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        -DZSTD_BUILD_STATIC=ON
+        -DZSTD_BUILD_SHARED=OFF
     SOURCE_SUBDIR build/cmake
     BUILD_IN_SOURCE 0  # Build out-of-source (in the build directory)
     UPDATE_DISCONNECTED 1

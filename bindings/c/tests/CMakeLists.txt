@@ -8,6 +8,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/external/CUnit
     GIT_REPOSITORY https://gitlab.com/cunity/cunit.git
     GIT_TAG master
+    GIT_SHALLOW TRUE
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
 )
 

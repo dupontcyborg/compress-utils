@@ -15,6 +15,32 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+######### COMPILER FLAGS #########
+
+# Add LTO and Dead Code Elimination flags based on the compiler
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(LTO_FLAGS "-flto -ffunction-sections -fdata-sections")
+    if(APPLE)
+        set(LINKER_FLAGS "-Wl,-dead_strip")  # macOS specific
+    else()
+        set(LINKER_FLAGS "-Wl,--gc-sections")  # Linux/Unix
+    endif()
+elseif(MSVC)
+    set(LTO_FLAGS "/GL")
+    set(LINKER_FLAGS "/OPT:REF")
+endif()
+
+# C++ Flags
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+
+# C Flags
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+
+
 ######### OPTIONS #########
 
 # Option to enable/disable tests

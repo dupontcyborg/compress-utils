@@ -8,6 +8,7 @@ ExternalProject_Add(
     PREFIX ${CMAKE_BINARY_DIR}/external/gtest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG origin/main
+    GIT_SHALLOW TRUE
     CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
     BUILD_IN_SOURCE 0
     INSTALL_COMMAND ""
