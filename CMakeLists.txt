@@ -128,6 +128,8 @@ target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
 target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
 target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
 
+# TODO: for static lib, try `whole-archive` options so it includes all the symbols BUT also while supporting LTO/DCE
+
 ######### MAIN LIBRARY #########
 
 # Add source files to the dynamic and static libraries
@@ -141,12 +143,13 @@ target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 
 # Set the output directory for the library and header files
 set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
+set(STATIC_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib/static")
 set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
 
 # Install libraries (dynamic and static)
 install(TARGETS compress_utils compress_utils_static
     LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Dynamic lib
-    ARCHIVE DESTINATION ${CPP_DIST_LIB_DIR}  # Static lib
+    ARCHIVE DESTINATION ${STATIC_LIB_DIR}  # Static lib
 )
 
 # Install the headers
@@ -158,6 +161,14 @@ install(FILES ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
 # Copy the README from bindings/cpp/README.md to the dist/cpp directory
 install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
         DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
+
+# Copy the dependency libraries to the static directory
+# Only if we are building the static lib
+# TODO - remove this once we fix the `whole-archive` issue
+if (TARGET compress_utils_static)
+    install(FILES ${TARGET_LIBS}
+            DESTINATION ${STATIC_LIB_DIR})
+endif()
 
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
