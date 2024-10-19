@@ -12,6 +12,9 @@ extern "C" {
  * system to include only the algorithms that are available and remove the preprocessor directives
  */
 typedef enum {
+#ifdef INCLUDE_BROTLI
+    BROTLI,
+#endif
 #ifdef INCLUDE_ZLIB
     ZLIB,
 #endif

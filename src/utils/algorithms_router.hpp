@@ -2,6 +2,7 @@
 #define COMPRESSION_UTILS_ALGORITHMS_ROUTER_HPP
 
 #include "algorithms.hpp"
+#include "algorithms/brotli/brotli.hpp"
 #include "algorithms/zlib/zlib.hpp"
 #include "algorithms/zstd/zstd.hpp"
 
@@ -27,6 +28,10 @@ struct CompressionFunctions {
 CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
     // Route to the desired algorithm
     switch (algorithm) {
+#ifdef INCLUDE_BROTLI
+        case Algorithm::BROTLI:
+            return {brotli::Compress, brotli::Decompress};
+#endif
 #ifdef INCLUDE_ZLIB
         case Algorithm::ZLIB:
             return {zlib::Compress, zlib::Decompress};

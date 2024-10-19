@@ -46,6 +46,7 @@ set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LI
 option(ENABLE_TESTS "Enable building tests" ON)
 
 # Options to include algorithms (set through build.sh)
+option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 
@@ -81,7 +82,7 @@ add_library(compress_utils_static STATIC)
 ######### ALGORITHMS #########
 
 # Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
+if (NOT INCLUDE_BROTLI AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
@@ -89,6 +90,24 @@ endif()
 set(ALGORITHMS_ENUM "")
 set(TARGET_LIBS "")
 set(TARGET_DEFINITIONS "")
+
+# Brotli Algorithm
+if (INCLUDE_BROTLI)
+    message(STATUS "Including Brotli algorithm")
+    # Add the subdirectory for Brotli which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/brotli)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlicommon.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlienc.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlidec.a)
+    # Define preprocessor directive to include Brotli in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_BROTLI)
+    # Add source files for Brotli
+    file(GLOB BROTLI_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${BROTLI_SOURCE_FILES})
+    # Add Brotli to the enum
+    list(APPEND ALGORITHMS_ENUM "BROTLI")
+endif()
 
 # Zstd Algorithm
 if (INCLUDE_ZSTD)

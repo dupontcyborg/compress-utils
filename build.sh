@@ -91,10 +91,13 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF -DINCLUDE_BROTLI=OFF"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
+            brotli)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON"
+                ;;
             zstd)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON"
                 ;;
@@ -109,7 +112,7 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     done
 else
     # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON -DINCLUDE_BROTLI=ON"
 fi
 
 # Handle language bindings
