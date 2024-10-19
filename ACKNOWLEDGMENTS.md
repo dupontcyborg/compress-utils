@@ -2,6 +2,12 @@
 
 This project would not be possible without the remarkable work of other engineers in the data compression space. `compression-utils` incorporates such code from the following third-party projects:
 
+## Brotli
+
+- **Repository**: https://github.com/google/brotli.git
+- **License**: MIT License
+- **Authors**: Google and contributors
+
 ## zlib
 
 - **Repository**: https://github.com/madler/zlib

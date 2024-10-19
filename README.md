@@ -20,6 +20,7 @@
 
 | Algorithm | Description | Benchmarks |
 |:---:|---|:---:|
+| [brotli](https://github.com/google/brotli.git) | General-purpose with very high compression rates | [Benchmarks](#benchmarks) |
 | [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) | [Benchmarks](#benchmarks) |
 | [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm | [Benchmarks](#benchmarks) |
 
@@ -99,8 +100,8 @@ build.sh
 A number of configuration parameters are available for `build.sh`:
 
 - `--clean` - performs a clean rebuild of `compression-utils`
-- `--algorithms=` - set which algorithms to include in the build (e.g., `build.sh --algorithms=zlib,zstd`)
-- `--languages=` - set which language bindings to build (e.g., `build.sh --languages=python,js`)
+- `--algorithms=` - set which algorithms to include in the build, if not all (e.g., `build.sh --algorithms=brotli,zlib,zstd`)
+- `--languages=` - set which language bindings to build, if not all (e.g., `build.sh --languages=python,js`)
 - `--release` - build release version (higher optimization level)
 - `--skip-tests` - skip building & running unit tests
 
