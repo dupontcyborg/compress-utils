@@ -36,6 +36,7 @@ target_link_libraries(compress_utils_c_static PRIVATE compress_utils_static)
 
 # Set the install directories for the C binding
 set(C_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/c/lib")
+set(C_DIST_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/c/lib/static")
 set(C_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/c/include/compression_utils_c")
 
 # Configure the header file
@@ -48,16 +49,22 @@ configure_file(
 # Install the C binding shared library
 install(TARGETS compress_utils_c
         LIBRARY DESTINATION ${C_DIST_LIB_DIR}
-        ARCHIVE DESTINATION ${C_DIST_LIB_DIR})
+        ARCHIVE DESTINATION ${C_DIST_STATIC_DIR})
 
 # Install the C binding static library
 install(TARGETS compress_utils_c_static
-        ARCHIVE DESTINATION ${C_DIST_LIB_DIR})
+        ARCHIVE DESTINATION ${C_DIST_STATIC_DIR})
 
 # Install the C binding headers
 install(FILES ${C_BINDING_DIR}/compression_utils.h
         ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h
         DESTINATION ${C_DIST_INCLUDE_DIR})
+
+# Copy the ${TARGET_LIBS} from the parent CMake to the static directory, only if building static
+if (TARGET compress_utils_c_static)
+    install(FILES ${TARGET_LIBS}
+            DESTINATION ${C_DIST_STATIC_DIR})
+endif()
 
 # Copy the README from bindings/c/README.md to the dist/c directory
 install(FILES ${C_BINDING_DIR}/README.md

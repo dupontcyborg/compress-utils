@@ -35,7 +35,6 @@ ExternalProject_Add(
     CMAKE_ARGS 
         -DCMAKE_BUILD_TYPE=${PARENT_BUILD_TYPE}
         -DCMAKE_C_FLAGS=${PARENT_C_FLAGS}
-        -DCMAKE_CXX_FLAGS=${PARENT_CXX_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${PARENT_LD_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
     BUILD_IN_SOURCE 0  # Build out-of-source (in the build directory)

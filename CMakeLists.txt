@@ -46,6 +46,7 @@ set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LI
 option(ENABLE_TESTS "Enable building tests" ON)
 
 # Options to include algorithms (set through build.sh)
+option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 
@@ -81,7 +82,7 @@ add_library(compress_utils_static STATIC)
 ######### ALGORITHMS #########
 
 # Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
+if (NOT INCLUDE_BROTLI AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
@@ -89,6 +90,24 @@ endif()
 set(ALGORITHMS_ENUM "")
 set(TARGET_LIBS "")
 set(TARGET_DEFINITIONS "")
+
+# Brotli Algorithm
+if (INCLUDE_BROTLI)
+    message(STATUS "Including Brotli algorithm")
+    # Add the subdirectory for Brotli which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/brotli)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlicommon.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlienc.a)
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlidec.a)
+    # Define preprocessor directive to include Brotli in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_BROTLI)
+    # Add source files for Brotli
+    file(GLOB BROTLI_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${BROTLI_SOURCE_FILES})
+    # Add Brotli to the enum
+    list(APPEND ALGORITHMS_ENUM "BROTLI")
+endif()
 
 # Zstd Algorithm
 if (INCLUDE_ZSTD)
@@ -128,6 +147,8 @@ target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
 target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
 target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
 
+# TODO: for static lib, try `whole-archive` options so it includes all the symbols BUT also while supporting LTO/DCE
+
 ######### MAIN LIBRARY #########
 
 # Add source files to the dynamic and static libraries
@@ -141,12 +162,13 @@ target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 
 # Set the output directory for the library and header files
 set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
+set(STATIC_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib/static")
 set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
 
 # Install libraries (dynamic and static)
 install(TARGETS compress_utils compress_utils_static
     LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Dynamic lib
-    ARCHIVE DESTINATION ${CPP_DIST_LIB_DIR}  # Static lib
+    ARCHIVE DESTINATION ${STATIC_LIB_DIR}  # Static lib
 )
 
 # Install the headers
@@ -158,6 +180,14 @@ install(FILES ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
 # Copy the README from bindings/cpp/README.md to the dist/cpp directory
 install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
         DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
+
+# Copy the dependency libraries to the static directory
+# Only if we are building the static lib
+# TODO - remove this once we fix the `whole-archive` issue
+if (TARGET compress_utils_static)
+    install(FILES ${TARGET_LIBS}
+            DESTINATION ${STATIC_LIB_DIR})
+endif()
 
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})

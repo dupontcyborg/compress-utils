@@ -91,10 +91,13 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF -DINCLUDE_BROTLI=OFF"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
+            brotli)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON"
+                ;;
             zstd)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON"
                 ;;
@@ -109,7 +112,7 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     done
 else
     # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON -DINCLUDE_BROTLI=ON"
 fi
 
 # Handle language bindings
@@ -139,7 +142,7 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
     done
 else
     # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
 fi
 
 # Move into the build directory
@@ -170,4 +173,4 @@ cd ..
 echo ""
 echo "Sizes of the built libraries:"
 echo "-----------------------------"
-find dist/*/lib/ -type f -exec du -sh {} + | awk '{print $2 ": " $1}'
+find dist/*/lib/ -type f -name "libcompress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'

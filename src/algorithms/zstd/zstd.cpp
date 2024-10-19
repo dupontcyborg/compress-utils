@@ -1,3 +1,4 @@
+#include "utils/constants.hpp"
 #include "zstd.hpp"
 #include "zstd/zstd.h"
 
@@ -14,14 +15,12 @@ namespace compression_utils::zstd {
  */
 inline int GetCompressionLevel(int level) {
     // Validate that level is between 1 and 10
-    if (level < 1 || level > 10) {
-        throw std::invalid_argument("Compression level must be between 1 and 10");
-    }
+    internal::ValidateLevel(level);
 
     // ZSTD compression levels are 1-22, so we need to scale the input level
     // from 1-10 to 1-22; so 1 -> 1, 10 -> 22
     const size_t zstd_max_level = 22;
-    level = (level * zstd_max_level) / 10;
+    level = (level * zstd_max_level) / internal::MAX_LEVEL;
 
     return level;
 }

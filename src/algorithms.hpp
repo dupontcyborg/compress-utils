@@ -10,6 +10,9 @@ namespace compression_utils {
  * system to include only the algorithms that are available and remove the preprocessor directives
  */
 enum class Algorithm {
+#ifdef INCLUDE_BROTLI
+    BROTLI,
+#endif
 #ifdef INCLUDE_ZLIB
     ZLIB,
 #endif

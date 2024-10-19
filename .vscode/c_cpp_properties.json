@@ -9,6 +9,7 @@
                 "/usr/local/include"
             ],
             "defines": [
+                "INCLUDE_BROTLI",
                 "INCLUDE_ZLIB",
                 "INCLUDE_ZSTD",
             ],

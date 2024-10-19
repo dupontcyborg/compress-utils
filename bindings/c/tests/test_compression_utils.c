@@ -81,12 +81,29 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
     }
 
 // Define tests for each available algorithm (based on preprocessor directives)
+#ifdef INCLUDE_BROTLI
+DEFINE_ALGO_TESTS(BROTLI)
+#endif
+
 #ifdef INCLUDE_ZLIB
 DEFINE_ALGO_TESTS(ZLIB)
 #endif
 
 #ifdef INCLUDE_ZSTD
 DEFINE_ALGO_TESTS(ZSTD)
+#endif
+
+#ifdef INCLUDE_BROTLI
+void RegisterBrotliTests(CU_pSuite suite) {
+    CU_add_test(suite, "Sample Data Compression/Decompression",
+                test_compress_decompress_sample_BROTLI);
+    CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_BROTLI);
+    CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_BROTLI);
+    CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_BROTLI);
+    CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_BROTLI);
+    CU_add_test(suite, "Repetitive Data Compression/Decompression",
+                test_compress_decompress_repetitive_BROTLI);
+}
 #endif
 
 #ifdef INCLUDE_ZLIB
@@ -119,6 +136,13 @@ int main() {
     if (CUE_SUCCESS != CU_initialize_registry()) {
         return CU_get_error();
     }
+
+#ifdef INCLUDE_BROTLI
+    CU_pSuite pSuiteBrotli = CU_add_suite("Brotli Compression Tests", 0, 0);
+    if (pSuiteBrotli != NULL) {
+        RegisterBrotliTests(pSuiteBrotli);
+    }
+#endif
 
 #ifdef INCLUDE_ZLIB
     CU_pSuite pSuiteZlib = CU_add_suite("Zlib Compression Tests", 0, 0);

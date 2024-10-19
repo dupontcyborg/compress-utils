@@ -1,8 +1,9 @@
+#include "utils/constants.hpp"
+#include "zlib.h"
 #include "zlib.hpp"
 
 #include <stdexcept>
 #include <vector>
-#include <zlib.h>
 
 namespace compression_utils::zlib {
 
@@ -13,8 +14,10 @@ namespace compression_utils::zlib {
  * @return int zlib compression level (1 = fastest, 9 = best compression, 6 = default)
  */
 inline int GetCompressionLevel(int level) {
+    // Validate that level is between 1 and 10
+    internal::ValidateLevel(level);
+
     // Map 1-10 to zlib's 1-9 range
-    if (level < 1) level = 1;
     if (level > 9) level = 9;
 
     return level;
