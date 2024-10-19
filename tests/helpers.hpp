@@ -25,6 +25,10 @@ inline std::vector<uint8_t> GenerateRepetitiveData(size_t size_in_bytes, uint8_t
 // Helper function to generate test names based on the Algorithm enum
 inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_utils::Algorithm>& info) {
     switch (info.param) {
+#ifdef INCLUDE_BROTLI
+        case compression_utils::Algorithm::BROTLI:
+            return "BROTLI";
+#endif
 #ifdef INCLUDE_ZLIB
         case compression_utils::Algorithm::ZLIB:
             return "ZLIB";
@@ -41,6 +45,9 @@ inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_
 // Helper function to populate the test suite with the available algorithms
 inline std::vector<compression_utils::Algorithm> GetAlgorithms() {
     std::vector<compression_utils::Algorithm> algorithms;
+#ifdef INCLUDE_BROTLI
+    algorithms.push_back(compression_utils::Algorithm::BROTLI);
+#endif
 #ifdef INCLUDE_ZLIB
     algorithms.push_back(compression_utils::Algorithm::ZLIB);
 #endif
