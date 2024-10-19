@@ -39,25 +39,18 @@ configure_file(
 )
 
 # Install the C binding library
-add_custom_command(TARGET compress_utils_c POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${C_DIST_LIB_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:compress_utils_c> ${C_DIST_LIB_DIR}
-)
-
-# Find all .h files in the bindings/c directory
-file(GLOB C_HEADERS "${C_BINDING_DIR}/*.h")
+install(TARGETS compress_utils_c
+        LIBRARY DESTINATION ${C_DIST_LIB_DIR}
+        ARCHIVE DESTINATION ${C_DIST_LIB_DIR})
 
 # Install the C binding headers
-add_custom_command(TARGET compress_utils_c POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${C_DIST_INCLUDE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${C_BINDING_DIR}/compression_utils.h ${C_DIST_INCLUDE_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h ${C_DIST_INCLUDE_DIR}
-)
+install(FILES ${C_BINDING_DIR}/compression_utils.h
+        ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h
+        DESTINATION ${C_DIST_INCLUDE_DIR})
 
 # Copy the README from bindings/c/README.md to the dist/c directory
-add_custom_command(TARGET compress_utils_c POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy ${C_BINDING_DIR}/README.md ${CMAKE_SOURCE_DIR}/dist/c/README.md
-)
+install(FILES ${C_BINDING_DIR}/README.md
+        DESTINATION ${CMAKE_SOURCE_DIR}/dist/c)
 
 ######### TESTS #########
 

@@ -31,8 +31,8 @@ extern "C" {
  * @param level Compression level (1 = fastest; 10 = smallest)
  * @return int64_t Compressed data size, or -1 if an error occurred
  */
-EXPORT int64_t compress(const uint8_t* data, size_t size, uint8_t** output,
-                        const Algorithm algorithm, int level);
+EXPORT int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output,
+                             const Algorithm algorithm, int level);
 
 /**
  * @brief Decompresses the input data using the specified algorithm
@@ -43,8 +43,8 @@ EXPORT int64_t compress(const uint8_t* data, size_t size, uint8_t** output,
  * @param algorithm Compression algorithm to use
  * @return int64_t Compressed data size, or -1 if an error occurred
  */
-EXPORT int64_t decompress(const uint8_t* data, size_t size, uint8_t** output,
-                          const Algorithm algorithm);
+EXPORT int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output,
+                               const Algorithm algorithm);
 
 #ifdef __cplusplus
 }

@@ -33,11 +33,11 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
     uint8_t* decompressed_data = NULL;
 
     // Compress the data
-    int64_t compressed_size = compress(data, data_size, &compressed_data, algorithm, level);
+    int64_t compressed_size = compress_data(data, data_size, &compressed_data, algorithm, level);
     CU_ASSERT(compressed_size > 0);  // Check that compression was successful
 
     // Decompress the data
-    int64_t decompressed_size = decompress(compressed_data, compressed_size, &decompressed_data, algorithm);
+    int64_t decompressed_size = decompress_data(compressed_data, compressed_size, &decompressed_data, algorithm);
     CU_ASSERT(decompressed_size == data_size);  // Sizes must match
     CU_ASSERT(memcmp(decompressed_data, data, data_size) == 0);  // Data must match the original
 
