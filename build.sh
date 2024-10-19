@@ -139,7 +139,7 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
     done
 else
     # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
 fi
 
 # Move into the build directory
@@ -170,4 +170,4 @@ cd ..
 echo ""
 echo "Sizes of the built libraries:"
 echo "-----------------------------"
-find dist/*/lib/ -type f -exec du -sh {} + | awk '{print $2 ": " $1}'
+find dist/*/lib/ -type f -name "libcompress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'
