@@ -19,11 +19,18 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${C_BINDING_DIR}/build")
 # Add the C binding as a shared library
 add_library(compress_utils_c SHARED compression_utils_c.cpp)
 
+# Add the C binding as a static library
+add_library(compress_utils_c_static STATIC compression_utils_c.cpp)
+
 # Add the include directories for the C binding
 target_include_directories(compress_utils_c PRIVATE ${C_BINDING_DIR})
+target_include_directories(compress_utils_c_static PRIVATE ${C_BINDING_DIR})
 
-# Link the C++ core library (static) with the C binding
+# Link the C++ core library (static) with the C binding shared library
 target_link_libraries(compress_utils_c PRIVATE compress_utils_static)
+
+# Link the C++ core library (static) with the C binding static library
+target_link_libraries(compress_utils_c_static PRIVATE compress_utils_static)
 
 ######### INSTALL #########
 
@@ -38,9 +45,13 @@ configure_file(
     @ONLY
 )
 
-# Install the C binding library
+# Install the C binding shared library
 install(TARGETS compress_utils_c
         LIBRARY DESTINATION ${C_DIST_LIB_DIR}
+        ARCHIVE DESTINATION ${C_DIST_LIB_DIR})
+
+# Install the C binding static library
+install(TARGETS compress_utils_c_static
         ARCHIVE DESTINATION ${C_DIST_LIB_DIR})
 
 # Install the C binding headers

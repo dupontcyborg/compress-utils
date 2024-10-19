@@ -5,6 +5,7 @@
             "includePath": [
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/algorithms/dist/include",
+                "${workspaceFolder}/build/external/CUnit/include",
                 "/usr/local/include"
             ],
             "defines": [

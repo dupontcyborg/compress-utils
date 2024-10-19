@@ -1,8 +1,9 @@
-#include <CUnit/CUnit.h>
+#include "compression_utils.h"
+
 #include <CUnit/Basic.h>
+#include <CUnit/CUnit.h>
 #include <stdlib.h>
 #include <string.h>
-#include "compression_utils.h"
 
 // Sample test data
 #define SAMPLE_SIZE 11
@@ -28,7 +29,8 @@ uint8_t* GenerateRepetitiveData(size_t size_in_bytes, uint8_t value) {
 }
 
 // Helper function to check compression and decompression for a given algorithm
-void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, size_t data_size, int level) {
+void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, size_t data_size,
+                                      int level) {
     uint8_t* compressed_data = NULL;
     uint8_t* decompressed_data = NULL;
 
@@ -37,8 +39,9 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
     CU_ASSERT(compressed_size > 0);  // Check that compression was successful
 
     // Decompress the data
-    int64_t decompressed_size = decompress_data(compressed_data, compressed_size, &decompressed_data, algorithm);
-    CU_ASSERT(decompressed_size == data_size);  // Sizes must match
+    int64_t decompressed_size =
+        decompress_data(compressed_data, compressed_size, &decompressed_data, algorithm);
+    CU_ASSERT(decompressed_size == data_size);                   // Sizes must match
     CU_ASSERT(memcmp(decompressed_data, data, data_size) == 0);  // Data must match the original
 
     free(compressed_data);
@@ -46,35 +49,35 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
 }
 
 // Macro to define tests for multiple algorithms
-#define DEFINE_ALGO_TESTS(ALGO)                                          \
-    void test_compress_decompress_sample_##ALGO(void) {                  \
-        CheckCompressionAndDecompression(ALGO, SAMPLE_DATA, SAMPLE_SIZE, 5); \
-    }                                                                    \
-    void test_compress_decompress_empty_##ALGO(void) {                   \
-        uint8_t empty_data[1] = {0};                                     \
-        CheckCompressionAndDecompression(ALGO, empty_data, 0, 5);        \
-    }                                                                    \
-    void test_compress_decompress_1b_##ALGO(void) {                      \
-        uint8_t small_data[1] = {'A'};                                   \
-        CheckCompressionAndDecompression(ALGO, small_data, 1, 5);        \
-    }                                                                    \
-    void test_compress_decompress_1MB_##ALGO(void) {                     \
-        uint8_t* large_data = GenerateData(1024 * 1024);                 \
-        CU_ASSERT_PTR_NOT_NULL(large_data);                              \
-        CheckCompressionAndDecompression(ALGO, large_data, 1024 * 1024, 5); \
-        free(large_data);                                                \
-    }                                                                    \
-    void test_compress_decompress_32MB_##ALGO(void) {                     \
-        uint8_t* large_data = GenerateData(1024 * 1024 * 32);                 \
-        CU_ASSERT_PTR_NOT_NULL(large_data);                              \
+#define DEFINE_ALGO_TESTS(ALGO)                                                  \
+    void test_compress_decompress_sample_##ALGO(void) {                          \
+        CheckCompressionAndDecompression(ALGO, SAMPLE_DATA, SAMPLE_SIZE, 5);     \
+    }                                                                            \
+    void test_compress_decompress_empty_##ALGO(void) {                           \
+        uint8_t empty_data[1] = {0};                                             \
+        CheckCompressionAndDecompression(ALGO, empty_data, 0, 5);                \
+    }                                                                            \
+    void test_compress_decompress_1b_##ALGO(void) {                              \
+        uint8_t small_data[1] = {'A'};                                           \
+        CheckCompressionAndDecompression(ALGO, small_data, 1, 5);                \
+    }                                                                            \
+    void test_compress_decompress_1MB_##ALGO(void) {                             \
+        uint8_t* large_data = GenerateData(1024 * 1024);                         \
+        CU_ASSERT_PTR_NOT_NULL(large_data);                                      \
+        CheckCompressionAndDecompression(ALGO, large_data, 1024 * 1024, 5);      \
+        free(large_data);                                                        \
+    }                                                                            \
+    void test_compress_decompress_32MB_##ALGO(void) {                            \
+        uint8_t* large_data = GenerateData(1024 * 1024 * 32);                    \
+        CU_ASSERT_PTR_NOT_NULL(large_data);                                      \
         CheckCompressionAndDecompression(ALGO, large_data, 1024 * 1024 * 32, 1); \
-        free(large_data);                                                \
-    }                                                                    \
-    void test_compress_decompress_repetitive_##ALGO(void) {              \
-        uint8_t* repetitive_data = GenerateRepetitiveData(1024 * 1024, 'A'); \
-        CU_ASSERT_PTR_NOT_NULL(repetitive_data);                         \
+        free(large_data);                                                        \
+    }                                                                            \
+    void test_compress_decompress_repetitive_##ALGO(void) {                      \
+        uint8_t* repetitive_data = GenerateRepetitiveData(1024 * 1024, 'A');     \
+        CU_ASSERT_PTR_NOT_NULL(repetitive_data);                                 \
         CheckCompressionAndDecompression(ALGO, repetitive_data, 1024 * 1024, 1); \
-        free(repetitive_data);                                           \
+        free(repetitive_data);                                                   \
     }
 
 // Define tests for each available algorithm (based on preprocessor directives)
@@ -88,26 +91,29 @@ DEFINE_ALGO_TESTS(ZSTD)
 
 #ifdef INCLUDE_ZLIB
 void RegisterZlibTests(CU_pSuite suite) {
-    CU_add_test(suite, "Sample Data Compression/Decompression", test_compress_decompress_sample_ZLIB);
+    CU_add_test(suite, "Sample Data Compression/Decompression",
+                test_compress_decompress_sample_ZLIB);
     CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_ZLIB);
     CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_ZLIB);
     CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_ZLIB);
     CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_ZLIB);
-    CU_add_test(suite, "Repetitive Data Compression/Decompression", test_compress_decompress_repetitive_ZLIB);
+    CU_add_test(suite, "Repetitive Data Compression/Decompression",
+                test_compress_decompress_repetitive_ZLIB);
 }
 #endif
 
 #ifdef INCLUDE_ZSTD
 void RegisterZstdTests(CU_pSuite suite) {
-    CU_add_test(suite, "Sample Data Compression/Decompression", test_compress_decompress_sample_ZSTD);
+    CU_add_test(suite, "Sample Data Compression/Decompression",
+                test_compress_decompress_sample_ZSTD);
     CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_ZSTD);
     CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_ZSTD);
     CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_ZSTD);
     CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_ZSTD);
-    CU_add_test(suite, "Repetitive Data Compression/Decompression", test_compress_decompress_repetitive_ZSTD);
+    CU_add_test(suite, "Repetitive Data Compression/Decompression",
+                test_compress_decompress_repetitive_ZSTD);
 }
 #endif
-
 
 int main() {
     if (CUE_SUCCESS != CU_initialize_registry()) {
