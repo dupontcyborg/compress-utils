@@ -10,9 +10,9 @@
             ],
             "defines": [
                 "INCLUDE_BROTLI",
+                "INCLUDE_XZ",
                 "INCLUDE_ZLIB",
-                "INCLUDE_ZSTD",
-                "INCLUDE_XZ"
+                "INCLUDE_ZSTD"
             ],
             "macFrameworkPath": [
                 "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"

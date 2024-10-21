@@ -29,6 +29,10 @@ inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_
         case compression_utils::Algorithm::BROTLI:
             return "BROTLI";
 #endif
+#ifdef INCLUDE_XZ
+        case compression_utils::Algorithm::XZ:
+            return "XZ";
+#endif
 #ifdef INCLUDE_ZLIB
         case compression_utils::Algorithm::ZLIB:
             return "ZLIB";
@@ -36,10 +40,6 @@ inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_
 #ifdef INCLUDE_ZSTD
         case compression_utils::Algorithm::ZSTD:
             return "ZSTD";
-#endif
-#ifdef INCLUDE_XZ
-        case compression_utils::Algorithm::XZ:
-            return "XZ";
 #endif
         default:
             return "UnknownAlgorithm";

@@ -85,16 +85,16 @@ void CheckCompressionAndDecompression(Algorithm algorithm, const uint8_t* data, 
 DEFINE_ALGO_TESTS(BROTLI)
 #endif
 
+#ifdef INCLUDE_XZ
+DEFINE_ALGO_TESTS(XZ)
+#endif
+
 #ifdef INCLUDE_ZLIB
 DEFINE_ALGO_TESTS(ZLIB)
 #endif
 
 #ifdef INCLUDE_ZSTD
 DEFINE_ALGO_TESTS(ZSTD)
-#endif
-
-#ifdef INCLUDE_XZ
-DEFINE_ALGO_TESTS(XZ)
 #endif
 
 #ifdef INCLUDE_BROTLI

@@ -47,19 +47,17 @@ option(ENABLE_TESTS "Enable building tests" ON)
 
 # Options to include algorithms (set through build.sh)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
+option(INCLUDE_XZ "Include XZ/LZMA compression algorithm" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
-option(INCLUDE_XZ "Include XZ/LZMA compression algorithm" ON)
 
 # Options to build bindings
 option(BUILD_C_BINDINGS "Build C bindings" ON)
 
 ######### INCLUDE DIRECTORIES #########
 
-# Include main src directory
+# Include main src & algorithms' headers
 include_directories(${CMAKE_SOURCE_DIR}/src)
-
-# Include directories for algorithms (dist/include is where headers for each algorithm are stored)
 include_directories(${CMAKE_SOURCE_DIR}/algorithms/dist/include)
 
 # Library directories for algorithms (dist/lib is where the built libraries for each algorithm are stored)
@@ -70,20 +68,18 @@ set(ALGORITHMS_LIB_DIR ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
 # Get all the files from the src/ directory
 file(GLOB_RECURSE ALL_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/*.hpp")
 
-# Remove files from src/algorithms directory
+# Remove files from src/algorithms directory (to be re-added based on algorithm selection)
 file(GLOB_RECURSE ALGO_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/*.hpp")
 list(REMOVE_ITEM ALL_SOURCE_FILES ${ALGO_SOURCE_FILES})
 
-# Create library target (shared)
+# Create library targets (shared & static)
 add_library(compress_utils SHARED)
-
-# Create library target (static, used by bindings)
 add_library(compress_utils_static STATIC)
 
 ######### ALGORITHMS #########
 
 # Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_BROTLI AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB AND NOT INCLUDE_XZ)
+if (NOT INCLUDE_BROTLI AND NOT INCLUDE_XZ AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
@@ -108,6 +104,23 @@ if (INCLUDE_BROTLI)
     list(APPEND ALL_SOURCE_FILES ${BROTLI_SOURCE_FILES})
     # Add Brotli to the enum
     list(APPEND ALGORITHMS_ENUM "BROTLI")
+endif()
+
+# XZ/LZMA Algorithm
+if (INCLUDE_XZ)
+    message(STATUS "Including XZ/LZMA algorithm")
+    # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/xz)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/liblzma.a)
+    # Define preprocessor directive to include XZ/LZMA in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ)
+    # Add source files for XZ
+    file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
+    # Add XZ & LZMA to the enum
+    list(APPEND ALGORITHMS_ENUM "LZMA")
+    list(APPEND ALGORITHMS_ENUM "XZ")
 endif()
 
 # Zstd Algorithm
@@ -142,24 +155,6 @@ if (INCLUDE_ZLIB)
     list(APPEND ALGORITHMS_ENUM "ZLIB")
 endif()
 
-
-# XZ/LZMA Algorithm
-if (INCLUDE_XZ)
-    message(STATUS "Including XZ/LZMA algorithm")
-    # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/xz)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/liblzma.a)
-    # Define preprocessor directive to include XZ/LZMA in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ)
-    # Add source files for XZ
-    file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
-    # Add XZ & LZMA to the enum
-    list(APPEND ALGORITHMS_ENUM "XZ")
-    list(APPEND ALGORITHMS_ENUM "LZMA")
-endif()
-
 # Apply the libraries and definitions to both libraries
 target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
 target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
@@ -170,11 +165,11 @@ target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
 
 ######### MAIN LIBRARY #########
 
-# Add source files to the dynamic and static libraries
+# Add source files to the shared and static libraries
 target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
 target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
 
-# Define COMPRESSION_UTILS_EXPORTS for the dynamic library
+# Define COMPRESSION_UTILS_EXPORTS for the shared library
 target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
 
 ######### INSTALL #########
@@ -184,9 +179,9 @@ set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
 set(STATIC_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib/static")
 set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
 
-# Install libraries (dynamic and static)
+# Install libraries (shared and static)
 install(TARGETS compress_utils compress_utils_static
-    LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Dynamic lib
+    LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Shared lib
     ARCHIVE DESTINATION ${STATIC_LIB_DIR}  # Static lib
 )
 
@@ -201,17 +196,13 @@ install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
         DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
 
 # Copy the dependency libraries to the static directory
-# Only if we are building the static lib
 # TODO - remove this once we fix the `whole-archive` issue
 if (TARGET compress_utils_static)
-    install(FILES ${TARGET_LIBS}
-            DESTINATION ${STATIC_LIB_DIR})
+    install(FILES ${TARGET_LIBS} DESTINATION ${STATIC_LIB_DIR})
 endif()
 
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
-
-# Prepend string with four spaces
 set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
 
 # Configure the header file
@@ -238,8 +229,5 @@ endif()
 if (BUILD_C_BINDINGS)
     message(STATUS "Building C binding...")
     add_subdirectory(bindings/c)
-
-    # Ensure that the C bindings are built after the core C++ library
     add_dependencies(compress_utils_c compress_utils)
 endif()
-
