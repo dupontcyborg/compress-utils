@@ -93,6 +93,10 @@ DEFINE_ALGO_TESTS(ZLIB)
 DEFINE_ALGO_TESTS(ZSTD)
 #endif
 
+#ifdef INCLUDE_XZ
+DEFINE_ALGO_TESTS(XZ)
+#endif
+
 #ifdef INCLUDE_BROTLI
 void RegisterBrotliTests(CU_pSuite suite) {
     CU_add_test(suite, "Sample Data Compression/Decompression",
@@ -132,6 +136,19 @@ void RegisterZstdTests(CU_pSuite suite) {
 }
 #endif
 
+#ifdef INCLUDE_XZ
+void RegisterXZTests(CU_pSuite suite) {
+    CU_add_test(suite, "Sample Data Compression/Decompression",
+                test_compress_decompress_sample_XZ);
+    CU_add_test(suite, "Empty Data Compression/Decompression", test_compress_decompress_empty_XZ);
+    CU_add_test(suite, "1 Byte Compression/Decompression", test_compress_decompress_1b_XZ);
+    CU_add_test(suite, "1MB Data Compression/Decompression", test_compress_decompress_1MB_XZ);
+    CU_add_test(suite, "32MB Data Compression/Decompression", test_compress_decompress_32MB_XZ);
+    CU_add_test(suite, "Repetitive Data Compression/Decompression",
+                test_compress_decompress_repetitive_XZ);
+}
+#endif
+
 int main() {
     if (CUE_SUCCESS != CU_initialize_registry()) {
         return CU_get_error();
@@ -158,6 +175,12 @@ int main() {
     }
 #endif
 
+#ifdef INCLUDE_XZ
+    CU_pSuite pSuiteXZ = CU_add_suite("XZ/LZMA Compression Tests", 0, 0);
+    if (pSuiteXZ != NULL) {
+        RegisterXZTests(pSuiteXZ);
+    }
+#endif
     CU_basic_run_tests();
     CU_cleanup_registry();
     return CU_get_error();

@@ -49,6 +49,7 @@ option(ENABLE_TESTS "Enable building tests" ON)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
+option(INCLUDE_XZ "Include XZ/LZMA compression algorithm" ON)
 
 # Options to build bindings
 option(BUILD_C_BINDINGS "Build C bindings" ON)
@@ -82,7 +83,7 @@ add_library(compress_utils_static STATIC)
 ######### ALGORITHMS #########
 
 # Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_BROTLI AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
+if (NOT INCLUDE_BROTLI AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB AND NOT INCLUDE_XZ)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
@@ -139,6 +140,24 @@ if (INCLUDE_ZLIB)
     list(APPEND ALL_SOURCE_FILES ${ZLIB_SOURCE_FILES})
     # Add zlib to the enum
     list(APPEND ALGORITHMS_ENUM "ZLIB")
+endif()
+
+
+# XZ/LZMA Algorithm
+if (INCLUDE_XZ)
+    message(STATUS "Including XZ/LZMA algorithm")
+    # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/xz)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/liblzma.a)
+    # Define preprocessor directive to include XZ/LZMA in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ)
+    # Add source files for XZ
+    file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
+    # Add XZ & LZMA to the enum
+    list(APPEND ALGORITHMS_ENUM "XZ")
+    list(APPEND ALGORITHMS_ENUM "LZMA")
 endif()
 
 # Apply the libraries and definitions to both libraries

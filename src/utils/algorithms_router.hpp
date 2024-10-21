@@ -3,6 +3,7 @@
 
 #include "algorithms.hpp"
 #include "algorithms/brotli/brotli.hpp"
+#include "algorithms/xz/xz.hpp"
 #include "algorithms/zlib/zlib.hpp"
 #include "algorithms/zstd/zstd.hpp"
 
@@ -39,6 +40,12 @@ CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
 #ifdef INCLUDE_ZSTD
         case Algorithm::ZSTD:
             return {zstd::Compress, zstd::Decompress};
+#endif
+#ifdef INCLUDE_XZ
+        case Algorithm::XZ:
+            return {xz::Compress, xz::Decompress};
+        case Algorithm::LZMA:
+            return {xz::Compress, xz::Decompress};
 #endif
         default:
             throw std::invalid_argument("Unsupported compression algorithm");

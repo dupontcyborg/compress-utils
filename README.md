@@ -8,8 +8,8 @@
 
 ## Features
 
-- [2+ built-in data compression algorithms](#built-in-compression-algorithms)
-- [2+ languages supported](#supported-languages)
+- [4 built-in data compression algorithms](#built-in-compression-algorithms)
+- [2 languages supported](#supported-languages)
 - [Standardized API](#usage) across all algorithms & languages
 - Portable & cross-platform (Linux, macOS, Windows, WASM)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
@@ -20,9 +20,10 @@
 
 | Algorithm | Description | Benchmarks |
 |:---:|---|:---:|
-| [brotli](https://github.com/google/brotli.git) | General-purpose with very high compression rates | [Benchmarks](#benchmarks) |
+| [brotli](https://github.com/google/brotli.git) | General-purpose with high-to-very-high compression rates | [Benchmarks](#benchmarks) |
 | [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) | [Benchmarks](#benchmarks) |
 | [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm | [Benchmarks](#benchmarks) |
+| [xz/lzma](https://github.com/tukaani-project/xz.git) | Very-high compression ratio algorithm | [Benchmarks](#benchmarks) |
 
 ## Supported Languages
 

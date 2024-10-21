@@ -19,7 +19,7 @@ usage() {
     echo "  --skip-tests               Skip building and running tests."
     echo "  --debug                    Build the project in debug mode."
     echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
-    echo "                             Available algorithms: zstd, zlib"
+    echo "                             Available algorithms: brotli, zstd, zlib, xz (lzma)"
     echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
     echo "                             Available languages: c, js, python"
     echo "  -h, --help                 Show this help message and exit."
@@ -91,18 +91,24 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF -DINCLUDE_BROTLI=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=ON"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
             brotli)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON"
                 ;;
+            lzma)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
+                ;;
             zstd)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON"
                 ;;
             zlib)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZLIB=ON"
+                ;;
+            xz)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
                 ;;
             *)
                 echo "Unknown algorithm: $algo"
@@ -112,7 +118,7 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     done
 else
     # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON -DINCLUDE_BROTLI=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON -DINCLUDE_BROTLI=ON -DINCLUDE_XZ=ON"
 fi
 
 # Handle language bindings
