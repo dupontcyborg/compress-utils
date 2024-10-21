@@ -19,7 +19,11 @@ typedef enum {
     ZLIB,
 #endif
 #ifdef INCLUDE_ZSTD
-    ZSTD
+    ZSTD,
+#endif
+#ifdef INCLUDE_XZ
+    XZ,
+    LZMA
 #endif
 } Algorithm;
 
