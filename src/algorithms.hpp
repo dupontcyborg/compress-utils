@@ -13,15 +13,15 @@ enum class Algorithm {
 #ifdef INCLUDE_BROTLI
     BROTLI,
 #endif
+#ifdef INCLUDE_XZ
+    LZMA,
+    XZ,
+#endif
 #ifdef INCLUDE_ZLIB
     ZLIB,
 #endif
 #ifdef INCLUDE_ZSTD
-    ZSTD,
-#endif
-#ifdef INCLUDE_XZ
-    XZ,
-    LZMA
+    ZSTD
 #endif
 };
 

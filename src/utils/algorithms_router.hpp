@@ -33,6 +33,12 @@ CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
         case Algorithm::BROTLI:
             return {brotli::Compress, brotli::Decompress};
 #endif
+#ifdef INCLUDE_XZ
+        case Algorithm::XZ:
+            return {xz::Compress, xz::Decompress};
+        case Algorithm::LZMA:
+            return {xz::Compress, xz::Decompress};
+#endif
 #ifdef INCLUDE_ZLIB
         case Algorithm::ZLIB:
             return {zlib::Compress, zlib::Decompress};
@@ -40,12 +46,6 @@ CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
 #ifdef INCLUDE_ZSTD
         case Algorithm::ZSTD:
             return {zstd::Compress, zstd::Decompress};
-#endif
-#ifdef INCLUDE_XZ
-        case Algorithm::XZ:
-            return {xz::Compress, xz::Decompress};
-        case Algorithm::LZMA:
-            return {xz::Compress, xz::Decompress};
 #endif
         default:
             throw std::invalid_argument("Unsupported compression algorithm");
