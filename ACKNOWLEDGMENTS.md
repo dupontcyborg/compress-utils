@@ -19,3 +19,9 @@ This project would not be possible without the remarkable work of other engineer
 - **Repository**: https://github.com/facebook/zstd
 - **License**: BSD 3-Clause License
 - **Authors**: Yann Collet and contributors
+
+## XZ Utils
+
+- **Repository**: https://github.com/tukaani-project/xz
+- **License**: BSD 0-Clause License
+- **Authors**: Lasse Collin, Tukaani and contributors
