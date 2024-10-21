@@ -7,6 +7,7 @@ BUILD_DIR="build"
 CLEAN_BUILD=false
 SKIP_TESTS=false
 BUILD_MODE="Release"
+CORES=1
 ALGORITHMS=()
 LANGUAGES=()
 
@@ -22,6 +23,7 @@ usage() {
     echo "                             Available algorithms: brotli, zstd, zlib, xz (lzma)"
     echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
     echo "                             Available languages: c, js, python"
+    echo "  --cores=N                  Number of cores to use for building. Default: 1"
     echo "  -h, --help                 Show this help message and exit."
     echo ""
     echo "Examples:"
@@ -47,6 +49,9 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --languages=*)
             IFS=',' read -ra LANGUAGES <<< "${1#*=}"
+            ;;
+        --cores=*)
+            CORES="${1#*=}"
             ;;
         -h|--help)
             usage
@@ -91,7 +96,7 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
@@ -101,14 +106,14 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
             lzma)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
                 ;;
+            xz)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
+                ;;
             zstd)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON"
                 ;;
             zlib)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZLIB=ON"
-                ;;
-            xz)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
                 ;;
             *)
                 echo "Unknown algorithm: $algo"
@@ -118,7 +123,7 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     done
 else
     # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON -DINCLUDE_BROTLI=ON -DINCLUDE_XZ=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
 fi
 
 # Handle language bindings
@@ -158,9 +163,9 @@ cd "$BUILD_DIR"
 echo "Running CMake with options: $CMAKE_OPTIONS"
 cmake .. $CMAKE_OPTIONS
 
-# Build the project
-echo "Building the project..."
-cmake --build .
+# Build the project with the specified number of cores
+echo "Building the project with $CORES cores..."
+cmake --build . -j"$CORES"
 
 # Install the project (this will trigger the CMake install() commands)
 echo "Installing the project..."
