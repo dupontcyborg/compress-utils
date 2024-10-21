@@ -64,11 +64,13 @@ target_compile_definitions(run_tests_c PRIVATE
     $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
+    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
 )
 target_compile_definitions(run_tests_c_static PRIVATE
     $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
+    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
 )
 
 # Add test to CTest

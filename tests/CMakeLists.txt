@@ -67,11 +67,13 @@ target_compile_definitions(run_tests PRIVATE
     $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
+    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
 )
 target_compile_definitions(run_tests_static PRIVATE
     $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
+    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
 )
 
 # Enable testing and register the tests

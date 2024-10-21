@@ -37,6 +37,10 @@ inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_
         case compression_utils::Algorithm::ZSTD:
             return "ZSTD";
 #endif
+#ifdef INCLUDE_XZ
+        case compression_utils::Algorithm::XZ:
+            return "XZ";
+#endif
         default:
             return "UnknownAlgorithm";
     }
@@ -53,6 +57,9 @@ inline std::vector<compression_utils::Algorithm> GetAlgorithms() {
 #endif
 #ifdef INCLUDE_ZSTD
     algorithms.push_back(compression_utils::Algorithm::ZSTD);
+#endif
+#ifdef INCLUDE_XZ
+    algorithms.push_back(compression_utils::Algorithm::XZ);
 #endif
     // Add more algorithms here as needed in the future
     return algorithms;

@@ -102,7 +102,7 @@ TEST_P(FunctionalCompressorTest, CompressCompressedData) {
 }
 
 // Conditionally instantiate the test suite only if there are algorithms to test
-#if defined(INCLUDE_BROTLI) || defined(INCLUDE_ZLIB) || defined(INCLUDE_ZSTD)  // Add future algorithms here
+#if defined(INCLUDE_BROTLI) || defined(INCLUDE_ZLIB) || defined(INCLUDE_ZSTD) || defined(INCLUDE_XZ)
 INSTANTIATE_TEST_SUITE_P(
     FunctionalCompressionTests,  // Test suite name
     FunctionalCompressorTest,
