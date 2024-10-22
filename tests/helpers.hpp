@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <random>
+#include <vector>
 
 // Helper function to generate random data
 inline std::vector<uint8_t> GenerateData(size_t size_in_bytes) {
@@ -23,7 +24,8 @@ inline std::vector<uint8_t> GenerateRepetitiveData(size_t size_in_bytes, uint8_t
 }
 
 // Helper function to generate test names based on the Algorithm enum
-inline std::string AlgorithmToString(const ::testing::TestParamInfo<compression_utils::Algorithm>& info) {
+inline std::string AlgorithmToString(
+    const ::testing::TestParamInfo<compression_utils::Algorithm>& info) {
     switch (info.param) {
 #ifdef INCLUDE_BROTLI
         case compression_utils::Algorithm::BROTLI:

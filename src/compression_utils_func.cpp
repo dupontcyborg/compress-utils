@@ -1,7 +1,9 @@
 #include "compression_utils_func.hpp"
 #include "utils/algorithms_router.hpp"
 
+#include <span>
 #include <stdexcept>
+#include <vector>
 
 // TODO (nico) Make the functions auto-default to ZSTD?
 

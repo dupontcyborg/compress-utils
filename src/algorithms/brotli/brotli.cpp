@@ -3,6 +3,7 @@
 #include "brotli/encode.h"
 #include "utils/constants.hpp"
 
+#include <span>
 #include <stdexcept>
 #include <vector>
 

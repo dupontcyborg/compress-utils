@@ -2,6 +2,7 @@
 #include "zstd.hpp"
 #include "zstd/zstd.h"
 
+#include <span>
 #include <stdexcept>
 #include <vector>
 
