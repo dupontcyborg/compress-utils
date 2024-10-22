@@ -93,6 +93,9 @@ if (INCLUDE_BROTLI)
     message(STATUS "Including Brotli algorithm")
     # Add the subdirectory for Brotli which contains its own CMakeLists.txt
     add_subdirectory(algorithms/brotli)
+    # Ensure that Brotli is built before compress_utils
+    add_dependencies(compress_utils brotli_external)
+    add_dependencies(compress_utils_static brotli_external)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlicommon.a)
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libbrotlienc.a)
@@ -111,6 +114,9 @@ if (INCLUDE_XZ)
     message(STATUS "Including XZ/LZMA algorithm")
     # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
     add_subdirectory(algorithms/xz)
+    # Ensure that xz is built before compress_utils
+    add_dependencies(compress_utils xz_external)
+    add_dependencies(compress_utils_static xz_external)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/liblzma.a)
     # Define preprocessor directive to include XZ/LZMA in the code
@@ -128,6 +134,9 @@ if (INCLUDE_ZSTD)
     message(STATUS "Including Zstd algorithm")
     # Add the subdirectory for zstd which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zstd)
+    # Ensure that Zstd is built before compress_utils
+    add_dependencies(compress_utils zstd_external)
+    add_dependencies(compress_utils_static zstd_external)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libzstd.a)
     # Define preprocessor directive to include Zstd in the code
@@ -144,6 +153,9 @@ if (INCLUDE_ZLIB)
     message(STATUS "Including zlib algorithm")
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
+    # Ensure that zlib is built before compress_utils
+    add_dependencies(compress_utils zlib_external)
+    add_dependencies(compress_utils_static zlib_external)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/libz.a)
     # Define preprocessor directive to include zlib in the code
