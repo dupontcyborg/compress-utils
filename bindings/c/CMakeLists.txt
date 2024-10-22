@@ -28,6 +28,13 @@ target_link_libraries(compress_utils_c_static PRIVATE compress_utils_static)
 set(C_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/c/lib")
 set(C_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/c/include/compression_utils_c")
 
+# Configure the header file
+configure_file(
+    ${C_BINDING_DIR}/algorithms.h.in
+    ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h
+    @ONLY
+)
+
 # Install libraries (shared and static) and headers
 install(TARGETS compress_utils_c compress_utils_c_static
         LIBRARY DESTINATION ${C_DIST_LIB_DIR}
