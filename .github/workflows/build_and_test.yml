@@ -29,6 +29,14 @@ jobs:
     - name: Build All Languages
       run: cmake --build build --config Release -j 4
 
+    # DEBUG
+    - name: List Build Directory Contents
+      run: ls -R build  # List the contents of the build directory recursively
+
+    - name: List bindings/c/build Directory Contents
+      run: ls -R bindings/c/build || true  # In case the directory doesn't exist, it will not fail
+    # END DEBUG
+
     - name: Install Bindings
       run: cmake --install build
 
