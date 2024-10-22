@@ -7,7 +7,7 @@ namespace compression_utils {
  * @brief Enum class that defines the available compression algorithms
  */
 enum class Algorithm {
-@ALGORITHM_LIST@
+@ALGORITHM_LIST@ // NOLINT
 };
 
 }  // namespace compression_utils

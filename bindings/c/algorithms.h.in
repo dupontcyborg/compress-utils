@@ -9,7 +9,7 @@ extern "C" {
  * @brief Enum class that defines the available compression algorithms
  */
 typedef enum {
-@ALGORITHM_LIST@
+@ALGORITHM_LIST@ // NOLINT
 } Algorithm;
 
 #ifdef __cplusplus
