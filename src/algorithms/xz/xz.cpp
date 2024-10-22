@@ -3,7 +3,6 @@
 #include "xz/lzma.h"
 
 #include <stdexcept>
-#include <vector>
 
 namespace compression_utils::xz {
 

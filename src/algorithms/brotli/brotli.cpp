@@ -4,7 +4,6 @@
 #include "utils/constants.hpp"
 
 #include <stdexcept>
-#include <vector>
 
 namespace compression_utils::brotli {
 
