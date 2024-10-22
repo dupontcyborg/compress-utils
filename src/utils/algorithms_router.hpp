@@ -9,6 +9,8 @@
 
 #include <functional>
 #include <span>
+#include <stdexcept>
+#include <vector>
 
 namespace compression_utils::internal {
 

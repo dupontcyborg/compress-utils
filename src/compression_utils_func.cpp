@@ -1,6 +1,8 @@
 #include "compression_utils_func.hpp"
 #include "utils/algorithms_router.hpp"
 
+#include <stdexcept>
+
 // TODO (nico) Make the functions auto-default to ZSTD?
 
 namespace compression_utils {

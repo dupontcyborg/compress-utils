@@ -2,6 +2,7 @@
 #include "helpers.hpp"
 
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 const std::vector<uint8_t> SAMPLE_DATA = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
 
