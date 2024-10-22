@@ -27,7 +27,7 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Install Bindings
-      run: cmake --install build --prefix dist/${{ matrix.os }}
+      run: cmake --install build
 
     - name: Test All Bindings & Compressors
       run: ctest --output-on-failure
