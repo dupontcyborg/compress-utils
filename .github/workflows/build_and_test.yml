@@ -1,0 +1,94 @@
+name: Build and Package Language Bindings
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake for All Language Bindings & All Compressors
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build All Languages
+      run: cmake --build build --config Release
+
+    - name: Install Bindings
+      run: cmake --install build
+
+    - name: Test All Bindings & Compressors
+      run: ctest --output-on-failure
+
+    - name: Zip C Bindings
+      run: |
+        cd dist/${{ matrix.os }}
+        zip -r ../../c_bindings_${{ matrix.os }}.zip c
+
+    - name: Zip C++ Bindings
+      run: |
+        cd dist/${{ matrix.os }}
+        zip -r ../../cpp_bindings_${{ matrix.os }}.zip cpp
+
+    - name: Upload C Bindings
+      uses: actions/upload-artifact@v3
+      with:
+        name: c-bindings-${{ matrix.os }}
+        path: c_bindings_${{ matrix.os }}.zip
+
+    - name: Upload C++ Bindings
+      uses: actions/upload-artifact@v3
+      with:
+        name: cpp-bindings-${{ matrix.os }}
+        path: cpp_bindings_${{ matrix.os }}.zip
+
+  combine:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download and Unzip C Bindings from All OSes
+      run: |
+        mkdir -p dist/c
+        for os in macos-latest windows-latest ubuntu-latest; do
+          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/c-bindings-${os}/zip # Download each OS-specific artifact
+          unzip -o c_bindings_${os}.zip -d dist/c # Unzip into the same dist/c directory
+        done
+
+    - name: Download and Unzip C++ Bindings from All OSes
+      run: |
+        mkdir -p dist/cpp
+        for os in macos-latest windows-latest ubuntu-latest; do
+          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/cpp-bindings-${os}/zip # Download each OS-specific artifact
+          unzip -o cpp_bindings_${os}.zip -d dist/cpp # Unzip into the same dist/cpp directory
+        done
+
+    - name: Zip All C Bindings Together
+      run: zip -r c_bindings.zip dist/c
+
+    - name: Zip All C++ Bindings Together
+      run: zip -r cpp_bindings.zip dist/cpp
+
+    - name: Upload Unified C Bindings
+      uses: actions/upload-artifact@v3
+      with:
+        name: unified-c-bindings
+        path: c_bindings.zip
+
+    - name: Upload Unified C++ Bindings
+      uses: actions/upload-artifact@v3
+      with:
+        name: unified-cpp-bindings
+        path: cpp_bindings.zip

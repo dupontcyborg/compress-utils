@@ -3,6 +3,7 @@
 #include "compression_utils.h"
 #include "compression_utils_func.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <span>

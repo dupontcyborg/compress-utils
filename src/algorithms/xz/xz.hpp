@@ -3,6 +3,7 @@
 
 #ifdef INCLUDE_XZ
 
+#include <cstdint>
 #include <span>
 
 namespace compression_utils::xz {

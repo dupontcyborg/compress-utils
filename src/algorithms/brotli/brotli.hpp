@@ -3,6 +3,7 @@
 
 #ifdef INCLUDE_BROTLI
 
+#include <cstdint>
 #include <span>
 
 namespace compression_utils::brotli {

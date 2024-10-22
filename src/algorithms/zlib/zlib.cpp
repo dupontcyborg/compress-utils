@@ -2,7 +2,6 @@
 #include "zlib.h"
 #include "zlib.hpp"
 
-#include <span>
 #include <stdexcept>
 #include <vector>
 

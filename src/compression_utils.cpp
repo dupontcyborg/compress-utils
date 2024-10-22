@@ -1,8 +1,6 @@
 #include "compression_utils.hpp"
 #include "compression_utils_func.hpp"
 
-#include <vector>
-
 namespace compression_utils {
 
 Compressor::Compressor(const Algorithm algorithm) : algorithm_(algorithm) {}

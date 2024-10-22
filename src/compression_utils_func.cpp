@@ -3,7 +3,6 @@
 
 #include <span>
 #include <stdexcept>
-#include <vector>
 
 // TODO (nico) Make the functions auto-default to ZSTD?
 

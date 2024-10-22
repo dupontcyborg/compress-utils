@@ -3,6 +3,7 @@
 
 #include "algorithms.hpp"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <random>
 #include <vector>

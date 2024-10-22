@@ -2,7 +2,6 @@
 #include "xz.hpp"
 #include "xz/lzma.h"
 
-#include <span>
 #include <stdexcept>
 #include <vector>
 

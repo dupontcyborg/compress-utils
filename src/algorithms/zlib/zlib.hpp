@@ -3,6 +3,7 @@
 
 #ifdef INCLUDE_ZLIB
 
+#include <cstdint>
 #include <span>
 
 namespace compression_utils::zlib {
