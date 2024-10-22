@@ -24,7 +24,7 @@ jobs:
         cmake .. -DCMAKE_BUILD_TYPE=Release
 
     - name: Build All Languages
-      run: cmake --build build --config Release
+      run: cmake --build build --config Release -j 4
 
     - name: Install Bindings
       run: cmake --install build
