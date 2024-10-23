@@ -77,6 +77,15 @@ if [ "$CLEAN_BUILD" = true ]; then
 
     # Remove the build directories under `algorithms/`
     rm -rf algorithms/*/build
+
+    # Remove the build directories under `bindings/`
+    rm -rf bindings/*/build
+
+    # Remove the `dist/` directory
+    rm -rf dist
+
+    # Remove the `algorithms/dist` directory
+    rm -rf algorithms/dist
 fi
 
 # Create the build directory if it doesn't exist
