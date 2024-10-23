@@ -15,11 +15,22 @@ ExternalProject_Add(
     INSTALL_COMMAND ""
 )
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(GTEST_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(GTEST_LIB "gtest.lib")
+    set(GTEST_LIB_MAIN "gtest_main.lib")
+else()
+    set(GTEST_LIB_DIR "")
+    set(GTEST_LIB "libgtest.a")
+    set(GTEST_LIB_MAIN "libgtest_main.a")
+endif()
+
 # Get source and binary directories for GoogleTest
 ExternalProject_Get_Property(googletest source_dir)
 ExternalProject_Get_Property(googletest binary_dir)
 set(GTEST_INCLUDE_DIRS ${source_dir}/googletest/include)
-set(GTEST_LIBS ${binary_dir}/lib/libgtest.a ${binary_dir}/lib/libgtest_main.a)
+set(GTEST_LIBS ${binary_dir}/lib/${GTEST_LIB_DIR}${GTEST_LIB} ${binary_dir}/lib/${GTEST_LIB_DIR}${GTEST_LIB_MAIN})
 
 ######### TEST SETUP #########
 

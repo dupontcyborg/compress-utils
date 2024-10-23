@@ -35,11 +35,20 @@ add_executable(run_tests_c_static ${TEST_FILES})
 target_include_directories(run_tests_c PRIVATE ${CUNIT_INCLUDE_DIR} "../")
 target_include_directories(run_tests_c_static PRIVATE ${CUNIT_INCLUDE_DIR} "../")
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(CUNIT_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(CUNIT_LIB "cunit.lib")
+else()
+    set(CUNIT_LIB_DIR "")
+    set(CUNIT_LIB "libcunit.a")
+endif()
+
 # Link libraries to both executables
 add_dependencies(run_tests_c CUnit compress_utils_c)
-target_link_libraries(run_tests_c PRIVATE ${CUNIT_LIBRARY_DIR}/libcunit.a compress_utils_c)
+target_link_libraries(run_tests_c PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB_DIR}${CUNIT_LIB} compress_utils_c)
 add_dependencies(run_tests_c_static CUnit compress_utils_c_static)
-target_link_libraries(run_tests_c_static PRIVATE ${CUNIT_LIBRARY_DIR}/libcunit.a compress_utils_c_static)
+target_link_libraries(run_tests_c_static PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB_DIR}${CUNIT_LIB} compress_utils_c_static)
 
 # Set output directories for test executables
 set(TARGET_PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}

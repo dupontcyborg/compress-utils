@@ -40,12 +40,25 @@ ExternalProject_Add(
 
 ######### INSTALL #########
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(BROTLI_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(BROTLI_LIB_ENC "brotlienc.lib")
+    set(BROTLI_LIB_DEC "brotlidec.lib")
+    set(BROTLI_LIB_COMMON "brotlicommon.lib")
+else()
+    set(BROTLI_LIB_DIR "")
+    set(BROTLI_LIB_ENC "libbrotlienc.a")
+    set(BROTLI_LIB_DEC "libbrotlidec.a")
+    set(BROTLI_LIB_COMMON "libbrotlicommon.a")
+endif()
+
 # Copy built libraries and headers to dist directory
 ExternalProject_Add_Step(brotli_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E make_directory ${BROTLI_INSTALL_DIR_LIB} ${BROTLI_INSTALL_DIR_INCLUDE}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/libbrotlidec.a ${BROTLI_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/libbrotlienc.a ${BROTLI_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/libbrotlicommon.a ${BROTLI_INSTALL_DIR_LIB}
+    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB}
+    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB}
+    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${BROTLI_BUILD_DIR}/src/brotli_external/c/include/brotli ${BROTLI_INSTALL_DIR_INCLUDE}
     DEPENDEES install
 )
@@ -53,7 +66,7 @@ ExternalProject_Add_Step(brotli_external copy_artifacts
 # Create an imported library target for Brotli
 add_library(brotli_library STATIC IMPORTED)
 set_target_properties(brotli_library PROPERTIES
-    IMPORTED_LOCATION ${BROTLI_INSTALL_DIR_LIB}/libbrotlienc.a
+    IMPORTED_LOCATION ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_ENC}
     INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INSTALL_DIR_INCLUDE}
 )
 
