@@ -95,7 +95,7 @@ if (WIN32)
     set(BROTLI_LIB_COMMON "brotlicommon.lib")
     set(XZ_LIB "lzma.lib")
     set(ZLIB_LIB "zlib.lib")
-    set(ZSTD_LIB libzstd.lib)
+    set(ZSTD_LIB "zstd_static.lib")
 
 else()
     set(BROTLI_LIB_ENC "libbrotlienc.a")

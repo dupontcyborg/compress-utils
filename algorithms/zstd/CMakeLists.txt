@@ -46,7 +46,7 @@ ExternalProject_Add(
 # Handle Windows-specific library naming
 if (WIN32)
     set(ZSTD_LIB_DIR ${CMAKE_BUILD_TYPE}/)
-    set(ZSTD_LIB libzstd.lib)
+    set(ZSTD_LIB "zstd_static.lib")
 else()
     set(ZSTD_LIB_DIR "")
     set(ZSTD_LIB "libzstd.a")
