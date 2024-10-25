@@ -98,18 +98,24 @@ jobs:
 
     - name: Unzip C Bindings from macOS
       run: |
-        unzip -j -o compression-utils-c/macos/c-bindings-macos-latest.zip -d compression-utils-c/macos
+        unzip -o compression-utils-c/macos/c-bindings-macos-latest.zip -d compression-utils-c/macos
+        mv compression-utils-c/macos/c/* compression-utils-c/macos/
+        rm -r compression-utils-c/macos/c
         rm compression-utils-c/macos/c-bindings-macos-latest.zip
 
     - name: Unzip C Bindings from Ubuntu
       run: |
-        unzip -j -o compression-utils-c/linux/c-bindings-ubuntu-latest.zip -d compression-utils-c/linux
+        unzip -o compression-utils-c/linux/c-bindings-ubuntu-latest.zip -d compression-utils-c/linux
+        mv compression-utils-c/linux/c/* compression-utils-c/linux/
+        rm -r compression-utils-c/linux/c
         rm compression-utils-c/linux/c-bindings-ubuntu-latest.zip
       
     # Skipping Windows for now
     # - name: Unzip C Bindings from Windows
     #   run: |
-    #     unzip -j -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+    #     unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+    #     mv compression-utils-c/windows/c/* compression-utils-c/windows/
+    #     rm -r compression-utils-c/windows/c
     #     rm compression-utils-c/windows/c-bindings-windows-latest.zip
 
     ##### C++ Bindings #####
@@ -139,18 +145,24 @@ jobs:
 
     - name: Unzip C++ Bindings from macOS
       run: |
-        unzip -j -o compression-utils-cpp/macos/cpp-bindings-macos-latest.zip -d compression-utils-cpp/macos
+        unzip -o compression-utils-cpp/macos/cpp-bindings-macos-latest.zip -d compression-utils-cpp/macos
+        mv compression-utils-cpp/macos/cpp/* compression-utils-cpp/macos/
+        rm -r compression-utils-cpp/macos/cpp
         rm compression-utils-cpp/macos/cpp-bindings-macos-latest.zip
 
     - name: Unzip C++ Bindings from Ubuntu
       run: |
-        unzip -j -o compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip -d compression-utils-cpp/linux
+        unzip -o compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip -d compression-utils-cpp/linux
+        mv compression-utils-cpp/linux/cpp/* compression-utils-cpp/linux/
+        rm -r compression-utils-cpp/linux/cpp
         rm compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip
       
     # Skipping Windows for now
     # - name: Unzip C++ Bindings from Windows
     #   run: |
-    #     unzip -j -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
+    #     unzip -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
+    #     mv compression-utils-cpp/windows/cpp/* compression-utils-cpp/windows/
+    #     rm -r compression-utils-cpp/windows/cpp
     #     rm compression-utils-cpp/windows/cpp-bindings-windows-latest.zip
 
     ##### Merge All Bindings #####
