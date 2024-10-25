@@ -41,24 +41,24 @@ jobs:
     - name: Zip C Bindings
       run: |
         cd dist
-        zip -r c_bindings_${{ matrix.os }}.zip c
+        zip -r c-bindings-${{ matrix.os }}.zip c
 
     - name: Zip C++ Bindings
       run: |
         cd dist
-        zip -r cpp_bindings_${{ matrix.os }}.zip cpp
+        zip -r cpp-bindings-${{ matrix.os }}.zip cpp
 
     - name: Upload C Bindings
       uses: actions/upload-artifact@v3
       with:
         name: c-bindings-${{ matrix.os }}
-        path: dist/c_bindings_${{ matrix.os }}.zip
+        path: dist/c-bindings-${{ matrix.os }}.zip
 
     - name: Upload C++ Bindings
       uses: actions/upload-artifact@v3
       with:
         name: cpp-bindings-${{ matrix.os }}
-        path: dist/cpp_bindings_${{ matrix.os }}.zip
+        path: dist/cpp-bindings-${{ matrix.os }}.zip
 
   combine:
     needs: build
@@ -68,33 +68,35 @@ jobs:
     - name: Download and Unzip C Bindings from All OSes
       run: |
         mkdir -p dist/c
-        for os in macos-latest windows-latest ubuntu-latest; do
+        # for os in macos-latest windows-latest ubuntu-latest; do
+        for os in macos-latest ubuntu-latest; do
           curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/c-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o c_bindings_${os}.zip -d dist/c # Unzip into the same dist/c directory
+          unzip -o c-bindings-${os}.zip -d dist/c # Unzip into the same dist/c directory
         done
 
     - name: Download and Unzip C++ Bindings from All OSes
       run: |
         mkdir -p dist/cpp
-        for os in macos-latest windows-latest ubuntu-latest; do
+        # for os in macos-latest windows-latest ubuntu-latest; do
+        for os in macos-latest ubuntu-latest; do
           curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/cpp-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o cpp_bindings_${os}.zip -d dist/cpp # Unzip into the same dist/cpp directory
+          unzip -o cpp-bindings-${os}.zip -d dist/cpp # Unzip into the same dist/cpp directory
         done
 
     - name: Zip All C Bindings Together
-      run: zip -r compression_utils_c.zip dist/c
+      run: zip -r compression-utils-c.zip dist/c
 
     - name: Zip All C++ Bindings Together
-      run: zip -r compression_utils_cpp.zip dist/cpp
+      run: zip -r compression-utils-cpp.zip dist/cpp
 
     - name: Upload Unified C Bindings
       uses: actions/upload-artifact@v3
       with:
-        name: compression_utils_c
-        path: compression_utils_c.zip
+        name: compression-utils-c
+        path: compression-utils-c.zip
 
     - name: Upload Unified C++ Bindings
       uses: actions/upload-artifact@v3
       with:
-        name: compression_utils_cpp
-        path: compression_utils_cpp.zip
+        name: compression-utils-cpp
+        path: compression-utils-cpp.zip
