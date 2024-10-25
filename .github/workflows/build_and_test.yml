@@ -49,16 +49,18 @@ jobs:
         zip -r cpp-bindings-${{ matrix.os }}.zip cpp
 
     - name: Upload C Bindings
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: c-bindings-${{ matrix.os }}
         path: dist/c-bindings-${{ matrix.os }}.zip
+        retention-days: 1  # These artifacts are only used for the `combine` step
 
     - name: Upload C++ Bindings
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cpp-bindings-${{ matrix.os }}
         path: dist/cpp-bindings-${{ matrix.os }}.zip
+        retention-days: 1  # These artifacts are only used for the `combine` step
 
   combine:
     needs: build
@@ -68,104 +70,104 @@ jobs:
 
    ##### C Bindings #####
 
-    - name: Download and Unzip C Bindings from All OSes
-      # run: mkdir -p dist/c/macos dist/c/linux dist/c/windows
-      run: mkdir -p dist/c/macos dist/c/linux
+    - name: Create Directory for C Bindings
+      # run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
+      run: mkdir -p compression-utils-c/macos compression-utils-c/linux
 
     - name: Download C Bindings from macOS
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: c-bindings-macos-latest
-        path: dist/c/macos
+        path: compression-utils-c/macos
 
     - name: Download C Bindings from Ubuntu
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: c-bindings-ubuntu-latest
-        path: dist/c/linux
+        path: compression-utils-c/linux
 
     # Skipping Windows for now
     # - name: Download C Bindings from Windows
-    #   uses: actions/download-artifact@v3
+    #   uses: actions/download-artifact@v4
     #   with:
     #     name: c-bindings-windows-latest
-    #     path: dist/c/windows
+    #     path: compression-utils-c/windows
 
     - name: Unzip C Bindings from macOS
       run: |
-        unzip -o dist/c/macos/c-bindings-macos-latest.zip -d dist/c/macos
-        rm dist/c/macos/c-bindings-macos-latest.zip
+        unzip -o compression-utils-c/macos/c-bindings-macos-latest.zip -d compression-utils-c/macos
+        rm compression-utils-c/macos/c-bindings-macos-latest.zip
 
     - name: Unzip C Bindings from Ubuntu
       run: |
-        unzip -o dist/c/linux/c-bindings-ubuntu-latest.zip -d dist/c/linux
-        rm dist/c/linux/c-bindings-ubuntu-latest.zip
+        unzip -o compression-utils-c/linux/c-bindings-ubuntu-latest.zip -d compression-utils-c/linux
+        rm compression-utils-c/linux/c-bindings-ubuntu-latest.zip
       
     # Skipping Windows for now
     # - name: Unzip C Bindings from Windows
     #   run: |
-    #     unzip -o dist/c/windows/c-bindings-windows-latest.zip -d dist/c/windows
-    #     rm dist/c/windows/c-bindings-windows-latest.zip
+    #     unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+    #     rm compression-utils-c/windows/c-bindings-windows-latest.zip
 
-   ##### C++ Bindings #####
+    ##### C++ Bindings #####
 
     - name: Download and Unzip C++ Bindings from All OSes
-      # run: mkdir -p dist/c/macos dist/c/linux dist/c/windows
-      run: mkdir -p dist/cpp/macos dist/c/linux
+      # run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux compression-utils-cpp/windows
+      run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux
 
     - name: Download C++ Bindings from macOS
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: cpp-bindings-macos-latest
-        path: dist/cpp/macos
+        path: compression-utils-cpp/macos
 
     - name: Download C++ Bindings from Ubuntu
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: cpp-bindings-ubuntu-latest
-        path: dist/cpp/linux
+        path: compression-utils-cpp/linux
 
     # Skipping Windows for now
     # - name: Download C++ Bindings from Windows
-    #   uses: actions/download-artifact@v3
+    #   uses: actions/download-artifact@v4
     #   with:
     #     name: cpp-bindings-windows-latest
-    #     path: dist/cpp/windows
+    #     path: compression-utils-cpp/windows
 
     - name: Unzip C++ Bindings from macOS
       run: |
-        unzip -o dist/cpp/macos/cpp-bindings-macos-latest.zip -d dist/cpp/macos
-        rm dist/cpp/macos/cpp-bindings-macos-latest.zip
+        unzip -o compression-utils-cpp/macos/cpp-bindings-macos-latest.zip -d compression-utils-cpp/macos
+        rm compression-utils-cpp/macos/cpp-bindings-macos-latest.zip
 
     - name: Unzip C++ Bindings from Ubuntu
       run: |
-        unzip -o dist/cpp/linux/cpp-bindings-ubuntu-latest.zip -d dist/cpp/linux
-        rm dist/cpp/linux/cpp-bindings-ubuntu-latest.zip
+        unzip -o compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip -d compression-utils-cpp/linux
+        rm compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip
       
     # Skipping Windows for now
     # - name: Unzip C++ Bindings from Windows
     #   run: |
-    #     unzip -o dist/cpp/windows/cpp-bindings-windows-latest.zip -d dist/cpp/windows
-    #     rm dist/cpp/windows/cpp-bindings-windows-latest.zip
+    #     unzip -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
+    #     rm compression-utils-cpp/windows/cpp-bindings-windows-latest.zip
 
-   ##### Merge All Bindings #####
+    ##### Merge All Bindings #####
 
     - name: Zip All C Bindings Together
-      run: zip -r compression-utils-c.zip dist/c
+      run: zip -r compression-utils-c.zip compression-utils-c
 
     - name: Zip All C++ Bindings Together
-      run: zip -r compression-utils-cpp.zip dist/cpp
+      run: zip -r compression-utils-cpp.zip compression-utils-cpp
 
-   ##### Upload Artifacts #####
+    ##### Upload Artifacts #####
 
     - name: Upload Unified C Bindings
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: compression-utils-c
         path: compression-utils-c.zip
 
     - name: Upload Unified C++ Bindings
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: compression-utils-cpp
         path: compression-utils-cpp.zip
