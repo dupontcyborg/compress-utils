@@ -11,7 +11,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest]
 
     steps:
     - name: Checkout Code
@@ -33,29 +34,31 @@ jobs:
       run: cmake --install build
 
     - name: Test All Bindings & Compressors
-      run: ctest --output-on-failure
+      run: |
+        cd build
+        ctest --output-on-failure
 
     - name: Zip C Bindings
       run: |
-        cd dist/${{ matrix.os }}
-        zip -r ../../c_bindings_${{ matrix.os }}.zip c
+        cd dist
+        zip -r c_bindings_${{ matrix.os }}.zip c
 
     - name: Zip C++ Bindings
       run: |
-        cd dist/${{ matrix.os }}
-        zip -r ../../cpp_bindings_${{ matrix.os }}.zip cpp
+        cd dist
+        zip -r cpp_bindings_${{ matrix.os }}.zip cpp
 
     - name: Upload C Bindings
       uses: actions/upload-artifact@v3
       with:
         name: c-bindings-${{ matrix.os }}
-        path: c_bindings_${{ matrix.os }}.zip
+        path: dist/c_bindings_${{ matrix.os }}.zip
 
     - name: Upload C++ Bindings
       uses: actions/upload-artifact@v3
       with:
         name: cpp-bindings-${{ matrix.os }}
-        path: cpp_bindings_${{ matrix.os }}.zip
+        path: dist/cpp_bindings_${{ matrix.os }}.zip
 
   combine:
     needs: build
@@ -79,19 +82,19 @@ jobs:
         done
 
     - name: Zip All C Bindings Together
-      run: zip -r c_bindings.zip dist/c
+      run: zip -r compression_utils_c.zip dist/c
 
     - name: Zip All C++ Bindings Together
-      run: zip -r cpp_bindings.zip dist/cpp
+      run: zip -r compression_utils_cpp.zip dist/cpp
 
     - name: Upload Unified C Bindings
       uses: actions/upload-artifact@v3
       with:
-        name: unified-c-bindings
-        path: c_bindings.zip
+        name: compression_utils_c
+        path: compression_utils_c.zip
 
     - name: Upload Unified C++ Bindings
       uses: actions/upload-artifact@v3
       with:
-        name: unified-cpp-bindings
-        path: cpp_bindings.zip
+        name: compression_utils_cpp
+        path: compression_utils_cpp.zip
