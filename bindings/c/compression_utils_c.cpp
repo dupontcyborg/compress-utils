@@ -3,16 +3,18 @@
 #include "compression_utils.h"
 #include "compression_utils_func.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <span>
 #include <stdexcept>
+#include <vector>
 
 extern "C" {
 
 // Compression function implementation
 int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm,
-                 int level) {
+                      int level) {
     try {
         // Call the C++ Compress function
         std::vector<uint8_t> compressed_data = compression_utils::Compress(
@@ -20,10 +22,10 @@ int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algori
 
         // Allocate memory for the output buffer
         *output = static_cast<uint8_t*>(malloc(compressed_data.size()));
-        
+
         // Return -1 if memory allocation fails
         if (*output == nullptr) {
-            return -1;  
+            return -1;
         }
 
         // Copy the compressed data to the output buffer

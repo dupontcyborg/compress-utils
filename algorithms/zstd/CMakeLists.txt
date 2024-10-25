@@ -13,6 +13,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Add -fPIC flag for UNIX-like systems (Linux)
+if(UNIX AND NOT APPLE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+endif()
+
 # External project for zstd
 include(ExternalProject)
 ExternalProject_Add(
@@ -37,10 +43,19 @@ ExternalProject_Add(
 
 ######### INSTALL #########
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(ZSTD_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(ZSTD_LIB "zstd_static.lib")
+else()
+    set(ZSTD_LIB_DIR "")
+    set(ZSTD_LIB "libzstd.a")
+endif()
+
 # Copy built library and headers to dist directory
 ExternalProject_Add_Step(zstd_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E make_directory ${ZSTD_INSTALL_DIR_LIB} ${ZSTD_INSTALL_DIR_INCLUDE}
-    COMMAND ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/libzstd.a ${ZSTD_INSTALL_DIR_LIB}
+    COMMAND ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd.h ${ZSTD_INSTALL_DIR_INCLUDE}
     DEPENDEES install
 )
@@ -48,7 +63,7 @@ ExternalProject_Add_Step(zstd_external copy_artifacts
 # Create an imported library target for zstd
 add_library(zstd_library STATIC IMPORTED)
 set_target_properties(zstd_library PROPERTIES
-    IMPORTED_LOCATION ${ZSTD_INSTALL_DIR_LIB}/libzstd.a
+    IMPORTED_LOCATION ${ZSTD_INSTALL_DIR_LIB}/${ZSTD_LIB}
     INTERFACE_INCLUDE_DIRECTORIES ${ZSTD_INSTALL_DIR_INCLUDE}
 )
 

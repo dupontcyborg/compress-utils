@@ -11,7 +11,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest]
 
     steps:
     - name: Checkout Code
@@ -40,60 +41,145 @@ jobs:
     - name: Zip C Bindings
       run: |
         cd dist
-        zip -r c_bindings_${{ matrix.os }}.zip c
+        zip -r c-bindings-${{ matrix.os }}.zip c
 
     - name: Zip C++ Bindings
       run: |
         cd dist
-        zip -r cpp_bindings_${{ matrix.os }}.zip cpp
+        zip -r cpp-bindings-${{ matrix.os }}.zip cpp
 
-    - name: Upload C Bindings
-      uses: actions/upload-artifact@v3
+    - name: Upload C Artifacts
+      uses: actions/upload-artifact@v4
       with:
         name: c-bindings-${{ matrix.os }}
-        path: dist/c_bindings_${{ matrix.os }}.zip
+        path: dist/c-bindings-${{ matrix.os }}.zip
+        retention-days: 1  # These artifacts are only used for the `combine` step
 
-    - name: Upload C++ Bindings
-      uses: actions/upload-artifact@v3
+    - name: Upload C++ Artifacts
+      uses: actions/upload-artifact@v4
       with:
         name: cpp-bindings-${{ matrix.os }}
-        path: dist/cpp_bindings_${{ matrix.os }}.zip
+        path: dist/cpp-bindings-${{ matrix.os }}.zip
+        retention-days: 1  # These artifacts are only used for the `combine` step
 
   combine:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download and Unzip C Bindings from All OSes
-      run: |
-        mkdir -p dist/c
-        for os in macos-latest windows-latest ubuntu-latest; do
-          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/c-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o c_bindings_${os}.zip -d dist/c # Unzip into the same dist/c directory
-        done
 
-    - name: Download and Unzip C++ Bindings from All OSes
-      run: |
-        mkdir -p dist/cpp
-        for os in macos-latest windows-latest ubuntu-latest; do
-          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/cpp-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o cpp_bindings_${os}.zip -d dist/cpp # Unzip into the same dist/cpp directory
-        done
+   ##### C Artifacts #####
 
-    - name: Zip All C Bindings Together
-      run: zip -r c_bindings.zip dist/c
+    - name: Create C Artifact Directories
+      # run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
+      run: mkdir -p compression-utils-c/macos compression-utils-c/linux
 
-    - name: Zip All C++ Bindings Together
-      run: zip -r cpp_bindings.zip dist/cpp
-
-    - name: Upload Unified C Bindings
-      uses: actions/upload-artifact@v3
+    - name: Download C Artifacts from macOS
+      uses: actions/download-artifact@v4
       with:
-        name: unified-c-bindings
-        path: c_bindings.zip
+        name: c-bindings-macos-latest
+        path: compression-utils-c/macos
 
-    - name: Upload Unified C++ Bindings
-      uses: actions/upload-artifact@v3
+    - name: Download C Artifacts from Ubuntu
+      uses: actions/download-artifact@v4
       with:
-        name: unified-cpp-bindings
-        path: cpp_bindings.zip
+        name: c-bindings-ubuntu-latest
+        path: compression-utils-c/linux
+
+    # Skipping Windows for now
+    # - name: Download C Artifacts from Windows
+    #   uses: actions/download-artifact@v4
+    #   with:
+    #     name: c-bindings-windows-latest
+    #     path: compression-utils-c/windows
+
+    - name: Unzip C Artifacts from macOS
+      run: |
+        unzip -o compression-utils-c/macos/c-bindings-macos-latest.zip -d compression-utils-c/macos
+        mv compression-utils-c/macos/c/* compression-utils-c/macos/
+        rm -r compression-utils-c/macos/c
+        rm compression-utils-c/macos/c-bindings-macos-latest.zip
+
+    - name: Unzip C Artifacts from Ubuntu
+      run: |
+        unzip -o compression-utils-c/linux/c-bindings-ubuntu-latest.zip -d compression-utils-c/linux
+        mv compression-utils-c/linux/c/* compression-utils-c/linux/
+        rm -r compression-utils-c/linux/c
+        rm compression-utils-c/linux/c-bindings-ubuntu-latest.zip
+      
+    # Skipping Windows for now
+    # - name: Unzip C Artifacts from Windows
+    #   run: |
+    #     unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+    #     mv compression-utils-c/windows/c/* compression-utils-c/windows/
+    #     rm -r compression-utils-c/windows/c
+    #     rm compression-utils-c/windows/c-bindings-windows-latest.zip
+
+    ##### C++ Artifacts #####
+
+    - name: Create C++ Artifact Directories
+      # run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux compression-utils-cpp/windows
+      run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux
+
+    - name: Download C++ Artifacts from macOS
+      uses: actions/download-artifact@v4
+      with:
+        name: cpp-bindings-macos-latest
+        path: compression-utils-cpp/macos
+
+    - name: Download C++ Artifacts from Ubuntu
+      uses: actions/download-artifact@v4
+      with:
+        name: cpp-bindings-ubuntu-latest
+        path: compression-utils-cpp/linux
+
+    # Skipping Windows for now
+    # - name: Download C++ Artifacts from Windows
+    #   uses: actions/download-artifact@v4
+    #   with:
+    #     name: cpp-bindings-windows-latest
+    #     path: compression-utils-cpp/windows
+
+    - name: Unzip C++ Artifacts from macOS
+      run: |
+        unzip -o compression-utils-cpp/macos/cpp-bindings-macos-latest.zip -d compression-utils-cpp/macos
+        mv compression-utils-cpp/macos/cpp/* compression-utils-cpp/macos/
+        rm -r compression-utils-cpp/macos/cpp
+        rm compression-utils-cpp/macos/cpp-bindings-macos-latest.zip
+
+    - name: Unzip C++ Artifacts from Ubuntu
+      run: |
+        unzip -o compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip -d compression-utils-cpp/linux
+        mv compression-utils-cpp/linux/cpp/* compression-utils-cpp/linux/
+        rm -r compression-utils-cpp/linux/cpp
+        rm compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip
+      
+    # Skipping Windows for now
+    # - name: Unzip C++ Artifacts from Windows
+    #   run: |
+    #     unzip -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
+    #     mv compression-utils-cpp/windows/cpp/* compression-utils-cpp/windows/
+    #     rm -r compression-utils-cpp/windows/cpp
+    #     rm compression-utils-cpp/windows/cpp-bindings-windows-latest.zip
+
+    ##### Merge All Artifacts #####
+
+    - name: Zip All C Artifacts Together
+      run: zip -r compression-utils-c.zip compression-utils-c
+
+    - name: Zip All C++ Artifacts Together
+      run: zip -r compression-utils-cpp.zip compression-utils-cpp
+
+    ##### Upload Artifacts #####
+
+    - name: Upload Unified C Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: compression-utils-c
+        path: compression-utils-c.zip
+
+    - name: Upload Unified C++ Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: compression-utils-cpp
+        path: compression-utils-cpp.zip

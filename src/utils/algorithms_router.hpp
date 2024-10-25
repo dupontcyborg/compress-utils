@@ -7,8 +7,11 @@
 #include "algorithms/zlib/zlib.hpp"
 #include "algorithms/zstd/zstd.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <span>
+#include <stdexcept>
+#include <vector>
 
 namespace compression_utils::internal {
 

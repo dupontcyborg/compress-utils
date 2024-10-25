@@ -3,7 +3,9 @@
 
 #ifdef INCLUDE_ZSTD
 
+#include <cstdint>
 #include <span>
+#include <vector>
 
 namespace compression_utils::zstd {
 

@@ -1,8 +1,15 @@
 # compression-utils
 
-![Static Badge](https://img.shields.io/badge/status-under_construction-yellow?style=flat)
-![Static Badge](https://img.shields.io/badge/algorithms-4-green?style=flat)
-![Static Badge](https://img.shields.io/badge/languages-2-yellow?style=flat)
+<p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compression-utils/build_and_test.yml" alt="GitHub Actions Workflow Status"/>
+  <img src="https://img.shields.io/github/v/release/dupontcyborg/compression-utils" alt="GitHub Release"/>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/algorithms-4-green?style=flat" alt="Algorithms"/>
+  <img src="https://img.shields.io/badge/languages-2-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compression-utils" alt="Code Size"/>
+  <img src="https://img.shields.io/github/license/dupontcyborg/compression-utils" alt="License"/>
+</p>
 
 `compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
@@ -11,7 +18,7 @@
 - [4 built-in data compression algorithms](#built-in-compression-algorithms)
 - [2 languages supported](#supported-languages)
 - [Standardized API](#usage) across all algorithms & languages
-- Portable & cross-platform (Linux, macOS, Windows, WASM)
+- Portable & cross-platform (Linux, macOS, Windows)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
 - Native or near-native [compression & decompression performance](#benchmarks)
 - Lightweight binary (30 kB with single algorithm, 4 MB with all)

@@ -3,7 +3,6 @@
 #include "zlib.hpp"
 
 #include <stdexcept>
-#include <vector>
 
 namespace compression_utils::zlib {
 

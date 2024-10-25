@@ -3,7 +3,6 @@
 #include "zstd/zstd.h"
 
 #include <stdexcept>
-#include <vector>
 
 namespace compression_utils::zstd {
 

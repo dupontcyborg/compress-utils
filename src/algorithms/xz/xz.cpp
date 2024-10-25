@@ -3,7 +3,6 @@
 #include "xz/lzma.h"
 
 #include <stdexcept>
-#include <vector>
 
 namespace compression_utils::xz {
 
@@ -77,7 +76,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
 
     // Clean up the stream
     lzma_end(&strm);
-    
+
     return compressed_data;
 }
 

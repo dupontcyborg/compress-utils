@@ -3,7 +3,7 @@
 
 #include "algorithms.hpp"
 
-#include <string>
+#include <cstdint>
 #include <vector>
 
 // Platform-specific macros for exporting and importing symbols
