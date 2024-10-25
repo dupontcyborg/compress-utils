@@ -3,6 +3,7 @@
 ## Fixes
 
 - [ ] Fix Windows build issues and re-add `windows-latest` to Github Actions workflows
+- [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
 
 ## Additions
 
