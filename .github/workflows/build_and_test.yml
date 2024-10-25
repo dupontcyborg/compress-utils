@@ -65,29 +65,98 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+   ##### C Bindings #####
+
     - name: Download and Unzip C Bindings from All OSes
+      # run: mkdir -p dist/c/macos dist/c/linux dist/c/windows
+      run: mkdir -p dist/c/macos dist/c/linux
+
+    - name: Download C Bindings from macOS
+      uses: actions/download-artifact@v3
+      with:
+        name: c-bindings-macos-latest
+        path: dist/c/macos
+
+    - name: Download C Bindings from Ubuntu
+      uses: actions/download-artifact@v3
+      with:
+        name: c-bindings-ubuntu-latest
+        path: dist/c/linux
+
+    # Skipping Windows for now
+    # - name: Download C Bindings from Windows
+    #   uses: actions/download-artifact@v3
+    #   with:
+    #     name: c-bindings-windows-latest
+    #     path: dist/c/windows
+
+    - name: Unzip C Bindings from macOS
       run: |
-        mkdir -p dist/c
-        # for os in macos-latest windows-latest ubuntu-latest; do
-        for os in macos-latest ubuntu-latest; do
-          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/c-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o c-bindings-${os}.zip -d dist/c # Unzip into the same dist/c directory
-        done
+        unzip -o dist/c/macos/c-bindings-macos-latest.zip -d dist/c/macos
+        rm dist/c/macos/c-bindings-macos-latest.zip
+
+    - name: Unzip C Bindings from Ubuntu
+      run: |
+        unzip -o dist/c/linux/c-bindings-ubuntu-latest.zip -d dist/c/linux
+        rm dist/c/linux/c-bindings-ubuntu-latest.zip
+      
+    # Skipping Windows for now
+    # - name: Unzip C Bindings from Windows
+    #   run: |
+    #     unzip -o dist/c/windows/c-bindings-windows-latest.zip -d dist/c/windows
+    #     rm dist/c/windows/c-bindings-windows-latest.zip
+
+   ##### C++ Bindings #####
 
     - name: Download and Unzip C++ Bindings from All OSes
+      # run: mkdir -p dist/c/macos dist/c/linux dist/c/windows
+      run: mkdir -p dist/cpp/macos dist/c/linux
+
+    - name: Download C++ Bindings from macOS
+      uses: actions/download-artifact@v3
+      with:
+        name: cpp-bindings-macos-latest
+        path: dist/cpp/macos
+
+    - name: Download C++ Bindings from Ubuntu
+      uses: actions/download-artifact@v3
+      with:
+        name: cpp-bindings-ubuntu-latest
+        path: dist/cpp/linux
+
+    # Skipping Windows for now
+    # - name: Download C++ Bindings from Windows
+    #   uses: actions/download-artifact@v3
+    #   with:
+    #     name: cpp-bindings-windows-latest
+    #     path: dist/cpp/windows
+
+    - name: Unzip C++ Bindings from macOS
       run: |
-        mkdir -p dist/cpp
-        # for os in macos-latest windows-latest ubuntu-latest; do
-        for os in macos-latest ubuntu-latest; do
-          curl -O -L ${{ github.server_url }}/repos/${{ github.repository }}/actions/artifacts/cpp-bindings-${os}/zip # Download each OS-specific artifact
-          unzip -o cpp-bindings-${os}.zip -d dist/cpp # Unzip into the same dist/cpp directory
-        done
+        unzip -o dist/cpp/macos/cpp-bindings-macos-latest.zip -d dist/cpp/macos
+        rm dist/cpp/macos/cpp-bindings-macos-latest.zip
+
+    - name: Unzip C++ Bindings from Ubuntu
+      run: |
+        unzip -o dist/cpp/linux/cpp-bindings-ubuntu-latest.zip -d dist/cpp/linux
+        rm dist/cpp/linux/cpp-bindings-ubuntu-latest.zip
+      
+    # Skipping Windows for now
+    # - name: Unzip C++ Bindings from Windows
+    #   run: |
+    #     unzip -o dist/cpp/windows/cpp-bindings-windows-latest.zip -d dist/cpp/windows
+    #     rm dist/cpp/windows/cpp-bindings-windows-latest.zip
+
+   ##### Merge All Bindings #####
 
     - name: Zip All C Bindings Together
       run: zip -r compression-utils-c.zip dist/c
 
     - name: Zip All C++ Bindings Together
       run: zip -r compression-utils-cpp.zip dist/cpp
+
+   ##### Upload Artifacts #####
 
     - name: Upload Unified C Bindings
       uses: actions/upload-artifact@v3
