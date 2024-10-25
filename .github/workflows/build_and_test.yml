@@ -41,15 +41,12 @@ jobs:
     - name: Zip C Bindings
       run: |
         cd dist
-        mv c compression-utils
-        zip -r c-bindings-${{ matrix.os }}.zip compression-utils
-        rm -rf compression-utils
+        zip -r c-bindings-${{ matrix.os }}.zip c
 
     - name: Zip C++ Bindings
       run: |
         cd dist
-        mv cpp compression-utils
-        zip -r cpp-bindings-${{ matrix.os }}.zip compression-utils
+        zip -r cpp-bindings-${{ matrix.os }}.zip cpp
 
     - name: Upload C Artifacts
       uses: actions/upload-artifact@v4
@@ -99,7 +96,6 @@ jobs:
     - name: Unzip C Artifacts from macOS
       run: |
         unzip -o compression-utils-c/macos/c-bindings-macos-latest.zip -d compression-utils-c/macos
-        ls compression-utils-c/macos
         mv compression-utils-c/macos/c/* compression-utils-c/macos/
         rm -r compression-utils-c/macos/c
         rm compression-utils-c/macos/c-bindings-macos-latest.zip
