@@ -1,8 +1,9 @@
 #include "utils/constants.hpp"
-#include "zlib.h"
 #include "zlib.hpp"
+#include "zlib/zlib.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace compression_utils::zlib {
 
