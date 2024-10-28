@@ -35,10 +35,14 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 
-# C Flags
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
-set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+# Set C and C++ Optimization Flags
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+elseif(MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
+endif()
 
 ######### OPTIONS #########
 
@@ -184,6 +188,18 @@ if (INCLUDE_ZSTD)
     list(APPEND ALL_SOURCE_FILES ${ZSTD_SOURCE_FILES})
     # Add Zstd to the enum
     list(APPEND ALGORITHMS_ENUM "ZSTD")
+endif()
+
+# Add Windows-specific dependencies
+if(WIN32)
+    list(APPEND TARGET_LIBS "legacy_stdio_definitions")
+    
+    # Add threading support
+    find_package(Threads REQUIRED)
+    list(APPEND TARGET_LIBS Threads::Threads)
+    
+    # Add math library
+    list(APPEND TARGET_LIBS "msvcrt")
 endif()
 
 # Apply the libraries and definitions to both libraries
