@@ -38,23 +38,27 @@ set(GTEST_LIBS ${binary_dir}/lib/${GTEST_LIB_DIR}${GTEST_LIB} ${binary_dir}/lib/
 
 # Add test executables
 file(GLOB TEST_FILES "*.cpp")
-add_executable(run_tests ${TEST_FILES})
-add_executable(run_tests_static ${TEST_FILES})
+add_executable(unit_tests ${TEST_FILES})
+add_executable(unit_tests_static ${TEST_FILES})
 
 # Link libraries to both executables
-add_dependencies(run_tests googletest compress_utils)
-target_link_libraries(run_tests PRIVATE compress_utils ${GTEST_LIBS})
-add_dependencies(run_tests_static googletest compress_utils_static)
-target_link_libraries(run_tests_static PRIVATE compress_utils_static ${GTEST_LIBS})
+add_dependencies(unit_tests googletest compress_utils)
+target_link_libraries(unit_tests PRIVATE compress_utils ${GTEST_LIBS})
+add_dependencies(unit_tests_static googletest compress_utils_static)
+target_link_libraries(unit_tests_static PRIVATE compress_utils_static ${GTEST_LIBS})
+
+# target_link_libraries(unit_tests_static PRIVATE compress_utils_static ${GTEST_LIBS} compress_utils_static Kernel32.lib Math.lib)
+target_link_libraries(unit_tests_static PRIVATE Kernel32.lib)
+target_compile_definitions(unit_tests_static PRIVATE _USE_MATH_DEFINES)
 
 # Add include directories to both executables
 set(COMMON_INCLUDES ${CMAKE_SOURCE_DIR}/src ${GTEST_INCLUDE_DIRS})
-target_include_directories(run_tests PRIVATE ${COMMON_INCLUDES})
-target_include_directories(run_tests_static PRIVATE ${COMMON_INCLUDES})
+target_include_directories(unit_tests PRIVATE ${COMMON_INCLUDES})
+target_include_directories(unit_tests_static PRIVATE ${COMMON_INCLUDES})
 
 # Set library input directories of algorithms
 set(COMPRESSION_LIBS ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
-target_link_directories(run_tests PRIVATE ${COMPRESSION_LIBS})
+target_link_directories(unit_tests PRIVATE ${COMPRESSION_LIBS})
 
 # Apply preprocessor definitions for compression libraries
 set(COMPRESSION_DEFINITIONS
@@ -63,20 +67,20 @@ set(COMPRESSION_DEFINITIONS
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
 )
-target_compile_definitions(run_tests PRIVATE ${COMPRESSION_DEFINITIONS})
-target_compile_definitions(run_tests_static PRIVATE ${COMPRESSION_DEFINITIONS})
+target_compile_definitions(unit_tests PRIVATE ${COMPRESSION_DEFINITIONS})
+target_compile_definitions(unit_tests_static PRIVATE ${COMPRESSION_DEFINITIONS})
 
-target_compile_definitions(run_tests PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
-target_compile_definitions(run_tests_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
+# target_compile_definitions(unit_tests PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
+target_compile_definitions(unit_tests_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
 
 ######### WINDOWS LINKING #########
 
 # Set runtime library flags for Windows test executables
 if (WIN32)
-    set_target_properties(run_tests PROPERTIES
+    set_target_properties(unit_tests PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
     )
-    set_target_properties(run_tests_static PROPERTIES
+    set_target_properties(unit_tests_static PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
     # target_link_options(run_tests_static PRIVATE /MT)
@@ -86,6 +90,8 @@ endif()
 ######### TEST REGISTRATION #########
 
 # Enable testing and register both executables
-enable_testing()
-add_test(NAME run_tests COMMAND run_tests)
-add_test(NAME run_tests_static COMMAND run_tests_static)
+if (ENABLE_TESTS)
+    enable_testing()
+    add_test(NAME unit_tests COMMAND unit_tests)
+    add_test(NAME unit_tests_static COMMAND unit_tests_static)
+endif()

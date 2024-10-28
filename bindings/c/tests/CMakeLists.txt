@@ -28,35 +28,33 @@ set(TEST_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bindings/c/build/tests")
 file(GLOB TEST_FILES "*.c")
 
 # Add test executables
-add_executable(run_tests_c ${TEST_FILES})
-add_executable(run_tests_c_static ${TEST_FILES})
+add_executable(unit_tests_c ${TEST_FILES})
+add_executable(unit_tests_c_static ${TEST_FILES})
 
 # Add include directories to both executables
-target_include_directories(run_tests_c PRIVATE ${CUNIT_INCLUDE_DIR} "../")
-target_include_directories(run_tests_c_static PRIVATE ${CUNIT_INCLUDE_DIR} "../")
+target_include_directories(unit_tests_c PRIVATE ${CUNIT_INCLUDE_DIR} "../")
+target_include_directories(unit_tests_c_static PRIVATE ${CUNIT_INCLUDE_DIR} "../")
 
 # Handle Windows-specific library naming
 if (WIN32)
-    set(CUNIT_LIB_DIR ${CMAKE_BUILD_TYPE}/)
     set(CUNIT_LIB "cunit.lib")
 else()
-    set(CUNIT_LIB_DIR "")
     set(CUNIT_LIB "libcunit.a")
 endif()
 
 # Link libraries to both executables
-add_dependencies(run_tests_c CUnit compress_utils_c)
-target_link_libraries(run_tests_c PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB_DIR}${CUNIT_LIB} compress_utils_c)
-add_dependencies(run_tests_c_static CUnit compress_utils_c_static)
-target_link_libraries(run_tests_c_static PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB_DIR}${CUNIT_LIB} compress_utils_c_static)
+add_dependencies(unit_tests_c CUnit compress_utils_c)
+target_link_libraries(unit_tests_c PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB} compress_utils_c)
+add_dependencies(unit_tests_c_static CUnit compress_utils_c_static)
+target_link_libraries(unit_tests_c_static PRIVATE ${CUNIT_LIBRARY_DIR}/${CUNIT_LIB} compress_utils_c_static)
 
 # Set output directories for test executables
 set(TARGET_PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
     ARCHIVE_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
     LIBRARY_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
 )
-set_target_properties(run_tests_c PROPERTIES ${TARGET_PROPERTIES})
-set_target_properties(run_tests_c_static PROPERTIES ${TARGET_PROPERTIES})
+set_target_properties(unit_tests_c PROPERTIES ${TARGET_PROPERTIES})
+set_target_properties(unit_tests_c_static PROPERTIES ${TARGET_PROPERTIES})
 
 # Set compression preprocessor definitions
 set(COMPRESSION_DEFINITIONS
@@ -65,9 +63,9 @@ set(COMPRESSION_DEFINITIONS
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
 )
-target_compile_definitions(run_tests_c PRIVATE ${COMPRESSION_DEFINITIONS})
-target_compile_definitions(run_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS})
+target_compile_definitions(unit_tests_c PRIVATE ${COMPRESSION_DEFINITIONS})
+target_compile_definitions(unit_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS})
 
 # Add tests to CTest
-add_test(NAME run_tests_c COMMAND ${TEST_OUTPUT_DIR}/run_tests_c)
-add_test(NAME run_tests_c_static COMMAND ${TEST_OUTPUT_DIR}/run_tests_c_static)
+add_test(NAME unit_tests_c COMMAND ${TEST_OUTPUT_DIR}/unit_tests_c)
+add_test(NAME unit_tests_c_static COMMAND ${TEST_OUTPUT_DIR}/unit_tests_c_static)

@@ -57,4 +57,6 @@ install(FILES ${C_BINDING_DIR}/README.md DESTINATION ${CMAKE_SOURCE_DIR}/dist/c)
 # Optionally add tests
 if (ENABLE_TESTS)
     add_subdirectory(tests)
+    add_dependencies(unit_tests_c compress_utils_c)
+    add_dependencies(unit_tests_c_static compress_utils_c_static)
 endif()
