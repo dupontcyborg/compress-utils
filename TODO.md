@@ -3,7 +3,12 @@
 ## Fixes
 
 - [ ] Fix Windows build issues and re-add `windows-latest` to Github Actions workflows
+    - [ ] Static runtime for `compress-utils` and `compress-utils-static`
+    - [ ] Static runtime for `unit-tests-static`
+    - [ ] Dynamic runtime for `unit-tests`
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
+    - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
+    - [ ] Set up `whole-archive` for all platforms
 
 ## Additions
 
