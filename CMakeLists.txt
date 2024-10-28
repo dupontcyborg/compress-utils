@@ -200,27 +200,38 @@ target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
 target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
 target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
 
-# Define COMPRESSION_UTILS_EXPORTS for the shared library
-target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
+# Define symbol visibility for shared and static libraries
+target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
+target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
 
 ######### INSTALL #########
 
 # Set the output directory for the library and header files
-set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
-set(STATIC_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib/static")
-set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
+set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
+set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
 
 # Install libraries (shared and static)
 install(TARGETS compress_utils compress_utils_static
-    LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Shared lib
-    ARCHIVE DESTINATION ${STATIC_LIB_DIR}  # Static lib
+    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib  # Shared lib
+    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib  # Static lib
 )
 
-# Install the headers
-install(FILES ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
+# Install the headers for the shared and static libraries
+file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
               ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
-              ${CMAKE_BINARY_DIR}/algorithms.hpp
-        DESTINATION ${CPP_DIST_INCLUDE_DIR})
+              ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
+install(FILES ${HEADERS}
+        DESTINATION ${CPP_SHARED_DIR}/include)
+install(FILES ${HEADERS}
+        DESTINATION ${CPP_STATIC_DIR}/include)
+
+# Install and rename the correct symbol_exports headers
+install (FILES ${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_shared.hpp
+         DESTINATION ${CPP_SHARED_DIR}/include
+            RENAME symbol_exports.hpp)
+install (FILES ${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_static.hpp
+            DESTINATION ${CPP_STATIC_DIR}/include
+                RENAME symbol_exports.hpp)
 
 # Copy the README from bindings/cpp/README.md to the dist/cpp directory
 install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
@@ -229,7 +240,7 @@ install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
 # Copy the dependency libraries to the static directory
 # TODO - remove this once we fix the `whole-archive` issue
 if (TARGET compress_utils_static)
-    install(FILES ${TARGET_LIBS} DESTINATION ${STATIC_LIB_DIR})
+    install(FILES ${TARGET_LIBS} DESTINATION ${CPP_STATIC_DIR}/lib)
 endif()
 
 # Configure the header with enum
@@ -250,8 +261,23 @@ if (ENABLE_TESTS)
     enable_testing()
     message(STATUS "Tests are enabled. Including the tests directory.")
     add_subdirectory(tests)
+    add_dependencies(run_tests compress_utils)
+    add_dependencies(run_tests_static compress_utils_static)
 else()
     message(STATUS "Tests are disabled. Skipping the tests directory.")
+endif()
+
+######### WINDOWS LINKING #########
+
+# Set runtime library flags for Windows targets
+if (WIN32)
+    set_target_properties(compress_utils PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+    set_target_properties(compress_utils_static PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
+    # target_link_options(compress_utils_static PRIVATE /MT)
 endif()
 
 ######### BINDINGS #########
