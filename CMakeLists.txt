@@ -141,7 +141,7 @@ if (INCLUDE_XZ)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${XZ_LIB})
     # Define preprocessor directive to include XZ/LZMA in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ)
+    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
     # Add source files for XZ
     file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
@@ -149,7 +149,6 @@ if (INCLUDE_XZ)
     list(APPEND ALGORITHMS_ENUM "LZMA")
     list(APPEND ALGORITHMS_ENUM "XZ")
 endif()
-
 
 # zlib Algorithm
 if (INCLUDE_ZLIB)

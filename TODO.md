@@ -8,7 +8,7 @@
     - [X] Fix `ctest`
     - [ ] Build `compress-utils-c` and `compress-utils-c-static`
     - [ ] Build `unit-tests-c` and `unit-tests-c-static`
-    - [ ] Build `xz`
+    - [X] Build `xz`
     - [ ] Support both `Debug` and `Release`
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
