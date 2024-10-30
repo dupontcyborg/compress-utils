@@ -4,10 +4,12 @@
 
 - [ ] Fix Windows build issues and re-add `windows-latest` to Github Actions workflows
     - [X] Build `compress-utils` and `compress-utils-static`
-    - [ ] Build `unit-tests` and `unit-tests-static`
+    - [X] Build `unit-tests` and `unit-tests-static`
+    - [X] Fix `ctest`
     - [ ] Build `compress-utils-c` and `compress-utils-c-static`
     - [ ] Build `unit-tests-c` and `unit-tests-c-static`
     - [ ] Build `xz`
+    - [ ] Support both `Debug` and `Release`
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
