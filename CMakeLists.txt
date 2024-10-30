@@ -30,8 +30,7 @@ elseif(MSVC)
     set(LINKER_FLAGS "/OPT:REF")
 endif()
 
-# C++ Flags
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+# Linker Flags
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 
@@ -98,7 +97,7 @@ if (WIN32)
     set(BROTLI_LIB_DEC "brotlidec.lib")
     set(BROTLI_LIB_COMMON "brotlicommon.lib")
     set(XZ_LIB "lzma.lib")
-    set(ZLIB_LIB "zlib.lib")
+    set(ZLIB_LIB "zlibstatic.lib")
     set(ZSTD_LIB "zstd_static.lib")
 
 else()
@@ -222,14 +221,28 @@ target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPOR
 
 ######### INSTALL #########
 
+# Configure the header with enum
+string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
+set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
+    @ONLY
+)
+
 # Set the output directory for the library and header files
 set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
 set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
 
 # Install libraries (shared and static)
-install(TARGETS compress_utils compress_utils_static
-    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib  # Shared lib
-    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib  # Static lib
+install(TARGETS compress_utils
+    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
+    ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
+    RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
+)
+install(TARGETS compress_utils_static
+    LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
+    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
 )
 
 # Install the headers for the shared and static libraries
@@ -242,10 +255,10 @@ install(FILES ${HEADERS}
         DESTINATION ${CPP_STATIC_DIR}/include)
 
 # Install and rename the correct symbol_exports headers
-install (FILES ${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_shared.hpp
+install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
          DESTINATION ${CPP_SHARED_DIR}/include
             RENAME symbol_exports.hpp)
-install (FILES ${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_static.hpp
+install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
             DESTINATION ${CPP_STATIC_DIR}/include
                 RENAME symbol_exports.hpp)
 
@@ -253,22 +266,11 @@ install (FILES ${CMAKE_CURRENT_BINARY_DIR}/symbol_exports_static.hpp
 install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
         DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
 
-# Copy the dependency libraries to the static directory
+# Copy the dependency libraries to the static directory (not WINDOWS)
 # TODO - remove this once we fix the `whole-archive` issue
-if (TARGET compress_utils_static)
+if (TARGET compress_utils_static AND NOT WIN32)
     install(FILES ${TARGET_LIBS} DESTINATION ${CPP_STATIC_DIR}/lib)
 endif()
-
-# Configure the header with enum
-string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
-set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
-
-# Configure the header file
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
-    @ONLY
-)
 
 ######### TESTS #########
 

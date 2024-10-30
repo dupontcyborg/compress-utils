@@ -42,7 +42,7 @@ ExternalProject_Add(
 # Handle Windows-specific library naming
 if (WIN32)
     set(ZLIB_LIB_DIR ${CMAKE_BUILD_TYPE}/)
-    set(ZLIB_LIB "zlib.lib")
+    set(ZLIB_LIB "zlibstatic.lib")
 else()
     set(ZLIB_LIB_DIR "")
     set(ZLIB_LIB "libz.a")
