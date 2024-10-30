@@ -14,7 +14,14 @@ FetchContent_Declare(
   GIT_TAG origin/main
   SOURCE_DIR ${FETCHCONTENT_BASE_DIR}/googletest
 )
-FetchContent_Populate(googletest)
+
+# Prevent GoogleTest from automatically adding its targets
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "Disable installation of googletest" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "Disable build of googlemock" FORCE)
+set(BUILD_GTEST OFF CACHE BOOL "Disable build of googletest" FORCE)
+
+FetchContent_MakeAvailable(googletest)
 
 ######### GTEST TARGETS #########
 
