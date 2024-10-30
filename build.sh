@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build.sh - A script to build the `compression-utils` library
+# build.sh - A script to build the `compression-utils` library on Unix-like systems.
 
 # Initialize variables
 BUILD_DIR="build"
