@@ -16,8 +16,8 @@
 .PARAMETER SkipTests
     Skips building and running tests.
 
-.PARAMETER Debug
-    Builds the project in debug mode.
+# .PARAMETER Debug
+#     Builds the project in debug mode.
 
 .PARAMETER Algorithms
     Comma-separated list of algorithms to include.
@@ -38,7 +38,7 @@
 param(
     [switch]$Clean,
     [switch]$SkipTests,
-    [switch]$Debug,
+    # [switch]$Debug,
     [string]$Algorithms = "",
     [string]$Languages = "",
     [int]$Cores = 1,
@@ -51,7 +51,7 @@ function Show-Usage {
     Write-Host "Options:"
     Write-Host "  -Clean                    Clean the build directory before building."
     Write-Host "  -SkipTests                Skip building and running tests."
-    Write-Host "  -Debug                    Build the project in debug mode."
+    # Write-Host "  -Debug                    Build the project in debug mode."
     Write-Host "  -Algorithms LIST          Comma-separated list of algorithms to include. Default: all"
     Write-Host "                            Available algorithms: brotli, zstd, zlib, xz (lzma)"
     Write-Host "  -Languages LIST           Comma-separated list of language bindings to build. Default: all"
@@ -75,10 +75,10 @@ $BUILD_MODE = "Release"
 $ALGORITHMS_LIST = @()
 $LANGUAGES_LIST = @()
 
-# Set build mode
-if ($Debug) {
-    $BUILD_MODE = "Debug"
-}
+# # Set build mode
+# if ($Debug) {
+#     $BUILD_MODE = "Debug"
+# }
 
 # Parse algorithms
 if ($Algorithms -ne "") {
