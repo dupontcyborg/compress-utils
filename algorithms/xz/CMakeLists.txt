@@ -21,6 +21,16 @@ endif()
 
 # External project for XZ
 include(ExternalProject)
+
+# Conditional compiler flags for Windows
+if (MSVC)
+    set(XZ_C_FLAGS "/wd5105")
+    set(XZ_CXX_FLAGS "/wd5105")
+else()
+    set(XZ_C_FLAGS "")
+    set(XZ_CXX_FLAGS "")
+endif()
+
 ExternalProject_Add(
     xz_external
     PREFIX ${XZ_BUILD_DIR}
@@ -29,14 +39,12 @@ ExternalProject_Add(
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
-        -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+        -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}${XZ_C_FLAGS}
+        -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}${XZ_CXX_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DBUILD_SHARED_LIBS=OFF
         -DLZMA_API_STATIC=ON
-        -DCMAKE_C_FLAGS="/wd5105"
-        -DCMAKE_CXX_FLAGS="/wd5105"
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
     INSTALL_COMMAND ""
