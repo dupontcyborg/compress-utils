@@ -40,12 +40,22 @@ jobs:
     - name: Zip C Bindings
       run: |
         cd dist
-        zip -r c-bindings-${{ matrix.os }}.zip c
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          Compress-Archive -Path c -DestinationPath c-bindings-${{ matrix.os }}.zip
+        else
+          zip -r c-bindings-${{ matrix.os }}.zip c
+        fi
+      shell: bash
 
     - name: Zip C++ Bindings
       run: |
         cd dist
-        zip -r cpp-bindings-${{ matrix.os }}.zip cpp
+        if [ "${{ runner.os }}" == "Windows" ]; then
+          Compress-Archive -Path cpp -DestinationPath cpp-bindings-${{ matrix.os }}.zip
+        else
+          zip -r cpp-bindings-${{ matrix.os }}.zip cpp
+        fi
+      shell: bash
 
     - name: Upload C Artifacts
       uses: actions/upload-artifact@v4
