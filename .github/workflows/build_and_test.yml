@@ -116,6 +116,10 @@ jobs:
       
     - name: Unzip C Artifacts from Windows
       run: |
+        ls -R .
+        echo "Listed"
+        ls -R compression-utils-c/windows
+        echo "Listed"
         unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
         echo "Unzipped"
         ls -R compression-utils-c/windows
