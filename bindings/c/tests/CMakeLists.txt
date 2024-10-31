@@ -63,8 +63,19 @@ set(COMPRESSION_DEFINITIONS
     $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
     $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
 )
-target_compile_definitions(unit_tests_c PRIVATE ${COMPRESSION_DEFINITIONS})
-target_compile_definitions(unit_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS})
+target_compile_definitions(unit_tests_c PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_SHARED)
+target_compile_definitions(unit_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_STATIC)
+
+# Specify runtime library settings on Windows
+if (WIN32)
+    set_target_properties(unit_tests PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+    set_target_properties(unit_tests_static PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
+    target_link_options(unit_tests_static PRIVATE /WHOLEARCHIVE:compress_utils_static)
+endif()
 
 # Add tests to CTest
 add_test(NAME unit_tests_c COMMAND ${TEST_OUTPUT_DIR}/unit_tests_c)
