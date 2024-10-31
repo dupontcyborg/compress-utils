@@ -80,8 +80,7 @@ jobs:
    ##### C Artifacts #####
 
     - name: Create C Artifact Directories
-      # run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
-      run: mkdir -p compression-utils-c/macos compression-utils-c/linux
+      run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
 
     - name: Download C Artifacts from macOS
       uses: actions/download-artifact@v4
