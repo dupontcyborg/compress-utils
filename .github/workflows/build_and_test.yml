@@ -118,7 +118,11 @@ jobs:
       run: |
         ls -R compression-utils-c/windows
         echo "Listed"
+        set +e
         unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+        unzip_exit_code=$?
+        set -e
+        if [ $unzip_exit_code -gt 1 ]; then exit $unzip_exit_code; fi
         echo "Unzipped"
         chmod -R u+rwX,go+rwX compression-utils-c/windows/c
         echo "Changed Permissions"
