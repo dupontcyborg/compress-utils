@@ -66,6 +66,13 @@ class EXPORT Compressor {
      */
     std::vector<uint8_t> Decompress(const uint8_t* data, size_t size);
 
+    /**
+     * @brief Get the algorithm object
+     *
+     * @return Algorithm Compression algorithm
+     */
+    Algorithm algorithm() const;
+
    private:
     Algorithm algorithm_;
 };
