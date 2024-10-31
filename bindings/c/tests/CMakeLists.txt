@@ -75,6 +75,16 @@ if (WIN32)
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
     target_link_options(unit_tests_static PRIVATE /WHOLEARCHIVE:compress_utils_static)
+    add_custom_command(TARGET unit_tests_c POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:compress_utils_c>
+        $<TARGET_FILE_DIR:unit_tests_c>
+    )
+    add_custom_command(TARGET unit_tests_c POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:compress_utils>
+        $<TARGET_FILE_DIR:unit_tests_c>
+    )
 endif()
 
 # Add tests to CTest

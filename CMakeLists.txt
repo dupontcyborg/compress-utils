@@ -59,19 +59,15 @@ option(BUILD_C_BINDINGS "Build C bindings" ON)
 
 ######### INCLUDE DIRECTORIES #########
 
-# Include main src & algorithms' headers
+# Include main src & algorithms' directories
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/algorithms/dist/include)
-
-# Library directories for algorithms (dist/lib is where the built libraries for each algorithm are stored)
 set(ALGORITHMS_LIB_DIR ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
 
 ######### SOURCE FILES #########
 
-# Get all the files from the src/ directory
+# Get all the files from the src/ directory & remove algorithm files for now
 file(GLOB_RECURSE ALL_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/*.hpp")
-
-# Remove files from src/algorithms directory (to be re-added based on algorithm selection)
 file(GLOB_RECURSE ALGO_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/*.hpp")
 list(REMOVE_ITEM ALL_SOURCE_FILES ${ALGO_SOURCE_FILES})
 
@@ -294,7 +290,6 @@ if (WIN32)
     set_target_properties(compress_utils_static PROPERTIES
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
-    # target_link_options(compress_utils_static PRIVATE /MT)
 endif()
 
 ######### BINDINGS #########
@@ -304,4 +299,5 @@ if (BUILD_C_BINDINGS)
     message(STATUS "Building C binding...")
     add_subdirectory(bindings/c)
     add_dependencies(compress_utils_c compress_utils)
+    add_dependencies(compress_utils_c_static compress_utils_static)
 endif()

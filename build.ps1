@@ -213,11 +213,11 @@ Get-ChildItem -Path "dist\*\lib\*" -Filter "compress_utils*.lib" -Recurse | ForE
     $size = "{0:N2}" -f ($_.Length / 1MB)
     Write-Host "$($_.FullName): $size MB"
 }
-Get-ChildItem -Path "dist\*\*\lib\*" -Filter "compress_utils_static.lib" -Recurse | ForEach-Object {
+Get-ChildItem -Path "dist\*\*\lib\*" -Filter "compress_utils*.lib" -Recurse | ForEach-Object {
     $size = "{0:N2}" -f ($_.Length / 1MB)
     Write-Host "$($_.FullName): $size MB"
 }
-Get-ChildItem -Path "dist\*\*\lib\*" -Filter "compress_utils.dll" -Recurse | ForEach-Object {
+Get-ChildItem -Path "dist\*\*\lib\*" -Filter "compress_utils*.dll" -Recurse | ForEach-Object {
     $size = "{0:N2}" -f ($_.Length / 1MB)
     Write-Host "$($_.FullName): $size MB"
 }
