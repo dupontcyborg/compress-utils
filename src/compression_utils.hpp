@@ -2,20 +2,10 @@
 #define COMPRESSION_UTILS_HPP_
 
 #include "algorithms.hpp"
+#include "symbol_exports.hpp"
 
 #include <cstdint>
 #include <vector>
-
-// Platform-specific macros for exporting and importing symbols
-#if defined(_WIN32) || defined(_WIN64)
-#if defined(COMPRESSION_UTILS_EXPORTS)
-#define EXPORT __declspec(dllexport)  // Export when building the DLL
-#else
-#define EXPORT __declspec(dllimport)  // Import when using the DLL
-#endif
-#else
-#define EXPORT __attribute__((visibility("default")))  // For non-Windows platforms (Linux/macOS)
-#endif
 
 namespace compression_utils {
 
@@ -75,6 +65,13 @@ class EXPORT Compressor {
      * @throws std::runtime_error if the decompression fails
      */
     std::vector<uint8_t> Decompress(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Get the algorithm object
+     *
+     * @return Algorithm Compression algorithm
+     */
+    Algorithm algorithm() const;
 
    private:
     Algorithm algorithm_;

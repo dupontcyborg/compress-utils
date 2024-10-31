@@ -2,14 +2,24 @@
 
 ## Fixes
 
-- [ ] Fix Windows build issues and re-add `windows-latest` to Github Actions workflows
+- [X] Fix Windows build issues and re-add `windows-latest` to Github Actions workflows
+    - [X] Build `compress-utils` and `compress-utils-static`
+    - [X] Build `unit-tests` and `unit-tests-static`
+    - [X] Fix `ctest`
+    - [X] Build `compress-utils-c` and `compress-utils-c-static`
+    - [X] Build `unit-tests-c` and `unit-tests-c-static`
+    - [X] Build `xz`
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
+    - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
+    - [ ] Set up `whole-archive` for all platforms
 
 ## Additions
 
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Github Workflow for artifact publishing
+- [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
+- [ ] Streaming compression/decompression support
 
 ## Bindings (implementation, tooling, tests & ci/cd updates)
 
@@ -21,6 +31,7 @@
 - [ ] `python` (3.6 - 3.13)
 - [ ] `rust`
 - [ ] `swift`
+- [ ] `cli` (standalone command-line tool)
 
 ## Algorithms
 
@@ -41,6 +52,5 @@
 - [ ] `python` -> `pypl`
 - [ ] `rust` -> `cargo`
 - [ ] `swift` -> ?
-
 - [ ] `cli-macos` -> `homebrew`
 - [ ] `cli-linux` -> `apt`/`rpm`

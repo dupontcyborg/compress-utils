@@ -53,6 +53,12 @@ TEST_P(CompressorTest, CompressDecompress1MB) {
 // Test compression and decompression of large inputs
 TEST_P(CompressorTest, CompressDecompress32MB) {
     auto large_data = GenerateData(1024 * 1024 * 32);             // 32 MB of random data
+    
+    // If XZ, reduce size to 4MB to avoid long test times
+    if (compressor.algorithm() == compression_utils::Algorithm::XZ) {
+        large_data.resize(1024 * 1024 * 4);
+    }
+
     CheckCompressionAndDecompression(compressor, large_data, 1);  // Use fastest compression level
 }
 

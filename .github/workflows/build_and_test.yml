@@ -11,8 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # os: [macos-latest, windows-latest, ubuntu-latest]
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
     - name: Checkout Code
@@ -36,17 +35,27 @@ jobs:
     - name: Test All Bindings & Compressors
       run: |
         cd build
-        ctest --output-on-failure
+        ctest --output-on-failure -C Release
 
     - name: Zip C Bindings
       run: |
         cd dist
-        zip -r c-bindings-${{ matrix.os }}.zip c
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          powershell -Command "Compress-Archive -Path c -DestinationPath c-bindings-${{ matrix.os }}.zip"
+        else
+          zip -r c-bindings-${{ matrix.os }}.zip c
+        fi
+      shell: bash
 
     - name: Zip C++ Bindings
       run: |
         cd dist
-        zip -r cpp-bindings-${{ matrix.os }}.zip cpp
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          powershell -Command "Compress-Archive -Path cpp -DestinationPath cpp-bindings-${{ matrix.os }}.zip"
+        else
+          zip -r cpp-bindings-${{ matrix.os }}.zip cpp
+        fi
+      shell: bash
 
     - name: Upload C Artifacts
       uses: actions/upload-artifact@v4
@@ -71,8 +80,7 @@ jobs:
    ##### C Artifacts #####
 
     - name: Create C Artifact Directories
-      # run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
-      run: mkdir -p compression-utils-c/macos compression-utils-c/linux
+      run: mkdir -p compression-utils-c/macos compression-utils-c/linux compression-utils-c/windows
 
     - name: Download C Artifacts from macOS
       uses: actions/download-artifact@v4
@@ -86,12 +94,11 @@ jobs:
         name: c-bindings-ubuntu-latest
         path: compression-utils-c/linux
 
-    # Skipping Windows for now
-    # - name: Download C Artifacts from Windows
-    #   uses: actions/download-artifact@v4
-    #   with:
-    #     name: c-bindings-windows-latest
-    #     path: compression-utils-c/windows
+    - name: Download C Artifacts from Windows
+      uses: actions/download-artifact@v4
+      with:
+        name: c-bindings-windows-latest
+        path: compression-utils-c/windows
 
     - name: Unzip C Artifacts from macOS
       run: |
@@ -107,19 +114,22 @@ jobs:
         rm -r compression-utils-c/linux/c
         rm compression-utils-c/linux/c-bindings-ubuntu-latest.zip
       
-    # Skipping Windows for now
-    # - name: Unzip C Artifacts from Windows
-    #   run: |
-    #     unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
-    #     mv compression-utils-c/windows/c/* compression-utils-c/windows/
-    #     rm -r compression-utils-c/windows/c
-    #     rm compression-utils-c/windows/c-bindings-windows-latest.zip
+    - name: Unzip C Artifacts from Windows
+      run: |
+        set +e
+        unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+        unzip_exit_code=$?
+        set -e
+        if [ $unzip_exit_code -gt 1 ]; then exit $unzip_exit_code; fi
+        chmod -R u+rwX,go+rwX compression-utils-c/windows/c
+        mv compression-utils-c/windows/c/* compression-utils-c/windows/
+        rm -r compression-utils-c/windows/c
+        rm compression-utils-c/windows/c-bindings-windows-latest.zip
 
     ##### C++ Artifacts #####
 
     - name: Create C++ Artifact Directories
-      # run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux compression-utils-cpp/windows
-      run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux
+      run: mkdir -p compression-utils-cpp/macos compression-utils-cpp/linux compression-utils-cpp/windows
 
     - name: Download C++ Artifacts from macOS
       uses: actions/download-artifact@v4
@@ -133,12 +143,11 @@ jobs:
         name: cpp-bindings-ubuntu-latest
         path: compression-utils-cpp/linux
 
-    # Skipping Windows for now
-    # - name: Download C++ Artifacts from Windows
-    #   uses: actions/download-artifact@v4
-    #   with:
-    #     name: cpp-bindings-windows-latest
-    #     path: compression-utils-cpp/windows
+    - name: Download C++ Artifacts from Windows
+      uses: actions/download-artifact@v4
+      with:
+        name: cpp-bindings-windows-latest
+        path: compression-utils-cpp/windows
 
     - name: Unzip C++ Artifacts from macOS
       run: |
@@ -154,13 +163,17 @@ jobs:
         rm -r compression-utils-cpp/linux/cpp
         rm compression-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip
       
-    # Skipping Windows for now
-    # - name: Unzip C++ Artifacts from Windows
-    #   run: |
-    #     unzip -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
-    #     mv compression-utils-cpp/windows/cpp/* compression-utils-cpp/windows/
-    #     rm -r compression-utils-cpp/windows/cpp
-    #     rm compression-utils-cpp/windows/cpp-bindings-windows-latest.zip
+    - name: Unzip C++ Artifacts from Windows
+      run: |
+        set +e
+        unzip -o compression-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compression-utils-cpp/windows
+        unzip_exit_code=$?
+        set -e
+        if [ $unzip_exit_code -gt 1 ]; then exit $unzip_exit_code; fi
+        chmod -R u+rwX,go+rwX compression-utils-cpp/windows/cpp
+        mv compression-utils-cpp/windows/cpp/* compression-utils-cpp/windows/
+        rm -r compression-utils-cpp/windows/cpp
+        rm compression-utils-cpp/windows/cpp-bindings-windows-latest.zip
 
     ##### Merge All Artifacts #####
 

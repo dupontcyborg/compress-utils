@@ -21,4 +21,8 @@ std::vector<uint8_t> Compressor::Decompress(const uint8_t* data, size_t size) {
     return ::compression_utils::Decompress(data, size, algorithm_);
 }
 
+Algorithm Compressor::algorithm() const {
+    return algorithm_;
+}
+
 }  // namespace compression_utils

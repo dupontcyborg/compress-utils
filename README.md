@@ -95,12 +95,25 @@ _To be added_
 ### Build From Source
 
 1. Make sure you have `CMake` installed
-2. Clone & build
+2. Clone repo
 
-```
+```sh
 git clone https://github.com/dupontcyborg/compression-utils.git
 cd compression-utils
+```
+
+3. Run build script
+
+For Linux/macOS:
+
+```sh
 build.sh
+```
+
+For Windows:
+
+```cmd
+powershell.exe -file build.ps1
 ```
 
 3. The build library/libraries will be in `dist/<language>`

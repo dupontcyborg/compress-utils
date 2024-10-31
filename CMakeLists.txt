@@ -30,15 +30,18 @@ elseif(MSVC)
     set(LINKER_FLAGS "/OPT:REF")
 endif()
 
-# C++ Flags
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+# Linker Flags
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 
-# C Flags
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
-set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+# Set C and C++ Optimization Flags
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+elseif(MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
+endif()
 
 ######### OPTIONS #########
 
@@ -56,19 +59,15 @@ option(BUILD_C_BINDINGS "Build C bindings" ON)
 
 ######### INCLUDE DIRECTORIES #########
 
-# Include main src & algorithms' headers
+# Include main src & algorithms' directories
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/algorithms/dist/include)
-
-# Library directories for algorithms (dist/lib is where the built libraries for each algorithm are stored)
 set(ALGORITHMS_LIB_DIR ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
 
 ######### SOURCE FILES #########
 
-# Get all the files from the src/ directory
+# Get all the files from the src/ directory & remove algorithm files for now
 file(GLOB_RECURSE ALL_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/*.hpp")
-
-# Remove files from src/algorithms directory (to be re-added based on algorithm selection)
 file(GLOB_RECURSE ALGO_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/*.hpp")
 list(REMOVE_ITEM ALL_SOURCE_FILES ${ALGO_SOURCE_FILES})
 
@@ -94,7 +93,7 @@ if (WIN32)
     set(BROTLI_LIB_DEC "brotlidec.lib")
     set(BROTLI_LIB_COMMON "brotlicommon.lib")
     set(XZ_LIB "lzma.lib")
-    set(ZLIB_LIB "zlib.lib")
+    set(ZLIB_LIB "zlibstatic.lib")
     set(ZSTD_LIB "zstd_static.lib")
 
 else()
@@ -138,7 +137,7 @@ if (INCLUDE_XZ)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
     list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${XZ_LIB})
     # Define preprocessor directive to include XZ/LZMA in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ)
+    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
     # Add source files for XZ
     file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
     list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
@@ -146,7 +145,6 @@ if (INCLUDE_XZ)
     list(APPEND ALGORITHMS_ENUM "LZMA")
     list(APPEND ALGORITHMS_ENUM "XZ")
 endif()
-
 
 # zlib Algorithm
 if (INCLUDE_ZLIB)
@@ -186,6 +184,18 @@ if (INCLUDE_ZSTD)
     list(APPEND ALGORITHMS_ENUM "ZSTD")
 endif()
 
+# Add Windows-specific dependencies
+if(WIN32)
+    list(APPEND TARGET_LIBS "legacy_stdio_definitions")
+    
+    # Add threading support
+    find_package(Threads REQUIRED)
+    list(APPEND TARGET_LIBS Threads::Threads)
+    
+    # Add math library
+    list(APPEND TARGET_LIBS "msvcrt")
+endif()
+
 # Apply the libraries and definitions to both libraries
 target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
 target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
@@ -200,48 +210,62 @@ target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
 target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
 target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
 
-# Define COMPRESSION_UTILS_EXPORTS for the shared library
-target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORTS)
+# Define symbol visibility for shared and static libraries
+target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
+target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
 
 ######### INSTALL #########
-
-# Set the output directory for the library and header files
-set(CPP_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib")
-set(STATIC_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/lib/static")
-set(CPP_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/include/compression_utils")
-
-# Install libraries (shared and static)
-install(TARGETS compress_utils compress_utils_static
-    LIBRARY DESTINATION ${CPP_DIST_LIB_DIR}  # Shared lib
-    ARCHIVE DESTINATION ${STATIC_LIB_DIR}  # Static lib
-)
-
-# Install the headers
-install(FILES ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
-              ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
-              ${CMAKE_BINARY_DIR}/algorithms.hpp
-        DESTINATION ${CPP_DIST_INCLUDE_DIR})
-
-# Copy the README from bindings/cpp/README.md to the dist/cpp directory
-install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
-        DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
-
-# Copy the dependency libraries to the static directory
-# TODO - remove this once we fix the `whole-archive` issue
-if (TARGET compress_utils_static)
-    install(FILES ${TARGET_LIBS} DESTINATION ${STATIC_LIB_DIR})
-endif()
 
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
 set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
-
-# Configure the header file
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
     ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
     @ONLY
 )
+
+# Set the output directory for the library and header files
+set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
+set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
+
+# Install libraries (shared and static)
+install(TARGETS compress_utils
+    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
+    ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
+    RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
+)
+install(TARGETS compress_utils_static
+    LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
+    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
+)
+
+# Install the headers for the shared and static libraries
+file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
+              ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
+              ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
+install(FILES ${HEADERS}
+        DESTINATION ${CPP_SHARED_DIR}/include)
+install(FILES ${HEADERS}
+        DESTINATION ${CPP_STATIC_DIR}/include)
+
+# Install and rename the correct symbol_exports headers
+install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
+         DESTINATION ${CPP_SHARED_DIR}/include
+            RENAME symbol_exports.hpp)
+install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
+            DESTINATION ${CPP_STATIC_DIR}/include
+                RENAME symbol_exports.hpp)
+
+# Copy the README from bindings/cpp/README.md to the dist/cpp directory
+install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
+        DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
+
+# Copy the dependency libraries to the static directory (not WINDOWS)
+# TODO - remove this once we fix the `whole-archive` issue
+if (TARGET compress_utils_static AND NOT WIN32)
+    install(FILES ${TARGET_LIBS} DESTINATION ${CPP_STATIC_DIR}/lib)
+endif()
 
 ######### TESTS #########
 
@@ -250,8 +274,22 @@ if (ENABLE_TESTS)
     enable_testing()
     message(STATUS "Tests are enabled. Including the tests directory.")
     add_subdirectory(tests)
+    add_dependencies(unit_tests compress_utils)
+    add_dependencies(unit_tests_static compress_utils_static)
 else()
     message(STATUS "Tests are disabled. Skipping the tests directory.")
+endif()
+
+######### WINDOWS LINKING #########
+
+# Set runtime library flags for Windows targets
+if (WIN32)
+    set_target_properties(compress_utils PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+    set_target_properties(compress_utils_static PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
 endif()
 
 ######### BINDINGS #########
@@ -261,4 +299,5 @@ if (BUILD_C_BINDINGS)
     message(STATUS "Building C binding...")
     add_subdirectory(bindings/c)
     add_dependencies(compress_utils_c compress_utils)
+    add_dependencies(compress_utils_c_static compress_utils_static)
 endif()

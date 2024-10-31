@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build.sh - A script to build the `compression-utils` library
+# build.sh - A script to build the `compression-utils` library on Unix-like systems.
 
 # Initialize variables
 BUILD_DIR="build"
@@ -193,4 +193,4 @@ cd ..
 echo ""
 echo "Sizes of the built libraries:"
 echo "-----------------------------"
-find dist/*/lib/ -type f -name "libcompress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'
+find dist/** -type f -name "libcompress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'
