@@ -117,9 +117,14 @@ jobs:
     - name: Unzip C Artifacts from Windows
       run: |
         unzip -o compression-utils-c/windows/c-bindings-windows-latest.zip -d compression-utils-c/windows
+        echo "Unzipped"
+        ls -R compression-utils-c/windows
         mv compression-utils-c/windows/c/* compression-utils-c/windows/
+        echo "Moved"
         rm -r compression-utils-c/windows/c
+        echo "Removed"
         rm compression-utils-c/windows/c-bindings-windows-latest.zip
+        echo "Deleted"
 
     ##### C++ Artifacts #####
 
