@@ -19,6 +19,8 @@
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Github Workflow for artifact publishing
+- [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
+- [ ] Streaming compression/decompression support
 
 ## Bindings (implementation, tooling, tests & ci/cd updates)
 
@@ -30,6 +32,7 @@
 - [ ] `python` (3.6 - 3.13)
 - [ ] `rust`
 - [ ] `swift`
+- [ ] `cli` (standalone command-line tool)
 
 ## Algorithms
 
@@ -50,6 +53,5 @@
 - [ ] `python` -> `pypl`
 - [ ] `rust` -> `cargo`
 - [ ] `swift` -> ?
-
 - [ ] `cli-macos` -> `homebrew`
 - [ ] `cli-linux` -> `apt`/`rpm`
