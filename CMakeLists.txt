@@ -201,6 +201,7 @@ target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
 target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
 target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
 target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
+add_compile_definitions(${TARGET_DEFINITIONS})
 
 # TODO: for static lib, try `whole-archive` options so it includes all the symbols BUT also while supporting LTO/DCE
 

@@ -56,15 +56,8 @@ set(TARGET_PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
 set_target_properties(unit_tests_c PROPERTIES ${TARGET_PROPERTIES})
 set_target_properties(unit_tests_c_static PROPERTIES ${TARGET_PROPERTIES})
 
-# Set compression preprocessor definitions
-set(COMPRESSION_DEFINITIONS
-    $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
-    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
-    $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
-    $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
-)
-target_compile_definitions(unit_tests_c PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_SHARED)
-target_compile_definitions(unit_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_STATIC)
+target_compile_definitions(unit_tests_c PRIVATE COMPRESSION_UTILS_C_EXPORT_SHARED)
+target_compile_definitions(unit_tests_c_static PRIVATE COMPRESSION_UTILS_C_EXPORT_STATIC)
 
 # Specify runtime library settings on Windows
 if (WIN32)

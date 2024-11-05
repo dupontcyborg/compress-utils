@@ -85,15 +85,8 @@ set(COMPRESSION_LIBS ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
 target_link_directories(unit_tests PRIVATE ${COMPRESSION_LIBS})
 target_link_directories(unit_tests_static PRIVATE ${COMPRESSION_LIBS})
 
-# Apply preprocessor definitions for compression libraries
-set(COMPRESSION_DEFINITIONS
-    $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
-    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
-    $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
-    $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
-)
-target_compile_definitions(unit_tests PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_EXPORT_SHARED)
-target_compile_definitions(unit_tests_static PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_EXPORT_STATIC)
+target_compile_definitions(unit_tests PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
+target_compile_definitions(unit_tests_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
 
 # Specify runtime library settings on Windows
 if (WIN32)
