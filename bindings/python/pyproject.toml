@@ -1,0 +1,14 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compress-utils-py"
+version = "0.4.0"
+description = "Simple & high-performance compression utilities for Python"
+include-package-data = true
+
+[tool.setuptools]
+package-data = {"compress_utils_py": ["dist/python/*.so", "dist/python/*.dll", "dist/python/*.dylib"]}

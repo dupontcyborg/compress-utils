@@ -21,18 +21,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11" # Required for cibuildwheel, but it will build for all versions
+          python-version: "3.11"
 
       - name: Install cibuildwheel
         run: pip install cibuildwheel
 
       - name: Build wheels
         env:
-          # Run the CMake build before the wheel build starts
           CIBW_BEFORE_BUILD: |
             mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON && cmake --build . --config Release && cd ..
-          # Run tests after each wheel is built
-          CIBW_TEST_COMMAND: "pytest bindings/python/tests" # Adjust path to tests if needed
+          CIBW_TEST_COMMAND: "pytest bindings/python/tests"
+          CIBW_PROJECT_REQUIRES: "bindings/python/pyproject.toml"
+          CIBW_PROJECT_BUILD: "bindings/python"
+          CIBW_ENVIRONMENT: "PYTHONPATH=$PYTHONPATH:dist/python/"
         run: cibuildwheel --output-dir wheelhouse
 
       - name: Upload Wheels as GitHub Artifact
