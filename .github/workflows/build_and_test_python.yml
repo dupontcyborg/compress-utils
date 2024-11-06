@@ -1,0 +1,43 @@
+name: Build and Package Python Wheels
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11" # Required for cibuildwheel, but it will build for all versions
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel
+
+      - name: Build wheels
+        env:
+          # Run the CMake build before the wheel build starts
+          CIBW_BEFORE_BUILD: |
+            mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON && cmake --build . --config Release && cd ..
+          # Run tests after each wheel is built
+          CIBW_TEST_COMMAND: "pytest bindings/python/tests" # Adjust path to tests if needed
+        run: cibuildwheel --output-dir wheelhouse
+
+      - name: Upload Wheels as GitHub Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          retention-days: 5

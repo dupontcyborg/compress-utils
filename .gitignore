@@ -38,3 +38,6 @@ algorithms/dist/
 algorithms/*/src/
 algorithms/*/build/
 algorithms/*/dist/
+
+# Python
+__pycache__/

@@ -20,11 +20,11 @@ jobs:
         fetch-depth: 0
         clean: true
 
-    - name: Configure CMake for All Language Bindings & All Compressors
+    - name: Configure CMake for C/C++ Language Bindings & All Compressors
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF
 
     - name: Build All Languages
       run: cmake --build build --config Release -j 4
