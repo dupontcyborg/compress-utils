@@ -302,3 +302,10 @@ if (BUILD_C_BINDINGS)
     add_dependencies(compress_utils_c compress_utils)
     add_dependencies(compress_utils_c_static compress_utils_static)
 endif()
+
+# Python Bindings
+if (BUILD_PYTHON_BINDINGS)
+    message(STATUS "Building Python binding...")
+    add_subdirectory(bindings/python)
+    add_dependencies(compress_utils_py compress_utils)
+endif()
