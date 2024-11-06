@@ -61,11 +61,11 @@ ExternalProject_Add_Step(zstd_external copy_artifacts
 )
 
 # Create an imported library target for zstd
-add_library(zstd_library STATIC IMPORTED)
+add_library(zstd_library STATIC IMPORTED GLOBAL)
 set_target_properties(zstd_library PROPERTIES
     IMPORTED_LOCATION ${ZSTD_INSTALL_DIR_LIB}/${ZSTD_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${ZSTD_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${ZSTD_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on zstd_external so that zstd is built before it
-add_dependencies(compress_utils zstd_external)
+# Ensure the target is available globally
+add_dependencies(zstd_library zstd_external)

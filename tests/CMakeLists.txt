@@ -88,6 +88,11 @@ target_link_directories(unit_tests_static PRIVATE ${COMPRESSION_LIBS})
 target_compile_definitions(unit_tests PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
 target_compile_definitions(unit_tests_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
 
+# Include pthreads
+find_package(Threads REQUIRED)
+target_link_libraries(unit_tests PRIVATE Threads::Threads)
+target_link_libraries(unit_tests_static PRIVATE Threads::Threads)
+
 # Specify runtime library settings on Windows
 if (WIN32)
     set_target_properties(unit_tests PROPERTIES

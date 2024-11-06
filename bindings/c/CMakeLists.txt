@@ -81,7 +81,9 @@ install(FILES ${C_BINDING_DIR}/README.md DESTINATION ${CMAKE_SOURCE_DIR}/dist/c)
 
 # Optionally install static dependencies if building static
 if (TARGET compress_utils_c_static AND NOT WIN32)
-    install(FILES ${TARGET_LIBS} DESTINATION ${C_STATIC_DIR}/lib)
+    file(GLOB TARGET_LIBS ${ALGORITHMS_LIB_DIR}/*)
+    install(FILES ${TARGET_LIBS}
+            DESTINATION ${C_STATIC_DIR}/lib)
 endif()
 
 ######### WINDOWS LINKING #########

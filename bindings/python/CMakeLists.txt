@@ -3,7 +3,8 @@
 ######### BINDING SETUP #########
 
 # Locate Python and pybind11
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+# find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
 # Python binding directories
@@ -26,15 +27,33 @@ add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
 
 ######### INSTALL #########
 
-# Install directories
-set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
+# Set PYTHON_DIST_DIR unless already set
+# if(NOT DEFINED PYTHON_DIST_DIR)
+#     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
+# else()
+#     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/${PYTHON_DIST_DIR}")
+# endif()
 
-# Install the Python module
+if (SCIKIT_BUILD)
+    set(PYTHON_DIST_DIR "${CMAKE_INSTALL_PREFIX}")
+else()
+    set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
+endif()
+message(STATUS "Python distribution directory: ${PYTHON_DIST_DIR}")
+
+# Install the Python module (compiled .so file) to both destinations
 install(TARGETS ${PYTHON_MODULE_NAME}
     LIBRARY DESTINATION ${PYTHON_DIST_DIR}
     ARCHIVE DESTINATION ${PYTHON_DIST_DIR}
     RUNTIME DESTINATION ${PYTHON_DIST_DIR}
 )
+
+# Install additional files to both destinations
+foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE ${PYTHON_BINDING_DIR}/__init__.py)
+    install(FILES ${file}
+        DESTINATION ${PYTHON_DIST_DIR}
+    )
+endforeach()
 
 ######### TESTS #########
 
@@ -44,7 +63,6 @@ if(ENABLE_TESTS)
         NAME unit_tests_py
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compression_utils.py
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        # ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$PYTHONPATH"
     )
     set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")
 endif()

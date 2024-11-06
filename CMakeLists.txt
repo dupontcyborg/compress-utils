@@ -87,36 +87,20 @@ set(ALGORITHMS_ENUM "")
 set(TARGET_LIBS "")
 set(TARGET_DEFINITIONS "")
 
-# Handle Windows-specific library naming
-if (WIN32)
-    set(BROTLI_LIB_ENC "brotlienc.lib")
-    set(BROTLI_LIB_DEC "brotlidec.lib")
-    set(BROTLI_LIB_COMMON "brotlicommon.lib")
-    set(XZ_LIB "lzma.lib")
-    set(ZLIB_LIB "zlibstatic.lib")
-    set(ZSTD_LIB "zstd_static.lib")
-
-else()
-    set(BROTLI_LIB_ENC "libbrotlienc.a")
-    set(BROTLI_LIB_DEC "libbrotlidec.a")
-    set(BROTLI_LIB_COMMON "libbrotlicommon.a")
-    set(XZ_LIB "liblzma.a")
-    set(ZLIB_LIB "libz.a")
-    set(ZSTD_LIB "libzstd.a")
-endif()
-
 # Brotli Algorithm
 if (INCLUDE_BROTLI)
     message(STATUS "Including Brotli algorithm")
     # Add the subdirectory for Brotli which contains its own CMakeLists.txt
     add_subdirectory(algorithms/brotli)
     # Ensure that Brotli is built before compress_utils
-    add_dependencies(compress_utils brotli_external)
-    add_dependencies(compress_utils_static brotli_external)
+    add_dependencies(compress_utils brotlienc)
+    add_dependencies(compress_utils_static brotlienc)
+    add_dependencies(compress_utils brotlidec)
+    add_dependencies(compress_utils_static brotlidec)
+    add_dependencies(compress_utils brotlicommon)
+    add_dependencies(compress_utils_static brotlicommon)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_ENC})
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_DEC})
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_COMMON})
+    list(APPEND TARGET_LIBS brotlienc brotlidec brotlicommon)
     # Define preprocessor directive to include Brotli in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_BROTLI)
     # Add source files for Brotli
@@ -132,10 +116,10 @@ if (INCLUDE_XZ)
     # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
     add_subdirectory(algorithms/xz)
     # Ensure that xz is built before compress_utils
-    add_dependencies(compress_utils xz_external)
-    add_dependencies(compress_utils_static xz_external)
+    add_dependencies(compress_utils xz_library)
+    add_dependencies(compress_utils_static xz_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${XZ_LIB})
+    list(APPEND TARGET_LIBS xz_library)
     # Define preprocessor directive to include XZ/LZMA in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
     # Add source files for XZ
@@ -152,10 +136,10 @@ if (INCLUDE_ZLIB)
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
     # Ensure that zlib is built before compress_utils
-    add_dependencies(compress_utils zlib_external)
-    add_dependencies(compress_utils_static zlib_external)
+    add_dependencies(compress_utils zlib_library)
+    add_dependencies(compress_utils_static zlib_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${ZLIB_LIB})
+    list(APPEND TARGET_LIBS zlib_library)
     # Define preprocessor directive to include zlib in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_ZLIB)
     # Add source files for zlib
@@ -171,10 +155,10 @@ if (INCLUDE_ZSTD)
     # Add the subdirectory for zstd which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zstd)
     # Ensure that Zstd is built before compress_utils
-    add_dependencies(compress_utils zstd_external)
-    add_dependencies(compress_utils_static zstd_external)
+    add_dependencies(compress_utils zstd_library)
+    add_dependencies(compress_utils_static zstd_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${ZSTD_LIB})
+    list(APPEND TARGET_LIBS zstd_library)
     # Define preprocessor directive to include Zstd in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_ZSTD)
     # Add source files for Zstd
@@ -217,6 +201,9 @@ target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPOR
 
 ######### INSTALL #########
 
+# Define an option to detect when we are in a scikit-build environment
+option(SCIKIT_BUILD "Build within scikit-build environment" OFF)
+
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
 set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
@@ -230,42 +217,48 @@ configure_file(
 set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
 set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
 
-# Install libraries (shared and static)
-install(TARGETS compress_utils
-    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
-    ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
-    RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
-)
-install(TARGETS compress_utils_static
-    LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
-    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
-)
+if (NOT SCIKIT_BUILD)
 
-# Install the headers for the shared and static libraries
-file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
-              ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
-              ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
-install(FILES ${HEADERS}
-        DESTINATION ${CPP_SHARED_DIR}/include)
-install(FILES ${HEADERS}
-        DESTINATION ${CPP_STATIC_DIR}/include)
+    # Install libraries (shared and static)
+    install(TARGETS compress_utils
+        LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
+        ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
+        RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
+    )
+    install(TARGETS compress_utils_static
+        LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
+        ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
+    )
 
-# Install and rename the correct symbol_exports headers
-install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
-         DESTINATION ${CPP_SHARED_DIR}/include
-            RENAME symbol_exports.hpp)
-install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
-            DESTINATION ${CPP_STATIC_DIR}/include
+    # Install the headers for the shared and static libraries
+    file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
+                ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
+                ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
+    install(FILES ${HEADERS}
+            DESTINATION ${CPP_SHARED_DIR}/include)
+    install(FILES ${HEADERS}
+            DESTINATION ${CPP_STATIC_DIR}/include)
+
+    # Install and rename the correct symbol_exports headers
+    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
+            DESTINATION ${CPP_SHARED_DIR}/include
                 RENAME symbol_exports.hpp)
+    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
+                DESTINATION ${CPP_STATIC_DIR}/include
+                    RENAME symbol_exports.hpp)
 
-# Copy the README from bindings/cpp/README.md to the dist/cpp directory
-install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
-        DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
+    # Copy the README from bindings/cpp/README.md to the dist/cpp directory
+    install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
+            DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
 
-# Copy the dependency libraries to the static directory (not WINDOWS)
-# TODO - remove this once we fix the `whole-archive` issue
-if (TARGET compress_utils_static AND NOT WIN32)
-    install(FILES ${TARGET_LIBS} DESTINATION ${CPP_STATIC_DIR}/lib)
+    # Copy the dependency libraries to the static directory (not WINDOWS)
+    # TODO - remove this once we fix the `whole-archive` issue
+    if (TARGET compress_utils_static AND NOT WIN32)
+        file(GLOB TARGET_LIBS ${ALGORITHMS_LIB_DIR}/*)
+        install(FILES ${TARGET_LIBS}
+                DESTINATION ${CPP_STATIC_DIR}/lib)
+    endif()
+
 endif()
 
 ######### TESTS #########

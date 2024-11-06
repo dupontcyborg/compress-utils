@@ -71,11 +71,11 @@ ExternalProject_Add_Step(xz_external copy_artifacts
 )
 
 # Create an imported library target for XZ
-add_library(xz_library STATIC IMPORTED)
+add_library(xz_library STATIC IMPORTED GLOBAL)
 set_target_properties(xz_library PROPERTIES
     IMPORTED_LOCATION ${XZ_INSTALL_DIR_LIB}/${XZ_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${XZ_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${XZ_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on xz_external so that xz is built before it
-add_dependencies(compress_utils xz_external)
+# Ensure the target is available globally
+add_dependencies(xz_library xz_external)

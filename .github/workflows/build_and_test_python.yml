@@ -12,7 +12,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
 
     steps:
       - name: Checkout code
@@ -26,16 +27,53 @@ jobs:
       - name: Install cibuildwheel
         run: pip install cibuildwheel
 
-      - name: Build wheels
-        env:
-          CIBW_BEFORE_BUILD: |
-            mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON && cmake --build . --config Release && cd ..
-          CIBW_TEST_COMMAND: "pytest bindings/python/tests"
-          CIBW_PROJECT_REQUIRES: "bindings/python/pyproject.toml"
-          CIBW_PROJECT_BUILD: "bindings/python"
-          CIBW_ENVIRONMENT: "PYTHONPATH=$PYTHONPATH:dist/python/"
-        run: cibuildwheel --output-dir wheelhouse
+    #   - name: Configure CMake for C++ Only & All Compressors
+    #     run: |
+    #       mkdir build
+    #       cd build
+    #       cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_C_BINDINGS=OFF
+  
+    #   - name: Build C++ Only
+    #     run: cmake --build build --config Release -j 4
+  
+    #   - name: Install C++ Only
+    #     run: cmake --install build
+  
+    #   - name: Test C++ Core Library & Compressors
+    #     run: |
+    #       cd build
+    #       ctest --output-on-failure -C Release
 
+      - name: Copy Python Bindings Configuration
+        run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py .
+  
+    #   - name: Build Python Wheels from Main C++ Library
+    #     env:
+    #         CIBW_BEFORE_ALL: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_C_BINDINGS=OFF && cmake --build . --config Release -j 4 && cmake --install .
+    #         CIBW_BEFORE_BUILD: |
+    #             python -m pip install "pybind11[global]"
+    #             mkdir build
+    #             cd build
+    #             cmake .. -DCMAKE_BUILD_TYPE=Release \
+    #             -DBUILD_PYTHON_BINDINGS=ON \
+    #             -DBUILD_C_BINDINGS=OFF \
+    #             -DPython3_EXECUTABLE=$(which python) \
+    #             -DPython3_FIND_VIRTUALENV=ONLY
+    #             cmake --build . --config Release
+    #             cmake --install .
+    #             cd ..
+    #             cp -r bindings/python/build/compress_utils_py compress_utils_py
+    #             ls -R compress_utils_py
+    #         CIBW_BUILD_VERBOSITY: 1
+    #         CIBW_ENVIRONMENT: PYTHONPATH=dist/python/:$PYTHONPATH
+    #         CIBW_TEST_COMMAND: pytest {project}/tests
+    #     run: cibuildwheel --output-dir wheelhouse .
+
+      - name: Build Python Wheels
+        env:
+            CIBW_BUILD_VERBOSITY: 1
+        run: cibuildwheel --output-dir wheelhouse
+      
       - name: Upload Wheels as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:

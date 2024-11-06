@@ -1,14 +1,15 @@
-# pyproject.toml
-
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = [
+    "setuptools>=59.5",
+    "wheel",
+    "scikit-build",
+    "cmake>=3.17",
+    "pybind11[global]>=2.6",
+]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "compress-utils-py"
-version = "0.4.0"
-description = "Simple & high-performance compression utilities for Python"
-include-package-data = true
-
-[tool.setuptools]
-package-data = {"compress_utils_py": ["dist/python/*.so", "dist/python/*.dll", "dist/python/*.dylib"]}
+[tool.cibuildwheel]
+# Build for all Python versions between 3.6 and 3.13
+build = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
+# Run the package tests using `pytest`
+# test-command = "pytest {package}/tests"

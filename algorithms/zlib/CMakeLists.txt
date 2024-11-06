@@ -58,11 +58,11 @@ ExternalProject_Add_Step(zlib_external copy_artifacts
 )
 
 # Create an imported library target for zlib
-add_library(zlib_library STATIC IMPORTED)
+add_library(zlib_library STATIC IMPORTED GLOBAL)
 set_target_properties(zlib_library PROPERTIES
     IMPORTED_LOCATION ${ZLIB_INSTALL_DIR_LIB}/${ZLIB_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on zlib_external so that zlib is built before it
-add_dependencies(compress_utils zlib_external)
+# Ensure the target is available globally
+add_dependencies(zlib_library zlib_external)

@@ -11,6 +11,8 @@ The API is simple and universal across all [available algorithms](/README.md#bui
 
 ## Table of Contents
 
+- [Installation](#installation)
+- [Available Algorithms](#available-algorithms)
 - [OOP API](#oop-api)
     - [Setup](#setup)
         - [Includes](#includes)
@@ -32,6 +34,34 @@ The API is simple and universal across all [available algorithms](/README.md#bui
     - [Decompression](#decompression-1)
         - [From a Vector](#from-a-vector-3)
         - [From a Pointer](#from-a-pointer-3)
+        
+## Installation
+
+_TBD_
+## Available Algorithms
+
+The following compression algorithms are available (depending on your build configuration):
+
+- **brotli**
+- **lzma**
+- **xz**
+- **zlib**
+- **zstd**
+
+To check which algorithms are available in your installation, you check the `algorithms.hpp` header:
+
+```cpp
+/**
+ * @brief Enum class that defines the available compression algorithms
+ */
+enum class Algorithm {
+    BROTLI,
+    LZMA,
+    XZ,
+    ZLIB,
+    ZSTD
+};
+```
 
 ## OOP API
 
