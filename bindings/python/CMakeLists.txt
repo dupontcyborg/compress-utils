@@ -36,3 +36,15 @@ install(TARGETS ${PYTHON_MODULE_NAME}
     RUNTIME DESTINATION ${PYTHON_DIST_DIR}
 )
 
+######### TESTS #########
+
+if(ENABLE_TESTS)
+    # Add the test with the library path set
+    add_test(
+        NAME unit_tests_py
+        COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compression_utils.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        # ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$PYTHONPATH"
+    )
+    set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")
+endif()
