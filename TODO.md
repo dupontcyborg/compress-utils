@@ -12,6 +12,7 @@
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
+- [ ] Rename `compression-utils` to `compress-utils`
 
 ## Additions
 
