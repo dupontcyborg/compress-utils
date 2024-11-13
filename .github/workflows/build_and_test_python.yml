@@ -19,6 +19,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU (Linux ARM64)
+        if: matrix.os == 'ubuntu-latest'
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: "arm64"
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -27,17 +33,14 @@ jobs:
       - name: Install cibuildwheel
         run: pip install cibuildwheel
 
-      - name: Install qemu (Linux only)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y qemu
-
       - name: Copy Python Bindings Configuration
         run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py .
   
       - name: Build Python Wheels
         env:
-            CIBW_BUILD_VERBOSITY: 1
-            CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          CIBW_ARCHS_MACOS: "universal2"
         run: cibuildwheel --output-dir wheelhouse
       
       - name: Upload Wheels as GitHub Artifact
