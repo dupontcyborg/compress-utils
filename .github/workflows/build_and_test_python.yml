@@ -40,7 +40,7 @@ jobs:
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
-          CIBW_ARCHS_MACOS: "universal2"
+          CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
         run: cibuildwheel --output-dir wheelhouse
       
       - name: Upload Wheels as GitHub Artifact

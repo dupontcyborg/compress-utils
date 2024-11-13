@@ -15,6 +15,12 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Set macOS architectures for Universal build
+# if(APPLE)
+#     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for macOS" FORCE)
+# endif()
+# TODO - re-enable this later
+
 # Retrieve the environment variable and assign it to a CMake variable
 if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
     set(CMAKE_PARALLEL_LEVEL $ENV{CMAKE_BUILD_PARALLEL_LEVEL})
