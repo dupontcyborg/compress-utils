@@ -11,5 +11,15 @@ build-backend = "setuptools.build_meta"
 [tool.cibuildwheel]
 # Build for all Python versions between 3.6 and 3.13
 build = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
+
+# Skip 32-bit builds
+skip = "*-manylinux_i686 *-win32"
+
+# Build a universal wheel
+archs.macos = "universal2"
+
+# Set the build verbosity to 1
+build_verbosity = 1
+
 # Run the package tests using `pytest`
 # test-command = "pytest {package}/tests"
