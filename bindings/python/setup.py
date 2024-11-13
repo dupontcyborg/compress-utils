@@ -7,6 +7,7 @@ setup(
     author="Nicolas Dupont",
     license="MIT",
     packages=['compress_utils_py'],
+    package_dir={'compress_utils_py': 'bindings/python'},
     package_data={
         'compress_utils_py': [
             'README.md',
