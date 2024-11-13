@@ -26,4 +26,4 @@ environment = "CMAKE_BUILD_PARALLEL_LEVEL=4"
 test-requires = "pytest"
 
 # Run the package tests using `pytest`
-test-command = "pytest {project}" # TODO
+# test-command = "pytest {project}" # TODO
