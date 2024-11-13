@@ -27,13 +27,6 @@ add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
 
 ######### INSTALL #########
 
-# Set PYTHON_DIST_DIR unless already set
-# if(NOT DEFINED PYTHON_DIST_DIR)
-#     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
-# else()
-#     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/${PYTHON_DIST_DIR}")
-# endif()
-
 if (SCIKIT_BUILD)
     set(PYTHON_DIST_DIR "${CMAKE_INSTALL_PREFIX}")
 else()

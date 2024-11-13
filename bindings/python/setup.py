@@ -1,8 +1,4 @@
 from skbuild import setup
-import os
-
-# Define an install prefix within the build directory
-# install_prefix = os.path.join("_skbuild", "cmake-install")
 
 setup(
     name="compress_utils_py",
@@ -16,7 +12,6 @@ setup(
         '-DBUILD_PYTHON_BINDINGS=ON',
         '-DBUILD_C_BINDINGS=OFF',
         '-DCMAKE_BUILD_TYPE=Release',
-        # f'-DPYTHON_DIST_DIR={install_prefix}',
         '-DSCIKIT_BUILD=ON'
     ],
     classifiers=[
@@ -24,6 +19,7 @@ setup(
         "Programming Language :: C++",
         "Operating System :: OS Independent",
     ],
+    build_options=['-j8'],
     python_requires=">=3.6",
     zip_safe=False,
 )

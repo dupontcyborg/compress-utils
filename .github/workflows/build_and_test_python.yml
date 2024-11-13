@@ -33,7 +33,6 @@ jobs:
       - name: Build Python Wheels
         env:
             CIBW_BUILD_VERBOSITY: 1
-            CMAKE_BUILD_PARALLEL_LEVEL: 8
         run: cibuildwheel --output-dir wheelhouse
       
       - name: Upload Wheels as GitHub Artifact

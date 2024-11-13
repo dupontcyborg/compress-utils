@@ -13,13 +13,17 @@ build-backend = "setuptools.build_meta"
 build = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
 
 # Skip 32-bit builds
-skip = "*-manylinux_i686 *-win32"
+skip = "*-win32 *-musllinux* *_i686 *_ppc64le *_s390x *_armv7l"
 
-# Build a universal wheel
-archs.macos = "universal2"
+# Specify only the desired architectures for each platform
+# archs.manylinux = "x86_64 aarch64"
+# archs.macos = "universal2"  # To build Universal 2 for both x86_64 and arm64 on macOS
 
-# Set the build verbosity to 1
-build_verbosity = 1
+# Set parallel build environment variable
+environment = "CMAKE_BUILD_PARALLEL_LEVEL=4"
+
+# Install the required dependencies for testing
+test-requires = "pytest"
 
 # Run the package tests using `pytest`
-# test-command = "pytest {package}/tests"
+test-command = "pytest {project}" # TODO

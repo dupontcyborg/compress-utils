@@ -15,6 +15,16 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Retrieve the environment variable and assign it to a CMake variable
+if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+    set(CMAKE_PARALLEL_LEVEL $ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+else()
+    set(CMAKE_PARALLEL_LEVEL "Not set")
+endif()
+
+# Print CMAKE_BUILD_PARALLEL_LEVEL environment variable
+message(STATUS "CMAKE_BUILD_PARALLEL_LEVEL: ${CMAKE_PARALLEL_LEVEL}")
+
 ######### COMPILER FLAGS #########
 
 # Add LTO and Dead Code Elimination flags based on the compiler
