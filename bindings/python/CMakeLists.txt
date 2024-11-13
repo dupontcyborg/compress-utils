@@ -8,13 +8,25 @@ find_package(pybind11 CONFIG REQUIRED)
 
 # Python binding directories
 set(PYTHON_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/python")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PYTHON_BINDING_DIR}/build")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PYTHON_BINDING_DIR}/compress_utils_py")
 
 # Define the Python module name
 set(PYTHON_MODULE_NAME "compress_utils_py")
 
 # Create the Python module target
 pybind11_add_module(${PYTHON_MODULE_NAME} MODULE compression_utils_py.cpp)
+
+# Define the package directory
+set(PYTHON_PACKAGE_DIR "${PYTHON_BINDING_DIR}/compress_utils_py")
+
+# Ensure the package directory exists
+file(MAKE_DIRECTORY ${PYTHON_PACKAGE_DIR})
+
+# Set the output directory for the module to the package directory
+set_target_properties(${PYTHON_MODULE_NAME} PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${PYTHON_PACKAGE_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${PYTHON_PACKAGE_DIR}
+)
 
 # Include directories for the Python module and link to core static lib
 target_include_directories(${PYTHON_MODULE_NAME} PRIVATE ${PYTHON_BINDING_DIR} ${CMAKE_SOURCE_DIR}/src)
@@ -26,26 +38,29 @@ add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
 
 ######### INSTALL #########
 
-if (SCIKIT_BUILD)
-    set(PYTHON_DIST_DIR "${CMAKE_INSTALL_PREFIX}")
-else()
+if (NOT SCIKIT_BUILD)
     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
-endif()
-message(STATUS "Python distribution directory: ${PYTHON_DIST_DIR}")
+    message(STATUS "Python distribution directory: ${PYTHON_DIST_DIR}")
 
-# Install the Python module (compiled .so file) to both destinations
-install(TARGETS ${PYTHON_MODULE_NAME}
-    LIBRARY DESTINATION ${PYTHON_DIST_DIR}
-    ARCHIVE DESTINATION ${PYTHON_DIST_DIR}
-    RUNTIME DESTINATION ${PYTHON_DIST_DIR}
-)
-
-# Install additional files to both destinations
-foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE ${PYTHON_BINDING_DIR}/__init__.py)
-    install(FILES ${file}
-        DESTINATION ${PYTHON_DIST_DIR}
+    # Install the Python module (compiled .so file) to both destinations
+    install(TARGETS ${PYTHON_MODULE_NAME}
+        LIBRARY DESTINATION ${PYTHON_DIST_DIR}
+        ARCHIVE DESTINATION ${PYTHON_DIST_DIR}
+        RUNTIME DESTINATION ${PYTHON_DIST_DIR}
     )
-endforeach()
+
+    # Install additional files to both destinations
+    foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE ${PYTHON_PACKAGE_DIR}/__init__.py)
+        install(FILES ${file}
+            DESTINATION ${PYTHON_DIST_DIR}
+        )
+    endforeach()
+else()
+    # Fake install README.md and pyproject.toml for scikit-build
+    install(FILES ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml
+        DESTINATION ${CMAKE_INSTALL_PREFIX}
+    )
+endif()
 
 ######### TESTS #########
 
