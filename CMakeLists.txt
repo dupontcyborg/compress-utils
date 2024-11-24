@@ -59,6 +59,9 @@ elseif(MSVC)
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
 endif()
 
+# Ensure the dynamic runtime library is used (/MD)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 ######### OPTIONS #########
 
 # Option to enable/disable tests
@@ -292,15 +295,15 @@ endif()
 
 ######### WINDOWS LINKING #########
 
-# Set runtime library flags for Windows targets
-if (WIN32)
-    set_target_properties(compress_utils PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(compress_utils_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
-endif()
+# # Set runtime library flags for Windows targets
+# if (WIN32)
+#     set_target_properties(compress_utils PROPERTIES
+#         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+#     )
+#     set_target_properties(compress_utils_static PROPERTIES
+#         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+#     )
+# endif()
 
 ######### BINDINGS #########
 

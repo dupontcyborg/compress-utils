@@ -90,12 +90,12 @@ endif()
 
 # Set runtime library flags for Windows targets
 if (WIN32)
-    set_target_properties(compress_utils_c PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(compress_utils_c_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
+    # set_target_properties(compress_utils_c PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    # )
+    # set_target_properties(compress_utils_c_static PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    # )
     add_custom_command(TARGET compress_utils_c POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:compress_utils>

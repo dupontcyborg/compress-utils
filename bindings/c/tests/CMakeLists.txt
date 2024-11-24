@@ -66,12 +66,12 @@ target_compile_definitions(unit_tests_c_static PRIVATE COMPRESSION_UTILS_C_EXPOR
 
 # Specify runtime library settings on Windows
 if (WIN32)
-    set_target_properties(unit_tests PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(unit_tests_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
+    # set_target_properties(unit_tests PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    # )
+    # set_target_properties(unit_tests_static PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    # )
     target_link_options(unit_tests_static PRIVATE /WHOLEARCHIVE:compress_utils_static)
     add_custom_command(TARGET unit_tests_c POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

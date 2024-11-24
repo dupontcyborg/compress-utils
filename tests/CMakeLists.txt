@@ -37,10 +37,10 @@ target_include_directories(gtest_main_md PUBLIC
     ${googletest_SOURCE_DIR}/googletest
     ${googletest_SOURCE_DIR}/googletest/include)
 target_link_libraries(gtest_main_md PUBLIC gtest_md)
-set_target_properties(gtest_md PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-set_target_properties(gtest_main_md PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+# set_target_properties(gtest_md PROPERTIES
+#     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+# set_target_properties(gtest_main_md PROPERTIES
+#     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 # Build GoogleTest with static runtime (/MT)
 add_library(gtest_mt STATIC
@@ -54,10 +54,10 @@ target_include_directories(gtest_main_mt PUBLIC
     ${googletest_SOURCE_DIR}/googletest
     ${googletest_SOURCE_DIR}/googletest/include)
 target_link_libraries(gtest_main_mt PUBLIC gtest_mt)
-set_target_properties(gtest_mt PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-set_target_properties(gtest_main_mt PROPERTIES
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# set_target_properties(gtest_mt PROPERTIES
+#     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# set_target_properties(gtest_main_mt PROPERTIES
+#     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 ######### TEST SETUP #########
 
@@ -95,12 +95,12 @@ target_link_libraries(unit_tests_static PRIVATE Threads::Threads)
 
 # Specify runtime library settings on Windows
 if (WIN32)
-    set_target_properties(unit_tests PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(unit_tests_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
+    # set_target_properties(unit_tests PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    # )
+    # set_target_properties(unit_tests_static PROPERTIES
+    #     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    # )
     target_link_options(unit_tests_static PRIVATE /WHOLEARCHIVE:compress_utils_static)
 endif()
 
