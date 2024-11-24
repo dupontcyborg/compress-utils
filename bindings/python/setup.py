@@ -34,7 +34,8 @@ setup(
         '-DBUILD_PYTHON_BINDINGS=ON',
         '-DBUILD_C_BINDINGS=OFF',
         '-DCMAKE_BUILD_TYPE=Release',
-        '-DSCIKIT_BUILD=ON'
+        '-DSCIKIT_BUILD=ON',
+        '-DENABLE_TESTS=OFF'
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
