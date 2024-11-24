@@ -2,7 +2,7 @@ from pathlib import Path
 from skbuild import setup
 
 # Clean up existing shared library files
-build_dir = Path("bindings/python/compress_utils_py")
+build_dir = Path("bindings/python/compress_utils")
 for extension in ["compress_utils_py.*.so", "compress_utils_py.*.dylib", "compress_utils_py.*.pyd"]:
     for file in build_dir.glob(extension):
         try:
@@ -14,15 +14,15 @@ for extension in ["compress_utils_py.*.so", "compress_utils_py.*.dylib", "compre
             print(f"Error deleting {file}: {e}")
 
 setup(
-    name="compress_utils_py",
+    name="compress_utils",
     version="0.4.0",
     description="Simple & high-performance compression utilities for Python",
     author="Nicolas Dupont",
     license="MIT",
-    packages=['compress_utils_py'],
-    package_dir={'compress_utils_py': 'bindings/python/compress_utils_py'},
+    packages=['compress_utils'],
+    package_dir={'compress_utils': 'bindings/python/compress_utils'},
     package_data={
-        'compress_utils_py': [
+        'compress_utils': [
             'README.md',
             'LICENSE',
             'compress_utils_py*.so',    # For Linux shared libraries

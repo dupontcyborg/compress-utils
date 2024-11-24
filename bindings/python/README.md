@@ -40,7 +40,7 @@ To install the Python bindings, use `pip`:
 
 ```bash
 # TBD
-pip install compress_utils_py
+pip install compress_utils
 ```
 
 ## Available Algorithms
@@ -56,7 +56,7 @@ The following compression algorithms are available (depending on your build conf
 To check which algorithms are available in your installation, you can list the members of the `Algorithm` enum:
 
 ```python
-from compress_utils_py import Algorithm
+from compress_utils import Algorithm
 
 print(list(Algorithm))
 ```
@@ -67,10 +67,10 @@ print(list(Algorithm))
 
 #### Imports
 
-To use the OOP API, import the `compressor` class and optionally the `Algorithm` enum from the `compress_utils_py` module:
+To use the OOP API, import the `compressor` class and optionally the `Algorithm` enum from the `compress_utils` module:
 
 ```python
-from compress_utils_py import compressor, Algorithm
+from compress_utils import compressor, Algorithm
 ```
 
 #### Selecting an Algorithm
@@ -138,7 +138,7 @@ The `decompressed_data` will be a `bytes` object containing the original data.
 To use the functional API, import the `compress` and `decompress` functions and optionally, the `Algorithm` enum:
 
 ```python
-from compress_utils_py import compress, decompress, Algorithm
+from compress_utils import compress, decompress, Algorithm
 ```
 
 #### Selecting an Algorithm
@@ -191,7 +191,7 @@ decompressed_data = decompress(compressed_data, algorithm)
 ### Listing Available Algorithms
 
 ```python
-from compress_utils_py import Algorithm
+from compress_utils import Algorithm
 
 # List available algorithms
 for alg in Algorithm:
@@ -213,7 +213,7 @@ Algorithm.zstd
 ### Example Using OOP API
 
 ```python
-from compress_utils_py import compressor, Algorithm
+from compress_utils import compressor, Algorithm
 
 # Select algorithm
 algorithm = Algorithm.zstd
@@ -237,7 +237,7 @@ assert decompressed_data == data
 ### Example Using Functional API
 
 ```python
-from compress_utils_py import compress, decompress, Algorithm
+from compress_utils import compress, decompress, Algorithm
 
 # Select algorithm
 algorithm = 'zstd'  # or Algorithm.zstd

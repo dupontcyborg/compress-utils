@@ -1,6 +1,6 @@
 import unittest
 import random
-import compress_utils_py as comp
+import compress_utils as comp
 
 # Sample test data
 SAMPLE_DATA = b"Hello World"

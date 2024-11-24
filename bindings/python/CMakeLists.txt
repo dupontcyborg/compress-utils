@@ -20,16 +20,16 @@ endif()
 
 # Python binding directories
 set(PYTHON_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/python")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PYTHON_BINDING_DIR}/compress_utils_py")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PYTHON_BINDING_DIR}/compress_utils")
 
 # Define the Python module name
 set(PYTHON_MODULE_NAME "compress_utils_py")
 
 # Create the Python module target
-pybind11_add_module(${PYTHON_MODULE_NAME} MODULE compression_utils_py.cpp)
+pybind11_add_module(${PYTHON_MODULE_NAME} MODULE compress_utils_py.cpp)
 
 # Define the package directory
-set(PYTHON_PACKAGE_DIR "${PYTHON_BINDING_DIR}/compress_utils_py")
+set(PYTHON_PACKAGE_DIR "${PYTHON_BINDING_DIR}/compress_utils")
 
 # Ensure the package directory exists
 file(MAKE_DIRECTORY ${PYTHON_PACKAGE_DIR})
