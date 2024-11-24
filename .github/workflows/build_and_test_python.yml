@@ -40,7 +40,7 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS_LINUX: "x86_64" # TODO - change this to "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
-          CIBW_ARCHS_WINDOWS: "x86_64" # TODO - change this to "x86_64 aarch64"
+          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "ARM64 ARM64"
         run: cibuildwheel --output-dir wheelhouse
       
       - name: Upload Wheels as GitHub Artifact
