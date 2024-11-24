@@ -1,4 +1,17 @@
+from pathlib import Path
 from skbuild import setup
+
+# Clean up existing shared library files
+build_dir = Path("bindings/python/compress_utils_py")
+for extension in ["compress_utils_py.*.so", "compress_utils_py.*.dylib", "compress_utils_py.*.dll"]:
+    for file in build_dir.glob(extension):
+        try:
+            print(f"Removing existing build artifact: {file}")
+            file.unlink()
+        except FileNotFoundError:
+            print(f"File not found: {file}")
+        except Exception as e:
+            print(f"Error deleting {file}: {e}")
 
 setup(
     name="compress_utils_py",
