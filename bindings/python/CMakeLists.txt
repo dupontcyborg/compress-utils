@@ -9,6 +9,7 @@ find_package(pybind11 CONFIG QUIET)
 # If pybind11 is not found, fetch it
 if (NOT pybind11_FOUND)
     message(STATUS "pybind11 not found. Fetching pybind11 from GitHub...")
+    include(FetchContent)
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git

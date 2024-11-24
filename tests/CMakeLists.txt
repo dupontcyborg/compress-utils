@@ -16,7 +16,7 @@ ExternalProject_Add(
     GIT_SHALLOW TRUE
     CMAKE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
-      -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+      -DCMAKE_BUILD_TYPE=Release
       -DBUILD_GMOCK=OFF
       -DBUILD_GTEST=ON
       -DINSTALL_GTEST=OFF
@@ -34,9 +34,15 @@ ExternalProject_Get_Property(googletest source_dir binary_dir)
 
 # Create an imported target for gtest
 add_library(gtest IMPORTED STATIC GLOBAL)
-set_target_properties(gtest PROPERTIES
-    IMPORTED_LOCATION ${binary_dir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX}
-)
+if (WIN32)
+    set_target_properties(gtest PROPERTIES
+        IMPORTED_LOCATION ${binary_dir}/lib/Release/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX}
+    )
+else()
+    set_target_properties(gtest PROPERTIES
+        IMPORTED_LOCATION ${binary_dir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX}
+    )
+endif()
 
 # Ensure that the gtest targets are built after googletest external project
 add_dependencies(gtest googletest)
