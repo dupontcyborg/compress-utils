@@ -3,7 +3,7 @@ from skbuild import setup
 
 # Clean up existing shared library files
 build_dir = Path("bindings/python/compress_utils_py")
-for extension in ["compress_utils_py.*.so", "compress_utils_py.*.dylib", "compress_utils_py.*.dll"]:
+for extension in ["compress_utils_py.*.so", "compress_utils_py.*.dylib", "compress_utils_py.*.pyd"]:
     for file in build_dir.glob(extension):
         try:
             print(f"Removing existing build artifact: {file}")
@@ -27,7 +27,7 @@ setup(
             'LICENSE',
             'compress_utils_py*.so',    # For Linux shared libraries
             'compress_utils_py*.dylib', # For macOS shared libraries
-            'compress_utils_py*.dll',   # For Windows shared libraries
+            'compress_utils_py*.pyd',   # For Windows shared libraries
         ]
     },
     cmake_args=[
