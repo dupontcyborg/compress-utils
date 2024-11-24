@@ -15,7 +15,6 @@ setup(
             'compress_utils_py*.so',    # For Linux shared libraries
             'compress_utils_py*.dylib', # For macOS shared libraries
             'compress_utils_py*.dll',   # For Windows shared libraries
-
         ]
     },
     cmake_args=[

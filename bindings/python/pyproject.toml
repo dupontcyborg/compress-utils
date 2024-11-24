@@ -10,8 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.cibuildwheel]
 # Build for all Python versions between 3.6 and 3.13
-# build = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
-build = "cp36-* cp311-*" # TODO - revert this
+build = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
 
 # Skip 32-bit builds
 skip = "*-win32 *-musllinux* *_i686 *_ppc64le *_s390x *_armv7l"
@@ -23,4 +22,4 @@ environment = "CMAKE_BUILD_PARALLEL_LEVEL=4"
 test-requires = "pytest"
 
 # Run the package tests using `pytest`
-# test-command = "pytest {project}/bindings/python/tests" # TODO
+test-command = "pytest {project}/bindings/python/tests" # TODO
