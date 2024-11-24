@@ -293,18 +293,6 @@ else()
     message(STATUS "Tests are disabled. Skipping the tests directory.")
 endif()
 
-######### WINDOWS LINKING #########
-
-# # Set runtime library flags for Windows targets
-# if (WIN32)
-#     set_target_properties(compress_utils PROPERTIES
-#         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-#     )
-#     set_target_properties(compress_utils_static PROPERTIES
-#         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-#     )
-# endif()
-
 ######### BINDINGS #########
 
 # C Bindings

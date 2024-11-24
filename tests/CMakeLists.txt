@@ -34,21 +34,12 @@ ExternalProject_Get_Property(googletest source_dir binary_dir)
 
 # Create an imported target for gtest
 add_library(gtest IMPORTED STATIC GLOBAL)
-add_library(gtest_main IMPORTED STATIC GLOBAL)
-
-# Specify the locations of the gtest libraries
 set_target_properties(gtest PROPERTIES
-    IMPORTED_LOCATION ${binary_dir}/googlemock/gtest/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX}
-    INTERFACE_INCLUDE_DIRECTORIES ${source_dir}/include
-)
-set_target_properties(gtest_main PROPERTIES
-    IMPORTED_LOCATION ${binary_dir}/googlemock/gtest/${CMAKE_STATIC_LIBRARY_PREFIX}gtest_main${CMAKE_STATIC_LIBRARY_SUFFIX}
-    INTERFACE_INCLUDE_DIRECTORIES ${source_dir}/include
+    IMPORTED_LOCATION ${binary_dir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}gtest${CMAKE_STATIC_LIBRARY_SUFFIX}
 )
 
 # Ensure that the gtest targets are built after googletest external project
 add_dependencies(gtest googletest)
-add_dependencies(gtest_main googletest)
 
 ######### TEST SETUP #########
 
