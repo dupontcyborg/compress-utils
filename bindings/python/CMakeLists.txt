@@ -72,6 +72,13 @@ else()
     install(FILES ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml
         DESTINATION ${CMAKE_INSTALL_PREFIX}
     )
+
+    # Move the built Python module to the package directory (from Release/ to the package directory)
+    add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:${PYTHON_MODULE_NAME}>
+        ${PYTHON_PACKAGE_DIR}
+    )
 endif()
 
 ######### TESTS #########
