@@ -15,7 +15,8 @@ ExternalProject_Add(
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DCUNIT_BUILD_CU_TEST=OFF
         -DBUILD_SHARED_LIBS=OFF
-    BUILD_COMMAND ${CMAKE_COMMAND} --build . --target CUnit
+    # BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
+    BUILD_COMMAND ${CMAKE_COMMAND} --build . --target CUnit --config Release
     LOG_DOWNLOAD OFF LOG_UPDATE OFF LOG_CONFIGURE OFF LOG_BUILD OFF LOG_INSTALL OFF
 )
 
