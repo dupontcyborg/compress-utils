@@ -5,8 +5,8 @@
   <img src="https://img.shields.io/github/v/release/dupontcyborg/compression-utils" alt="GitHub Release"/>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/algorithms-4-green?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-2-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/badge/algorithms-4-darkgreen?style=flat" alt="Algorithms"/>
+  <img src="https://img.shields.io/badge/languages-3-darkgreen?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compression-utils" alt="Code Size"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compression-utils" alt="License"/>
 </p>
@@ -16,7 +16,7 @@
 ## Features
 
 - [4 built-in data compression algorithms](#built-in-compression-algorithms)
-- [2 languages supported](#supported-languages)
+- [3 languages supported](#supported-languages)
 - [Standardized API](#usage) across all algorithms & languages
 - Portable & cross-platform (Linux, macOS, Windows)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
@@ -36,8 +36,9 @@
 
 | Language | Package | Code Examples & Docs |
 |:---:|:---:|:---:|
-| C++ | _TBD_ | [C++ Code](bindings/cpp/README.md) |
-| C | _TBD_ | [C Code](bindings/c/README.md)
+| C++ | _TBD_ | [C++ API](bindings/cpp/README.md) |
+| C | _TBD_ | [C API](bindings/c/README.md)
+| Python | _TBD_ | [Python API](bindings/python/README.md) |
 
 ## Usage
 
@@ -49,34 +50,34 @@ This project aims to bring a unified interface across all algorithms & all langu
 Both of these APIs are made dead simple. Here's an OOP example in Python:
 
 ```py
-import compression-utils as comp
+from compress_utils import compressor
 
 # Create a 'zstd' compressor object
-compressor = comp.compressor('zstd')
+comp = compressor('zstd')
 
 # Compress data
-compressed_data = compressor.compress(data)
+compressed_data = comp.compress(data)
 
 # Compress data with a compression level (1-10)
-compressed_data = compressor.compress(data, 5)
+compressed_data = comp.compress(data, 5)
 
 # Decompress data
-decompressed_data = compressor.decompress(compressed_data)
+decompressed_data = comp.decompress(compressed_data)
 ```
 
 Functional usage is similarly simple:
 
 ```py
-import compression-utils as comp
+from compress_utils import compress, decompress
 
 # Compress data using `zstd`
-compressed_data = compressor.compress(data, 'zstd')
+compressed_data = compress(data, 'zstd')
 
 # Compress data with a compression level (1-10)
-compressed_data = compressor.compress(data, 'zstd', 5)
+compressed_data = compress(data, 'zstd', 5)
 
 # Decompress data
-decompressed_data = compressor.decompress(compressed_data, 'zstd')
+decompressed_data = decompress(compressed_data, 'zstd')
 ```
 
 ## Language-Specific Examples
@@ -85,6 +86,7 @@ You can find language-specific code examples below:
 
 - [C++ API Docs >](bindings/cpp/README.md)
 - [C API Docs >](bindings/c/README.md)
+- [Python API Docs >](bindings/python/README.md)
 
 ## Setup
 

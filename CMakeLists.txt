@@ -15,6 +15,22 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
+# Set macOS architectures for Universal build
+# if(APPLE)
+#     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for macOS" FORCE)
+# endif()
+# TODO - re-enable this later
+
+# Retrieve the environment variable and assign it to a CMake variable
+if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+    set(CMAKE_PARALLEL_LEVEL $ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+else()
+    set(CMAKE_PARALLEL_LEVEL "Not set")
+endif()
+
+# Print CMAKE_BUILD_PARALLEL_LEVEL environment variable
+message(STATUS "CMAKE_BUILD_PARALLEL_LEVEL: ${CMAKE_PARALLEL_LEVEL}")
+
 ######### COMPILER FLAGS #########
 
 # Add LTO and Dead Code Elimination flags based on the compiler
@@ -42,6 +58,9 @@ elseif(MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
 endif()
+
+# Ensure the dynamic runtime library is used (/MD)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 ######### OPTIONS #########
 
@@ -87,36 +106,20 @@ set(ALGORITHMS_ENUM "")
 set(TARGET_LIBS "")
 set(TARGET_DEFINITIONS "")
 
-# Handle Windows-specific library naming
-if (WIN32)
-    set(BROTLI_LIB_ENC "brotlienc.lib")
-    set(BROTLI_LIB_DEC "brotlidec.lib")
-    set(BROTLI_LIB_COMMON "brotlicommon.lib")
-    set(XZ_LIB "lzma.lib")
-    set(ZLIB_LIB "zlibstatic.lib")
-    set(ZSTD_LIB "zstd_static.lib")
-
-else()
-    set(BROTLI_LIB_ENC "libbrotlienc.a")
-    set(BROTLI_LIB_DEC "libbrotlidec.a")
-    set(BROTLI_LIB_COMMON "libbrotlicommon.a")
-    set(XZ_LIB "liblzma.a")
-    set(ZLIB_LIB "libz.a")
-    set(ZSTD_LIB "libzstd.a")
-endif()
-
 # Brotli Algorithm
 if (INCLUDE_BROTLI)
     message(STATUS "Including Brotli algorithm")
     # Add the subdirectory for Brotli which contains its own CMakeLists.txt
     add_subdirectory(algorithms/brotli)
     # Ensure that Brotli is built before compress_utils
-    add_dependencies(compress_utils brotli_external)
-    add_dependencies(compress_utils_static brotli_external)
+    add_dependencies(compress_utils brotlienc)
+    add_dependencies(compress_utils_static brotlienc)
+    add_dependencies(compress_utils brotlidec)
+    add_dependencies(compress_utils_static brotlidec)
+    add_dependencies(compress_utils brotlicommon)
+    add_dependencies(compress_utils_static brotlicommon)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_ENC})
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_DEC})
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${BROTLI_LIB_COMMON})
+    list(APPEND TARGET_LIBS brotlienc brotlidec brotlicommon)
     # Define preprocessor directive to include Brotli in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_BROTLI)
     # Add source files for Brotli
@@ -132,10 +135,10 @@ if (INCLUDE_XZ)
     # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
     add_subdirectory(algorithms/xz)
     # Ensure that xz is built before compress_utils
-    add_dependencies(compress_utils xz_external)
-    add_dependencies(compress_utils_static xz_external)
+    add_dependencies(compress_utils xz_library)
+    add_dependencies(compress_utils_static xz_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${XZ_LIB})
+    list(APPEND TARGET_LIBS xz_library)
     # Define preprocessor directive to include XZ/LZMA in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
     # Add source files for XZ
@@ -152,10 +155,10 @@ if (INCLUDE_ZLIB)
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
     # Ensure that zlib is built before compress_utils
-    add_dependencies(compress_utils zlib_external)
-    add_dependencies(compress_utils_static zlib_external)
+    add_dependencies(compress_utils zlib_library)
+    add_dependencies(compress_utils_static zlib_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${ZLIB_LIB})
+    list(APPEND TARGET_LIBS zlib_library)
     # Define preprocessor directive to include zlib in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_ZLIB)
     # Add source files for zlib
@@ -171,10 +174,10 @@ if (INCLUDE_ZSTD)
     # Add the subdirectory for zstd which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zstd)
     # Ensure that Zstd is built before compress_utils
-    add_dependencies(compress_utils zstd_external)
-    add_dependencies(compress_utils_static zstd_external)
+    add_dependencies(compress_utils zstd_library)
+    add_dependencies(compress_utils_static zstd_library)
     # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS ${ALGORITHMS_LIB_DIR}/${ZSTD_LIB})
+    list(APPEND TARGET_LIBS zstd_library)
     # Define preprocessor directive to include Zstd in the code
     list(APPEND TARGET_DEFINITIONS INCLUDE_ZSTD)
     # Add source files for Zstd
@@ -201,6 +204,7 @@ target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
 target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
 target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
 target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
+add_compile_definitions(${TARGET_DEFINITIONS})
 
 # TODO: for static lib, try `whole-archive` options so it includes all the symbols BUT also while supporting LTO/DCE
 
@@ -216,6 +220,9 @@ target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPOR
 
 ######### INSTALL #########
 
+# Define an option to detect when we are in a scikit-build environment
+option(SCIKIT_BUILD "Build within scikit-build environment" OFF)
+
 # Configure the header with enum
 string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
 set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
@@ -229,42 +236,48 @@ configure_file(
 set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
 set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
 
-# Install libraries (shared and static)
-install(TARGETS compress_utils
-    LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
-    ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
-    RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
-)
-install(TARGETS compress_utils_static
-    LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
-    ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
-)
+if (NOT SCIKIT_BUILD)
 
-# Install the headers for the shared and static libraries
-file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
-              ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
-              ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
-install(FILES ${HEADERS}
-        DESTINATION ${CPP_SHARED_DIR}/include)
-install(FILES ${HEADERS}
-        DESTINATION ${CPP_STATIC_DIR}/include)
+    # Install libraries (shared and static)
+    install(TARGETS compress_utils
+        LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
+        ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
+        RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
+    )
+    install(TARGETS compress_utils_static
+        LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
+        ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
+    )
 
-# Install and rename the correct symbol_exports headers
-install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
-         DESTINATION ${CPP_SHARED_DIR}/include
-            RENAME symbol_exports.hpp)
-install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
-            DESTINATION ${CPP_STATIC_DIR}/include
+    # Install the headers for the shared and static libraries
+    file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
+                ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
+                ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
+    install(FILES ${HEADERS}
+            DESTINATION ${CPP_SHARED_DIR}/include)
+    install(FILES ${HEADERS}
+            DESTINATION ${CPP_STATIC_DIR}/include)
+
+    # Install and rename the correct symbol_exports headers
+    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
+            DESTINATION ${CPP_SHARED_DIR}/include
                 RENAME symbol_exports.hpp)
+    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
+                DESTINATION ${CPP_STATIC_DIR}/include
+                    RENAME symbol_exports.hpp)
 
-# Copy the README from bindings/cpp/README.md to the dist/cpp directory
-install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
-        DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
+    # Copy the README from bindings/cpp/README.md to the dist/cpp directory
+    install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
+            DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
 
-# Copy the dependency libraries to the static directory (not WINDOWS)
-# TODO - remove this once we fix the `whole-archive` issue
-if (TARGET compress_utils_static AND NOT WIN32)
-    install(FILES ${TARGET_LIBS} DESTINATION ${CPP_STATIC_DIR}/lib)
+    # Copy the dependency libraries to the static directory (not WINDOWS)
+    # TODO - remove this once we fix the `whole-archive` issue
+    if (TARGET compress_utils_static AND NOT WIN32)
+        file(GLOB TARGET_LIBS ${ALGORITHMS_LIB_DIR}/*)
+        install(FILES ${TARGET_LIBS}
+                DESTINATION ${CPP_STATIC_DIR}/lib)
+    endif()
+
 endif()
 
 ######### TESTS #########
@@ -280,18 +293,6 @@ else()
     message(STATUS "Tests are disabled. Skipping the tests directory.")
 endif()
 
-######### WINDOWS LINKING #########
-
-# Set runtime library flags for Windows targets
-if (WIN32)
-    set_target_properties(compress_utils PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(compress_utils_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
-endif()
-
 ######### BINDINGS #########
 
 # C Bindings
@@ -300,4 +301,11 @@ if (BUILD_C_BINDINGS)
     add_subdirectory(bindings/c)
     add_dependencies(compress_utils_c compress_utils)
     add_dependencies(compress_utils_c_static compress_utils_static)
+endif()
+
+# Python Bindings
+if (BUILD_PYTHON_BINDINGS)
+    message(STATUS "Building Python binding...")
+    add_subdirectory(bindings/python)
+    add_dependencies(compress_utils_py compress_utils)
 endif()

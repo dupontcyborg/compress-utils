@@ -175,7 +175,7 @@ if ($LANGUAGES_LIST.Count -gt 0) {
     }
 } else {
     # Enable all bindings by default
-    $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=ON"
+    $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
 }
 
 # Move into the build directory

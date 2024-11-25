@@ -10,7 +10,12 @@ ExternalProject_Add(
     GIT_REPOSITORY https://gitlab.com/cunity/cunit.git
     GIT_TAG master
     GIT_SHALLOW TRUE
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    CMAKE_ARGS
+        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
+        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        -DCUNIT_BUILD_CU_TEST=OFF
+        -DBUILD_SHARED_LIBS=OFF
+    BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
     LOG_DOWNLOAD OFF LOG_UPDATE OFF LOG_CONFIGURE OFF LOG_BUILD OFF LOG_INSTALL OFF
 )
 
@@ -56,24 +61,11 @@ set(TARGET_PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
 set_target_properties(unit_tests_c PROPERTIES ${TARGET_PROPERTIES})
 set_target_properties(unit_tests_c_static PROPERTIES ${TARGET_PROPERTIES})
 
-# Set compression preprocessor definitions
-set(COMPRESSION_DEFINITIONS
-    $<$<BOOL:${INCLUDE_BROTLI}>:INCLUDE_BROTLI>
-    $<$<BOOL:${INCLUDE_XZ}>:INCLUDE_XZ>
-    $<$<BOOL:${INCLUDE_ZLIB}>:INCLUDE_ZLIB>
-    $<$<BOOL:${INCLUDE_ZSTD}>:INCLUDE_ZSTD>
-)
-target_compile_definitions(unit_tests_c PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_SHARED)
-target_compile_definitions(unit_tests_c_static PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_STATIC)
+target_compile_definitions(unit_tests_c PRIVATE COMPRESSION_UTILS_C_EXPORT_SHARED)
+target_compile_definitions(unit_tests_c_static PRIVATE COMPRESSION_UTILS_C_EXPORT_STATIC)
 
 # Specify runtime library settings on Windows
 if (WIN32)
-    set_target_properties(unit_tests PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(unit_tests_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
     target_link_options(unit_tests_static PRIVATE /WHOLEARCHIVE:compress_utils_static)
     add_custom_command(TARGET unit_tests_c POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

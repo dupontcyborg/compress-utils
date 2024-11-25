@@ -22,10 +22,13 @@ inline int GetCompressionLevel(int level) {
 }
 
 std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
+    // Get the XZ compression level
+    int xz_level = GetCompressionLevel(level);
+
     lzma_stream strm = LZMA_STREAM_INIT;
 
     // Initialize XZ encoder with the desired level and CRC64 check
-    if (lzma_easy_encoder(&strm, level, LZMA_CHECK_CRC64) != LZMA_OK) {
+    if (lzma_easy_encoder(&strm, xz_level, LZMA_CHECK_CRC64) != LZMA_OK) {
         throw std::runtime_error("XZ encoder initialization failed");
     }
 

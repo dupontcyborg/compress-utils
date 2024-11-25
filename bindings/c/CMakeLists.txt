@@ -81,19 +81,15 @@ install(FILES ${C_BINDING_DIR}/README.md DESTINATION ${CMAKE_SOURCE_DIR}/dist/c)
 
 # Optionally install static dependencies if building static
 if (TARGET compress_utils_c_static AND NOT WIN32)
-    install(FILES ${TARGET_LIBS} DESTINATION ${C_STATIC_DIR}/lib)
+    file(GLOB TARGET_LIBS ${ALGORITHMS_LIB_DIR}/*)
+    install(FILES ${TARGET_LIBS}
+            DESTINATION ${C_STATIC_DIR}/lib)
 endif()
 
 ######### WINDOWS LINKING #########
 
 # Set runtime library flags for Windows targets
 if (WIN32)
-    set_target_properties(compress_utils_c PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-    )
-    set_target_properties(compress_utils_c_static PROPERTIES
-        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-    )
     add_custom_command(TARGET compress_utils_c POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:compress_utils>

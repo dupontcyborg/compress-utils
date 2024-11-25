@@ -28,10 +28,13 @@ ExternalProject_Add(
     GIT_TAG v1.3.1
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
+        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        -DBUILD_SHARED_LIBS=OFF
+        -DZLIB_BUILD_EXAMPLES=OFF
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
     INSTALL_COMMAND ""
@@ -58,11 +61,11 @@ ExternalProject_Add_Step(zlib_external copy_artifacts
 )
 
 # Create an imported library target for zlib
-add_library(zlib_library STATIC IMPORTED)
+add_library(zlib_library STATIC IMPORTED GLOBAL)
 set_target_properties(zlib_library PROPERTIES
     IMPORTED_LOCATION ${ZLIB_INSTALL_DIR_LIB}/${ZLIB_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${ZLIB_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on zlib_external so that zlib is built before it
-add_dependencies(compress_utils zlib_external)
+# Ensure the target is available globally
+add_dependencies(zlib_library zlib_external)

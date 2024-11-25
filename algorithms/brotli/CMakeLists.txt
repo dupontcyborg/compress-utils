@@ -28,11 +28,14 @@ ExternalProject_Add(
     GIT_TAG v1.1.0
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
+        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DBUILD_SHARED_LIBS=OFF
+        -DBROTLI_DISABLE_TESTS=ON
+        -DBROTLI_BUNDLED_MODE=ON
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
     INSTALL_COMMAND ""
@@ -63,12 +66,26 @@ ExternalProject_Add_Step(brotli_external copy_artifacts
     DEPENDEES install
 )
 
-# Create an imported library target for Brotli
-add_library(brotli_library STATIC IMPORTED)
-set_target_properties(brotli_library PROPERTIES
+# Create imported targets for Brotli libraries
+add_library(brotlienc STATIC IMPORTED GLOBAL)
+set_target_properties(brotlienc PROPERTIES
     IMPORTED_LOCATION ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_ENC}
-    INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on brotli_external
-add_dependencies(compress_utils brotli_external)
+add_library(brotlidec STATIC IMPORTED GLOBAL)
+set_target_properties(brotlidec PROPERTIES
+    IMPORTED_LOCATION ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_DEC}
+    # INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INSTALL_DIR_INCLUDE}
+)
+
+add_library(brotlicommon STATIC IMPORTED GLOBAL)
+set_target_properties(brotlicommon PROPERTIES
+    IMPORTED_LOCATION ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_COMMON}
+    # INTERFACE_INCLUDE_DIRECTORIES ${BROTLI_INSTALL_DIR_INCLUDE}
+)
+
+# Ensure the targets are available globally
+add_dependencies(brotlienc brotli_external)
+add_dependencies(brotlidec brotli_external)
+add_dependencies(brotlicommon brotli_external)

@@ -12,6 +12,13 @@
 - [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
+- [ ] Rename `compression-utils` to `compress-utils`
+
+## Optimizations
+
+- [ ] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
+- [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows, `x86/universal2` on macOS)
+- [ ] Split CI/CD pipelines hierarchically
 
 ## Additions
 
@@ -28,7 +35,7 @@
 - [ ] `go`
 - [ ] `java`
 - [ ] `js/ts` (WebAssembly via Emscripten)
-- [ ] `python` (3.6 - 3.13)
+- [X] `python` (3.6 - 3.13)
 - [ ] `rust`
 - [ ] `swift`
 - [ ] `cli` (standalone command-line tool)

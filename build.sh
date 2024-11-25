@@ -150,6 +150,7 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
                 ;;
             python)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
                 ;;
             c)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
@@ -162,7 +163,8 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
     done
 else
     # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
 fi
 
 # Move into the build directory
@@ -193,4 +195,4 @@ cd ..
 echo ""
 echo "Sizes of the built libraries:"
 echo "-----------------------------"
-find dist/** -type f -name "libcompress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'
+find dist/** -type f -name "*compress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'

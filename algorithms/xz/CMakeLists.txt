@@ -38,14 +38,15 @@ ExternalProject_Add(
     GIT_TAG v5.6.3
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
+        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}${XZ_C_FLAGS}
-        -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}${XZ_CXX_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DBUILD_SHARED_LIBS=OFF
         -DLZMA_API_STATIC=ON
     BUILD_IN_SOURCE 0
+    BUILD_COMMAND ${CMAKE_COMMAND} --build . --target liblzma --config $<CONFIG>
     UPDATE_DISCONNECTED 1
     INSTALL_COMMAND ""
 )
@@ -71,11 +72,11 @@ ExternalProject_Add_Step(xz_external copy_artifacts
 )
 
 # Create an imported library target for XZ
-add_library(xz_library STATIC IMPORTED)
+add_library(xz_library STATIC IMPORTED GLOBAL)
 set_target_properties(xz_library PROPERTIES
     IMPORTED_LOCATION ${XZ_INSTALL_DIR_LIB}/${XZ_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${XZ_INSTALL_DIR_INCLUDE}
+    # INTERFACE_INCLUDE_DIRECTORIES ${XZ_INSTALL_DIR_INCLUDE}
 )
 
-# Ensure compress_utils depends on xz_external so that xz is built before it
-add_dependencies(compress_utils xz_external)
+# Ensure the target is available globally
+add_dependencies(xz_library xz_external)
