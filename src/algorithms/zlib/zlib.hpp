@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_ZLIB_HPP_
-#define COMPRESSION_UTILS_ZLIB_HPP_
+#ifndef COMPRESS_UTILS_ZLIB_HPP_
+#define COMPRESS_UTILS_ZLIB_HPP_
 
 #ifdef INCLUDE_ZLIB
 
@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace compression_utils::zlib {
+namespace compress_utils::zlib {
 
 /**
  * @brief Compresses the input data using zlib
@@ -28,8 +28,8 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level = 3);
  */
 std::vector<uint8_t> Decompress(std::span<const uint8_t>& data);
 
-}  // namespace compression_utils::zlib
+}  // namespace compress_utils::zlib
 
 #endif  // INCLUDE_ZLIB
 
-#endif  // COMPRESSION_UTILS_ZLIB_HPP_
+#endif  // COMPRESS_UTILS_ZLIB_HPP_

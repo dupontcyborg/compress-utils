@@ -1,6 +1,6 @@
-# compression-utils/algorithms
+# compress-utils/algorithms
 
-This folder is used during the `compression-utils` build process to:
+This folder is used during the `compress-utils` build process to:
 
 - Clone upstream compression algorithms into `algorithms/<algorithm>/src/`
 - Build these algorithms into `algorithms/<algorithm>/build/`

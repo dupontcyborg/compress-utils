@@ -1,17 +1,17 @@
-# compression-utils
+# compress-utils
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compression-utils/build_and_test.yml" alt="GitHub Actions Workflow Status"/>
-  <img src="https://img.shields.io/github/v/release/dupontcyborg/compression-utils" alt="GitHub Release"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test.yml" alt="GitHub Actions Workflow Status"/>
+  <img src="https://img.shields.io/github/v/release/dupontcyborg/compress-utils" alt="GitHub Release"/>
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/algorithms-4-darkgreen?style=flat" alt="Algorithms"/>
   <img src="https://img.shields.io/badge/languages-3-darkgreen?style=flat" alt="Languages"/>
-  <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compression-utils" alt="Code Size"/>
-  <img src="https://img.shields.io/github/license/dupontcyborg/compression-utils" alt="License"/>
+  <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils" alt="Code Size"/>
+  <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 
-`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
 ## Features
 
@@ -42,7 +42,7 @@
 
 ## Usage
 
-This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compression-utils` API is made available in two flavors:
+This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compress-utils` API is made available in two flavors:
 
 - Object-Oriented (OOP)
 - Functional
@@ -100,8 +100,8 @@ _To be added_
 2. Clone repo
 
 ```sh
-git clone https://github.com/dupontcyborg/compression-utils.git
-cd compression-utils
+git clone https://github.com/dupontcyborg/compress-utils.git
+cd compress-utils
 ```
 
 3. Run build script
@@ -122,7 +122,7 @@ powershell.exe -file build.ps1
 
 A number of configuration parameters are available for `build.sh`:
 
-- `--clean` - performs a clean rebuild of `compression-utils`
+- `--clean` - performs a clean rebuild of `compress-utils`
 - `--algorithms=` - set which algorithms to include in the build, if not all (e.g., `build.sh --algorithms=brotli,zlib,zstd`)
 - `--languages=` - set which language bindings to build, if not all (e.g., `build.sh --languages=python,js`)
 - `--release` - build release version (higher optimization level)

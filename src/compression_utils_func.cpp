@@ -1,4 +1,4 @@
-#include "compression_utils_func.hpp"
+#include "compress_utils_func.hpp"
 #include "utils/algorithms_router.hpp"
 
 #include <span>
@@ -6,7 +6,7 @@
 
 // TODO (nico) Make the functions auto-default to ZSTD?
 
-namespace compression_utils {
+namespace compress_utils {
 
 std::vector<uint8_t> Compress(const std::vector<uint8_t>& data, Algorithm algorithm, int level) {
     // Validate that level is between 1 and 10
@@ -63,4 +63,4 @@ std::vector<uint8_t> Decompress(const uint8_t* data, size_t size, Algorithm algo
     return functions.Decompress(data_span);
 }
 
-}  // namespace compression_utils
+}  // namespace compress_utils

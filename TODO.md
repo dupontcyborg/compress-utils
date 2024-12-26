@@ -1,4 +1,4 @@
-# Compression Utils TODO
+# Compress Utils TODO
 
 ## Fixes
 
@@ -9,10 +9,10 @@
     - [X] Build `compress-utils-c` and `compress-utils-c-static`
     - [X] Build `unit-tests-c` and `unit-tests-c-static`
     - [X] Build `xz`
-- [ ] Merge all static lib dependencies into `compression-utils-static*` libraries
+- [ ] Merge all static lib dependencies into `compress-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
-- [ ] Rename `compression-utils` to `compress-utils`
+- [ ] Rename `compress-utils` to `compress-utils`
 
 ## Optimizations
 
@@ -47,7 +47,7 @@
 - [ ] `lz4`
 - [X] `xz/lzma`
 - [X] `zlib`
-- [ ] `zstd`
+- [X] `zstd`
 
 ## Package Managers
 

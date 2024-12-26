@@ -3,7 +3,7 @@
 
 #include <stdexcept>
 
-namespace compression_utils::internal {
+namespace compress_utils::internal {
 
 // Minimum & maximum compression levels
 constexpr int MIN_LEVEL = 1;
@@ -22,6 +22,6 @@ inline void ValidateLevel(int level) {
     }
 }
 
-}  // namespace compression_utils::internal
+}  // namespace compress_utils::internal
 
 #endif  // CONSTANTS_HPP_

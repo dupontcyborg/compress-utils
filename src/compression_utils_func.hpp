@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_FUNC_HPP_
-#define COMPRESSION_UTILS_FUNC_HPP_
+#ifndef COMPRESS_UTILS_FUNC_HPP_
+#define COMPRESS_UTILS_FUNC_HPP_
 
 #include "algorithms.hpp"
 #include "symbol_exports.hpp"
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace compression_utils {
+namespace compress_utils {
 
 // Functional Interface
 
@@ -55,6 +55,6 @@ EXPORT std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data, Algorit
  */
 EXPORT std::vector<uint8_t> Decompress(const uint8_t* data, size_t size, Algorithm algorithm);
 
-}  // namespace compression_utils
+}  // namespace compress_utils
 
-#endif  // COMPRESSION_UTILS_FUNC_HPP_
+#endif  // COMPRESS_UTILS_FUNC_HPP_

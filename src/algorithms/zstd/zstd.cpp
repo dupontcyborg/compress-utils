@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace compression_utils::zstd {
+namespace compress_utils::zstd {
 
 /**
  * @brief Translate the compression level to the ZSTD compression level
@@ -77,4 +77,4 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     return decompressed_data;
 }
 
-}  // namespace compression_utils::zstd
+}  // namespace compress_utils::zstd

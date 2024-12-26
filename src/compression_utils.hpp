@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_HPP_
-#define COMPRESSION_UTILS_HPP_
+#ifndef COMPRESS_UTILS_HPP_
+#define COMPRESS_UTILS_HPP_
 
 #include "algorithms.hpp"
 #include "symbol_exports.hpp"
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace compression_utils {
+namespace compress_utils {
 
 // OOP Interface
 
@@ -77,6 +77,6 @@ class EXPORT Compressor {
     Algorithm algorithm_;
 };
 
-}  // namespace compression_utils
+}  // namespace compress_utils
 
-#endif  // COMPRESSION_UTILS_HPP_
+#endif  // COMPRESS_UTILS_HPP_

@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace compression_utils::xz {
+namespace compress_utils::xz {
 
 /**
  * @brief Translate the compression level to the XZ compression level
@@ -135,4 +135,4 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     return decompressed_data;
 }
 
-}  // namespace compression_utils::xz
+}  // namespace compress_utils::xz

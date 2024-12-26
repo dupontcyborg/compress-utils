@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_XZ_HPP_
-#define COMPRESSION_UTILS_XZ_HPP_
+#ifndef COMPRESS_UTILS_XZ_HPP_
+#define COMPRESS_UTILS_XZ_HPP_
 
 #ifdef INCLUDE_XZ
 
@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace compression_utils::xz {
+namespace compress_utils::xz {
 
 /**
  * @brief Compresses the input data using Zstandard
@@ -28,8 +28,8 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level = 3);
  */
 std::vector<uint8_t> Decompress(std::span<const uint8_t>& data);
 
-}  // namespace compression_utils::xz
+}  // namespace compress_utils::xz
 
 #endif  // INCLUDE_XZ
 
-#endif  // COMPRESSION_UTILS_XZ_HPP_
+#endif  // COMPRESS_UTILS_XZ_HPP_

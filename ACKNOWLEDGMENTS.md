@@ -1,6 +1,6 @@
 # Acknowledgements
 
-This project would not be possible without the remarkable work of other engineers in the data compression space. `compression-utils` incorporates such code from the following third-party projects:
+This project would not be possible without the remarkable work of other engineers in the data compression space. `compress-utils` incorporates such code from the following third-party projects:
 
 ## Brotli
 

@@ -9,7 +9,7 @@ SINGLE_BYTE_DATA = b"A"
 LARGE_DATA = bytes([random.randint(0, 255) for _ in range(1024 * 1024)])  # 1MB random data
 REPETITIVE_DATA = b"A" * (1024 * 1024)  # 1MB repetitive data
 
-# Dynamically populate available algorithms from the `Algorithm` enum in compression_utils
+# Dynamically populate available algorithms from the `Algorithm` enum in compress_utils
 AVAILABLE_ALGORITHMS = [algo.name.lower() for algo in comp.Algorithm.__members__.values()]
 
 def generate_random_data(size_in_bytes):
@@ -27,7 +27,7 @@ TEST_DATA_TYPES = {
 
 
 class TestCompressionUtils(unittest.TestCase):
-    """Unit tests for compression-utils using functional and OOP approaches."""
+    """Unit tests for compress-utils using functional and OOP approaches."""
 
     @staticmethod
     def check_compression_and_decompression(test_case, algorithm, data, level=None):

@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "compression-utils",
+            "name": "compress-utils",
             "includePath": [
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/algorithms/dist/include",

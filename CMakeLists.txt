@@ -1,8 +1,8 @@
-## Main CMake for `compression-utils` project
+## Main CMake for `compress-utils` project
 
 cmake_minimum_required(VERSION 3.17)
 
-project(compression-utils)
+project(compress-utils)
 
 ######### PROJECT SETUP #########
 
@@ -215,8 +215,8 @@ target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
 target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
 
 # Define symbol visibility for shared and static libraries
-target_compile_definitions(compress_utils PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
-target_compile_definitions(compress_utils_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
+target_compile_definitions(compress_utils PRIVATE COMPRESS_UTILS_EXPORT_SHARED)
+target_compile_definitions(compress_utils_static PRIVATE COMPRESS_UTILS_EXPORT_STATIC)
 
 ######### INSTALL #########
 
@@ -250,8 +250,8 @@ if (NOT SCIKIT_BUILD)
     )
 
     # Install the headers for the shared and static libraries
-    file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compression_utils.hpp
-                ${CMAKE_SOURCE_DIR}/src/compression_utils_func.hpp
+    file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compress_utils.hpp
+                ${CMAKE_SOURCE_DIR}/src/compress_utils_func.hpp
                 ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
     install(FILES ${HEADERS}
             DESTINATION ${CPP_SHARED_DIR}/include)

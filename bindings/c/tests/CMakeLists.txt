@@ -61,8 +61,8 @@ set(TARGET_PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEST_OUTPUT_DIR}
 set_target_properties(unit_tests_c PROPERTIES ${TARGET_PROPERTIES})
 set_target_properties(unit_tests_c_static PROPERTIES ${TARGET_PROPERTIES})
 
-target_compile_definitions(unit_tests_c PRIVATE COMPRESSION_UTILS_C_EXPORT_SHARED)
-target_compile_definitions(unit_tests_c_static PRIVATE COMPRESSION_UTILS_C_EXPORT_STATIC)
+target_compile_definitions(unit_tests_c PRIVATE COMPRESS_UTILS_C_EXPORT_SHARED)
+target_compile_definitions(unit_tests_c_static PRIVATE COMPRESS_UTILS_C_EXPORT_STATIC)
 
 # Specify runtime library settings on Windows
 if (WIN32)

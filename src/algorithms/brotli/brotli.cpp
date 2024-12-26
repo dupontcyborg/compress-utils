@@ -5,7 +5,7 @@
 
 #include <stdexcept>
 
-namespace compression_utils::brotli {
+namespace compress_utils::brotli {
 
 // Size to start with when decompressing
 constexpr int DECOMP_BUFFER_SIZE_MULTIPLE = 2;
@@ -119,4 +119,4 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     return decompressed_data;
 }
 
-}  // namespace compression_utils::brotli
+}  // namespace compress_utils::brotli

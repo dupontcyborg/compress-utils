@@ -43,7 +43,7 @@ set_target_properties(${PYTHON_MODULE_NAME} PROPERTIES
 # Include directories for the Python module and link to core static lib
 target_include_directories(${PYTHON_MODULE_NAME} PRIVATE ${PYTHON_BINDING_DIR} ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_static)
-target_compile_definitions(${PYTHON_MODULE_NAME} PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_EXPORT_STATIC)
+target_compile_definitions(${PYTHON_MODULE_NAME} PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESS_UTILS_EXPORT_STATIC)
 
 # Ensure that the Python bindings are built after the core library
 add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
@@ -87,7 +87,7 @@ if(ENABLE_TESTS)
     # Add the test with the library path set
     add_test(
         NAME unit_tests_py
-        COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compression_utils.py
+        COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
     set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")

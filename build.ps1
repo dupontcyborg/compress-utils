@@ -1,13 +1,13 @@
 #!/usr/bin/env pwsh
 
-# build.ps1 - A PowerShell script to build the `compression-utils` library on Windows.
+# build.ps1 - A PowerShell script to build the `compress-utils` library on Windows.
 
 <#
 .SYNOPSIS
-    A script to build the 'compression-utils' library on Windows.
+    A script to build the 'compress-utils' library on Windows.
 
 .DESCRIPTION
-    This script automates the build process for the 'compression-utils' library,
+    This script automates the build process for the 'compress-utils' library,
     providing options similar to the original Bash script.
 
 .PARAMETER Clean

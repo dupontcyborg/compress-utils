@@ -14,13 +14,13 @@ jobs:
     - name: Download Unified C Artifact
       uses: actions/download-artifact@v4
       with:
-        name: compression-utils-c
+        name: compress-utils-c
         path: ./dist
 
     - name: Download Unified C++ Artifact
       uses: actions/download-artifact@v4
       with:
-        name: compression-utils-cpp
+        name: compress-utils-cpp
         path: ./dist
 
     - name: Attach Unified Artifacts to Release
@@ -31,4 +31,4 @@ jobs:
         release_id=$(gh release view "${{ github.event.release.tag_name }}" --json id --jq '.id')
         
         # Upload the artifacts to the release
-        gh release upload "$release_id" ./dist/compression-utils-c.zip ./dist/compression-utils-cpp.zip --clobber
+        gh release upload "$release_id" ./dist/compress-utils-c.zip ./dist/compress-utils-cpp.zip --clobber

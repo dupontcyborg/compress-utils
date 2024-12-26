@@ -1,8 +1,8 @@
-# Compression Utils - Python API
+# Compress Utils - Python API
 
-`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance.
+`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance.
 
-These docs cover the Python bindings of the `compression-utils` library.
+These docs cover the Python bindings of the `compress-utils` library.
 
 The API is simple and universal across all [available algorithms](#available-algorithms). In Python, there are two flavors:
 
