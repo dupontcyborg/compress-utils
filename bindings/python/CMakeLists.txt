@@ -43,7 +43,7 @@ set_target_properties(${PYTHON_MODULE_NAME} PROPERTIES
 # Include directories for the Python module and link to core static lib
 target_include_directories(${PYTHON_MODULE_NAME} PRIVATE ${PYTHON_BINDING_DIR} ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_static)
-target_compile_definitions(${PYTHON_MODULE_NAME} PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESS_UTILS_EXPORT_STATIC)
+target_compile_definitions(${PYTHON_MODULE_NAME} PRIVATE COMPRESS_UTILS_EXPORT_STATIC)
 
 # Ensure that the Python bindings are built after the core library
 add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
