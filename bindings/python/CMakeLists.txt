@@ -52,21 +52,27 @@ add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
 
 if (NOT SCIKIT_BUILD)
     set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
+    set(PYTHON_MODULE_DIST_DIR "${PYTHON_DIST_DIR}/compress_utils")
     message(STATUS "Python distribution directory: ${PYTHON_DIST_DIR}")
 
-    # Install the Python module (compiled .so file) to both destinations
+    # Install the Python module (compiled .so file) to the distribution directory
     install(TARGETS ${PYTHON_MODULE_NAME}
-        LIBRARY DESTINATION ${PYTHON_DIST_DIR}
-        ARCHIVE DESTINATION ${PYTHON_DIST_DIR}
-        RUNTIME DESTINATION ${PYTHON_DIST_DIR}
+        LIBRARY DESTINATION ${PYTHON_MODULE_DIST_DIR}
+        ARCHIVE DESTINATION ${PYTHON_MODULE_DIST_DIR}
+        RUNTIME DESTINATION ${PYTHON_MODULE_DIST_DIR}
     )
 
-    # Install additional files to both destinations
-    foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE ${PYTHON_PACKAGE_DIR}/__init__.py)
+    # Install additional files to the distribution directory
+    foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE)
         install(FILES ${file}
             DESTINATION ${PYTHON_DIST_DIR}
         )
     endforeach()
+
+    # Install the package directory to the distribution directory
+    install(FILES ${PYTHON_PACKAGE_DIR}/__init__.py
+        DESTINATION ${PYTHON_MODULE_DIST_DIR}
+    )
 else()
     # Fake install README.md and pyproject.toml for scikit-build
     install(FILES ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml
@@ -88,7 +94,7 @@ if(ENABLE_TESTS)
     add_test(
         NAME unit_tests_py
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
     )
     set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")
 endif()
