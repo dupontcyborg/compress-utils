@@ -39,7 +39,7 @@ std::vector<uint8_t> Compress(const uint8_t* data, size_t size, Algorithm algori
     // Call the compression function
     return functions.Compress(data_span, level);
 
-}  // namespace compression_utils
+}  // namespace compress_utils
 
 std::vector<uint8_t> Decompress(const std::vector<uint8_t>& data, Algorithm algorithm) {
     // Get the decompression functions for the specified algorithm

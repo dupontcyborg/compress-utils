@@ -46,7 +46,7 @@ Algorithm parse_algorithm(const py::object& algorithm) {
 }
 
 PYBIND11_MODULE(compress_utils_py, m) {
-    m.doc() = "Python bindings for compression-utils library";
+    m.doc() = "Python bindings for compress-utils library";
 
     // Expose the Algorithm enum with pybind11
     py::enum_<Algorithm> py_algorithm(m, "Algorithm");
