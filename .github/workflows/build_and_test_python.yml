@@ -42,7 +42,11 @@ jobs:
           CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
           CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "ARM64 ARM64"
         run: cibuildwheel --output-dir wheelhouse
-      
+
+      - name: Build Source Distribution (sdist)
+        if: matrix.os == 'ubuntu-latest'
+        run: python setup.py sdist --dist-dir wheelhouse
+
       - name: Upload Wheels as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
