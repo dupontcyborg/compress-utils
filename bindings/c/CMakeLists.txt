@@ -13,20 +13,20 @@ set(C_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/c")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${C_BINDING_DIR}/build")
 
 # Create shared and static library targets
-add_library(compress_utils_c SHARED compression_utils_c.cpp)
-add_library(compress_utils_c_static STATIC compression_utils_c.cpp)
+add_library(compress_utils_c SHARED compress_utils_c.cpp)
+add_library(compress_utils_c_static STATIC compress_utils_c.cpp)
 
 # Include directories for both libraries and link to core static lib
 target_include_directories(compress_utils_c PRIVATE ${C_BINDING_DIR})
 target_include_directories(compress_utils_c_static PRIVATE ${C_BINDING_DIR})
 if (WIN32)
     target_link_libraries(compress_utils_c PRIVATE compress_utils)
-    target_compile_definitions(compress_utils_c PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_SHARED)
+    target_compile_definitions(compress_utils_c PRIVATE COMPRESS_UTILS_C_EXPORT_SHARED)
 else()
     target_link_libraries(compress_utils_c PRIVATE compress_utils_static)
-    target_compile_definitions(compress_utils_c PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_SHARED COMPRESSION_UTILS_EXPORT_STATIC)
+    target_compile_definitions(compress_utils_c PRIVATE COMPRESS_UTILS_C_EXPORT_SHARED COMPRESS_UTILS_EXPORT_STATIC)
 endif()
-target_compile_definitions(compress_utils_c_static PRIVATE ${COMPRESSION_DEFINITIONS} COMPRESSION_UTILS_C_EXPORT_STATIC COMPRESSION_UTILS_EXPORT_STATIC)
+target_compile_definitions(compress_utils_c_static PRIVATE COMPRESS_UTILS_C_EXPORT_STATIC COMPRESS_UTILS_EXPORT_STATIC)
 target_link_libraries(compress_utils_c_static PRIVATE compress_utils_static)
 
 # Ensure that the C bindings are built after the core library
@@ -38,7 +38,7 @@ add_dependencies(compress_utils_c_static compress_utils_static)
 
 # Install directories
 set(C_DIST_LIB_DIR "${CMAKE_SOURCE_DIR}/dist/c/lib")
-set(C_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/c/include/compression_utils_c")
+set(C_DIST_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/dist/c/include/compress_utils_c")
 set(C_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/c/shared")
 set(C_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/c/static")
 
@@ -61,7 +61,7 @@ install(TARGETS compress_utils_c_static
 )
 
 # Install headers
-file(GLOB HEADERS ${C_BINDING_DIR}/compression_utils.h
+file(GLOB HEADERS ${C_BINDING_DIR}/compress_utils.h
                   ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/algorithms.h)
 install(FILES ${HEADERS}
         DESTINATION ${C_SHARED_DIR}/include)

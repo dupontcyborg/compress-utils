@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_ZSTD_HPP_
-#define COMPRESSION_UTILS_ZSTD_HPP_
+#ifndef COMPRESS_UTILS_ZSTD_HPP_
+#define COMPRESS_UTILS_ZSTD_HPP_
 
 #ifdef INCLUDE_ZSTD
 
@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace compression_utils::zstd {
+namespace compress_utils::zstd {
 
 /**
  * @brief Compresses the input data using Zstandard
@@ -28,8 +28,8 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level = 3);
  */
 std::vector<uint8_t> Decompress(std::span<const uint8_t>& data);
 
-}  // namespace compression_utils::zstd
+}  // namespace compress_utils::zstd
 
 #endif  // INCLUDE_ZSTD
 
-#endif  // COMPRESSION_UTILS_ZSTD_HPP_
+#endif  // COMPRESS_UTILS_ZSTD_HPP_

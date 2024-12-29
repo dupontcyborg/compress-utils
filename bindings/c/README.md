@@ -1,6 +1,6 @@
-# Compression Utils - C API
+# Compress Utils - C API
 
-`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
 These docs cover the C binding. The API is simple and universal across all [available algorithms](/README.md#built-in-compression-algorithms).
 
@@ -19,10 +19,10 @@ These docs cover the C binding. The API is simple and universal across all [avai
 
 #### Includes
 
-The entire `compression-utils` library is available through a single header:
+The entire `compress-utils` library is available through a single header:
 
 ```c
-#include "compression_utils.h"
+#include "compress_utils.h"
 ```
 
 ### Selecting Algorithm

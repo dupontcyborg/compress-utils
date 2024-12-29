@@ -23,15 +23,6 @@ cmake_args = [
     '-DSCIKIT_BUILD=ON',
     '-DENABLE_TESTS=OFF',
 ]
-# # Use Ninja generator on Windows
-# if platform.system() == "Windows":
-#     # cmake_args += ['-G', 'Ninja']
-#     # Clean the _skbuild directory
-#     # Cleanup _skbuild directory
-#     skbuild_dir = Path("_skbuild")
-#     if skbuild_dir.exists():
-#         print("Cleaning _skbuild directory...")
-#         shutil.rmtree(skbuild_dir, ignore_errors=True)
 
 # Use a consistent generator on Windows
 if platform.system() == "Windows":

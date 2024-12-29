@@ -1,10 +1,10 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "compression_utils.hpp"
-#include "compression_utils_func.hpp"
+#include "compress_utils.hpp"
+#include "compress_utils_func.hpp"
 
 namespace py = pybind11;
-using namespace compression_utils;
+using namespace compress_utils;
 
 #include <algorithm>
 #include <cctype>
@@ -46,7 +46,7 @@ Algorithm parse_algorithm(const py::object& algorithm) {
 }
 
 PYBIND11_MODULE(compress_utils_py, m) {
-    m.doc() = "Python bindings for compression-utils library";
+    m.doc() = "Python bindings for compress-utils library";
 
     // Expose the Algorithm enum with pybind11
     py::enum_<Algorithm> py_algorithm(m, "Algorithm");

@@ -1,6 +1,6 @@
-# Compression Utils - C++ API
+# Compress Utils - C++ API
 
-`compression-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
 These docs cover the C++ binding (not really a binding, per se, as the original library is written in C++).
 
@@ -72,7 +72,7 @@ enum class Algorithm {
 To use the OOP API, include the main header:
 
 ```cpp
-#include "compression_utils.hpp"
+#include "compress_utils.hpp"
 ```
 
 #### Selecting Algorithm
@@ -81,7 +81,7 @@ Before constructing the `Compressor` class, you must select a compression algori
 
 ```cpp
 // Select algorithm
-compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+compress_utils::Algorithm algorithm = compress_utils::Algorithms::ZSTD;
 ```
 
 #### Creating a Compressor Object
@@ -90,14 +90,14 @@ To create a `Compressor` object, simply pass the algorithm:
 
 ```cpp
 // Create Compressor object
-compression_utils::Compressor compressor(algorithm);
+compress_utils::Compressor compressor(algorithm);
 ```
 
 For conciseness, this can also be done inline with algorithm selection:
 
 ```cpp
 // Create Compressor object
-compression_utils::Compressor compressor(compression_utils::Algorithms::ZSTD);
+compress_utils::Compressor compressor(compress_utils::Algorithms::ZSTD);
 ```
 
 ### Compression
@@ -133,7 +133,7 @@ Similarly, you can also set a compression level:
 ```cpp
 // Compress data from a pointer & size with a compression level (1-10)
 int level = 5;
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm, level);
+std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
 ```
 
 ### Decompression
@@ -165,7 +165,7 @@ std::vector<uint8_t> compressed_data = compressor.Decompress(data_ptr, data_size
 To use the functional API, include the functional header:
 
 ```cpp
-#include "compression_utils_func.hpp"
+#include "compress_utils_func.hpp"
 ```
 
 #### Selecting Algorithm
@@ -174,7 +174,7 @@ Before calling `Compress()` or `Decompress()`, you must select a compression alg
 
 ```cpp
 // Select algorithm
-compression_utils::Algorithm algorithm = compression_utils::Algorithms::ZSTD;
+compress_utils::Algorithm algorithm = compress_utils::Algorithms::ZSTD;
 ```
 
 ### Compression
@@ -185,7 +185,7 @@ To compress data from a `std::vector<uint8_t>` you can call `Compress()` via:
 
 ```cpp
 // Compress data from a vector
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm);
+std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm);
 ```
 
 You can also set a compression level, between 1-10:
@@ -193,7 +193,7 @@ You can also set a compression level, between 1-10:
 ```cpp
 // Compress data from a vector with a compression level (1-10)
 int level = 5;
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm, level);
+std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
 ```
 
 #### From a Pointer
@@ -202,7 +202,7 @@ You can also compress data from a pointer & size integer, to avoid copying the o
 
 ```cpp
 // Compress data from a pointer & size
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data_ptr, data_size, algorithm);
+std::vector<uint8_t> compressed_data = compress_utils::Compress(data_ptr, data_size, algorithm);
 ```
 
 Similarly, you can also set a compression level:
@@ -210,7 +210,7 @@ Similarly, you can also set a compression level:
 ```cpp
 // Compress data from a pointer & size with a compression level (1-10)
 int level = 5;
-std::vector<uint8_t> compressed_data = compression_utils::Compress(data, algorithm, level);
+std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
 ```
 
 ### Decompression
@@ -221,7 +221,7 @@ To decompress data from a `std::vector<uint8_t>` you can call `Decompress()` via
 
 ```cpp
 // Decompress data from a vector
-std::vector<uint8_t> decompressed_data = compression_utils::Decompress(compressed_data, algorithm);
+std::vector<uint8_t> decompressed_data = compress_utils::Decompress(compressed_data, algorithm);
 ```
 
 #### From a Pointer
@@ -230,5 +230,5 @@ Decompression is also available by passing a pointer and size:
 
 ```cpp
 // Decompress data from a pointer & size
-std::vector<uint8_t> compressed_data = compression_utils::Decompress(data_ptr, data_size, algorithm);
+std::vector<uint8_t> compressed_data = compress_utils::Decompress(data_ptr, data_size, algorithm);
 ```

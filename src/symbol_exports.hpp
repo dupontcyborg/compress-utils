@@ -3,10 +3,10 @@
 
 // Platform-specific macros for exporting and importing symbols
 #if defined(_WIN32) || defined(_WIN64)
-#if defined(COMPRESSION_UTILS_EXPORT_STATIC)
+#if defined(COMPRESS_UTILS_EXPORT_STATIC)
 // Static library, no need for dllimport/dllexport
 #define EXPORT
-#elif defined(COMPRESSION_UTILS_EXPORT_SHARED)
+#elif defined(COMPRESS_UTILS_EXPORT_SHARED)
 // Exporting symbols for DLL
 #define EXPORT __declspec(dllexport)
 #else

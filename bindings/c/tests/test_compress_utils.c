@@ -1,4 +1,4 @@
-#include "compression_utils.h"
+#include "compress_utils.h"
 
 #include <CUnit/Basic.h>
 #include <CUnit/CUnit.h>

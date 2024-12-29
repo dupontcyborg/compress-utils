@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace compression_utils::zlib {
+namespace compress_utils::zlib {
 
 /**
  * @brief Translate the compression level to the zlib compression level
@@ -84,4 +84,4 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     return decompressed_data;
 }
 
-}  // namespace compression_utils::zlib
+}  // namespace compress_utils::zlib

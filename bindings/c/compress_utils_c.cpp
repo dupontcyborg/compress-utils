@@ -1,7 +1,7 @@
-// C bindings for the compression_utils library
+// C bindings for the compress_utils library
 
-#include "compression_utils.h"
-#include "compression_utils_func.hpp"
+#include "compress_utils.h"
+#include "compress_utils_func.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -17,8 +17,8 @@ int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algori
                       int level) {
     try {
         // Call the C++ Compress function
-        std::vector<uint8_t> compressed_data = compression_utils::Compress(
-            data, size, static_cast<compression_utils::Algorithm>(algorithm), level);
+        std::vector<uint8_t> compressed_data = compress_utils::Compress(
+            data, size, static_cast<compress_utils::Algorithm>(algorithm), level);
 
         // Allocate memory for the output buffer
         *output = static_cast<uint8_t*>(malloc(compressed_data.size()));
@@ -43,8 +43,8 @@ int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algori
 int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm) {
     try {
         // Call the C++ Decompress function
-        std::vector<uint8_t> decompressed_data = compression_utils::Decompress(
-            data, size, static_cast<compression_utils::Algorithm>(algorithm));
+        std::vector<uint8_t> decompressed_data = compress_utils::Decompress(
+            data, size, static_cast<compress_utils::Algorithm>(algorithm));
 
         // Allocate memory for the output buffer
         *output = static_cast<uint8_t*>(malloc(decompressed_data.size()));

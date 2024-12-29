@@ -70,8 +70,8 @@ target_link_directories(unit_tests PRIVATE ${COMPRESSION_LIBS})
 target_link_directories(unit_tests_static PRIVATE ${COMPRESSION_LIBS})
 
 # Define preprocessor definitions
-target_compile_definitions(unit_tests PRIVATE COMPRESSION_UTILS_EXPORT_SHARED)
-target_compile_definitions(unit_tests_static PRIVATE COMPRESSION_UTILS_EXPORT_STATIC)
+target_compile_definitions(unit_tests PRIVATE COMPRESS_UTILS_EXPORT_SHARED)
+target_compile_definitions(unit_tests_static PRIVATE COMPRESS_UTILS_EXPORT_STATIC)
 
 # Include pthreads (on Unix systems)
 find_package(Threads REQUIRED)

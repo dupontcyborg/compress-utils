@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_ALGORITHMS_ROUTER_HPP
-#define COMPRESSION_UTILS_ALGORITHMS_ROUTER_HPP
+#ifndef COMPRESS_UTILS_ALGORITHMS_ROUTER_HPP
+#define COMPRESS_UTILS_ALGORITHMS_ROUTER_HPP
 
 #include "algorithms.hpp"
 #include "algorithms/brotli/brotli.hpp"
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace compression_utils::internal {
+namespace compress_utils::internal {
 
 /**
  * @brief Struct that holds the compression and decompression functions for a specific algorithm
@@ -55,6 +55,6 @@ CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
     }
 }
 
-}  // namespace compression_utils::internal
+}  // namespace compress_utils::internal
 
-#endif  // COMPRESSION_UTILS_ALGORITHMS_ROUTER_HPP
+#endif  // COMPRESS_UTILS_ALGORITHMS_ROUTER_HPP

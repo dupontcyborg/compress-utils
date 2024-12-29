@@ -1,5 +1,5 @@
-#ifndef COMPRESSION_UTILS_C_H
-#define COMPRESSION_UTILS_C_H
+#ifndef COMPRESS_UTILS_C_H
+#define COMPRESS_UTILS_C_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,4 +40,4 @@ EXPORT_C int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** out
 }
 #endif
 
-#endif  // COMPRESSION_UTILS_C_H
+#endif  // COMPRESS_UTILS_C_H
