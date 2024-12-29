@@ -3,6 +3,8 @@ name: Build and Package Python Wheels
 on:
   push:
     branches: ["main"]
+    tags: 
+      - "v*"
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -53,3 +55,26 @@ jobs:
           name: python-wheels-${{ matrix.os == 'ubuntu-latest' && 'manylinux' || matrix.os }}
           path: wheelhouse/*.whl
           retention-days: 5
+
+  publish_to_pypi:
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    # if: github.ref_type == 'tag' # TODO - revert this before merge
+
+    steps:
+      - name: Download Wheels Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheels-ubuntu-latest
+          path: wheelhouse
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Twine
+        run: pip install twine
+
+      - name: Publish to Test PyPI # TODO - change this to PyPI
+        run: twine upload --repository https://test.pypi.org/legacy/ --skip-existing wheelhouse/*
