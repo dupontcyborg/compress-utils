@@ -26,7 +26,7 @@ else()
     target_link_libraries(compress_utils_c PRIVATE compress_utils_static)
     target_compile_definitions(compress_utils_c PRIVATE COMPRESS_UTILS_C_EXPORT_SHARED COMPRESS_UTILS_EXPORT_STATIC)
 endif()
-target_compile_definitions(compress_utils_c_static PRIVATE COMPRESS_UTILS_C_EXPORT_STATIC COMPRES_UTILS_EXPORT_STATIC)
+target_compile_definitions(compress_utils_c_static PRIVATE COMPRESS_UTILS_C_EXPORT_STATIC COMPRESS_UTILS_EXPORT_STATIC)
 target_link_libraries(compress_utils_c_static PRIVATE compress_utils_static)
 
 # Ensure that the C bindings are built after the core library
