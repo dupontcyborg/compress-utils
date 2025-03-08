@@ -29,7 +29,7 @@ if platform.system() == "Windows":
     cmake_args += ['-G', 'Visual Studio 17 2022', '-A', 'x64']
 
 setup(
-    name="compress_utils",
+    name="compress-utils",
     version="0.4.0",
     description="Simple & high-performance compression utilities for Python",
     author="Nicolas Dupont",
