@@ -38,7 +38,7 @@ jobs:
         run: pip install cibuildwheel build
 
       - name: Copy Python Bindings Configuration
-        run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py .
+        run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py . && cp bindings/python/README.md .
   
       - name: Build Python Wheels
         env:
