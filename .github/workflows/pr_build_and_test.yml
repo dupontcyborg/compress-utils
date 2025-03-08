@@ -1,0 +1,37 @@
+name: Build and Test for PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [ "main" ]
+
+jobs:
+  build_and_test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        clean: true
+
+    - name: Configure CMake for All Language Bindings & All Compressors
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build All Languages
+      run: cmake --build build --config Release -j 4
+
+    - name: Install Bindings
+      run: cmake --install build
+
+    - name: Test All Bindings & Compressors
+      run: |
+        cd build
+        ctest --output-on-failure -C Release
