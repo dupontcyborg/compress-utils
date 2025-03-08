@@ -34,7 +34,7 @@ if platform.system() == "Windows":
 
 setup(
     name="compress-utils",
-    version="0.4.0",
+    use_scm_version=True,
     description="Simple & high-performance compression utilities for Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -53,11 +53,12 @@ setup(
         'compress_utils': [
             'README.md',
             'LICENSE',
-            'compress_utils_py*.so',    # For Linux shared libraries
-            'compress_utils_py*.dylib', # For macOS shared libraries
-            'compress_utils_py*.pyd',   # For Windows shared libraries
+            'compress_utils_py*.so',
+            'compress_utils_py*.dylib',
+            'compress_utils_py*.pyd',
         ]
     },
+    setup_requires=["setuptools_scm"],  # Add this
     cmake_args=cmake_args,
     classifiers=[
         "Intended Audience :: Developers",

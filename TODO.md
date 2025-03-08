@@ -16,10 +16,10 @@
 
 ## Optimizations
 
-- [ ] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
+- [X] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
+- [X] Add source wheel distribution for unsupported Python wheel configurations
+- [X] Split CI/CD pipelines hierarchically
 - [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows, `x86/universal2` on macOS)
-- [ ] Add source wheel distribution for unsupported Python wheel configurations
-- [ ] Split CI/CD pipelines hierarchically
 
 ## Additions
 
@@ -57,7 +57,7 @@
 - [ ] `go` -> `pkg.go`
 - [ ] `java` -> `maven`
 - [ ] `js/ts` -> `npm`
-- [ ] `python` -> `pypl`
+- [X] `python` -> `pypi`
 - [ ] `rust` -> `cargo`
 - [ ] `swift` -> ?
 - [ ] `cli-macos` -> `homebrew`
