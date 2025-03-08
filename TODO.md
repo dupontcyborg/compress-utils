@@ -18,8 +18,8 @@
 
 - [ ] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
 - [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows, `x86/universal2` on macOS)
-- [ ] Split CI/CD pipelines hierarchically
 - [ ] Add source wheel distribution for unsupported Python wheel configurations
+- [ ] Split CI/CD pipelines hierarchically
 
 ## Additions
 
@@ -35,7 +35,7 @@
 - [X] `c`
 - [ ] `go`
 - [ ] `java`
-- [X] `js/ts` (WebAssembly via Emscripten)
+- [ ] `js/ts` (WebAssembly via Emscripten)
 - [X] `python` (3.6 - 3.13)
 - [ ] `rust`
 - [ ] `swift`

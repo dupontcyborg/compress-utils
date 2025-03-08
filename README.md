@@ -96,7 +96,11 @@ _To be added_
 
 ### Build From Source
 
-1. Make sure you have `CMake` installed
+1. Install pre-requisites
+
+- CMake
+- Conda (if building Python binding)
+
 2. Clone repo
 
 ```sh
@@ -104,7 +108,19 @@ git clone https://github.com/dupontcyborg/compress-utils.git
 cd compress-utils
 ```
 
-3. Run build script
+3. Activate Conda environment (if building Python binding)
+
+```sh
+# If using Conda
+conda env create -f environment.yml
+conda activate compress-utils
+
+# If using Mamba
+mamba env create -f environment.yml
+mamba activate compress-utils
+```
+
+4. Run build script
 
 For Linux/macOS:
 
@@ -118,7 +134,7 @@ For Windows:
 powershell.exe -file build.ps1
 ```
 
-3. The build library/libraries will be in `dist/<language>`
+The built library/libraries will be in `dist/<language>`
 
 A number of configuration parameters are available for `build.sh`:
 

@@ -41,3 +41,7 @@ algorithms/*/dist/
 
 # Python
 __pycache__/
+.pytest_cache/
+
+# MacOS
+.DS_Store

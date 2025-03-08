@@ -1,0 +1,13 @@
+name: compress-utils
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - cmake>=3.17
+  - pybind11>=2.6
+  - scikit-build
+  - setuptools>=59.5
+  - wheel
+  - pytest
+  - pip
