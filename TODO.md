@@ -9,15 +9,16 @@
     - [X] Build `compress-utils-c` and `compress-utils-c-static`
     - [X] Build `unit-tests-c` and `unit-tests-c-static`
     - [X] Build `xz`
+- [X] Rename `compress-utils` to `compress-utils`
 - [ ] Merge all static lib dependencies into `compress-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
-- [ ] Rename `compress-utils` to `compress-utils`
 
 ## Optimizations
 
 - [ ] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
 - [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows, `x86/universal2` on macOS)
+- [ ] Add source wheel distribution for unsupported Python wheel configurations
 - [ ] Split CI/CD pipelines hierarchically
 
 ## Additions

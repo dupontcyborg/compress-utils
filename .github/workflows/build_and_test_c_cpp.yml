@@ -1,9 +1,7 @@
-name: Build and Package Language Bindings
+name: Build, Test and Package C/C++
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
 
 jobs:

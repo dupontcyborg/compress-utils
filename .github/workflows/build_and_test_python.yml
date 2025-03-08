@@ -1,11 +1,10 @@
-name: Build and Package Python Wheels
+name: Build, Test and Package Python Wheels
 
 on:
   push:
     branches: ["main"]
-  pull_request:
-    branches: ["main"]
-  workflow_dispatch:
+    tags: 
+      - "v*"
 
 jobs:
   build_wheels:
@@ -13,24 +12,19 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["cp36", "cp37", "cp38", "cp39", "cp310", "cp311", "cp312", "cp313"]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up QEMU (Linux ARM64)
-        if: matrix.os == 'ubuntu-latest'
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: "arm64"
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install cibuildwheel
-        run: pip install cibuildwheel
+      - name: Install cibuildwheel and build
+        run: pip install cibuildwheel build
 
       - name: Copy Python Bindings Configuration
         run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py .
@@ -38,14 +32,71 @@ jobs:
       - name: Build Python Wheels
         env:
           CIBW_BUILD_VERBOSITY: 1
+          CIBW_BUILD: "${{ matrix.python-version }}-*"
           CIBW_ARCHS_LINUX: "x86_64" # TODO - change this to "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
-          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "ARM64 ARM64"
+          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "AMD64 ARM64"
         run: cibuildwheel --output-dir wheelhouse
-      
+
+      - name: Build Source Distribution (sdist)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
+        run: python -m build --sdist --outdir wheelhouse
+
       - name: Upload Wheels as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheels-${{ matrix.os == 'ubuntu-latest' && 'manylinux' || matrix.os }}
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: wheelhouse/*.whl
+          
+      - name: Upload Source Distribution as GitHub Artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-sdist
+          path: wheelhouse/*.tar.gz
           retention-days: 5
+
+  publish_to_pypi:
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    permissions:
+      id-token: write
+      contents: write
+    
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Prepare for Upload
+        run: |
+          mkdir -p wheelhouse
+          find dist -type f -name "*.whl" -exec cp {} wheelhouse/ \;
+          find dist -type f -name "*.tar.gz" -exec cp {} wheelhouse/ \; || echo "No source distribution found"
+          ls -la wheelhouse/
+          
+      - name: Create Combined Archive
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}  # Strip the 'v' prefix if present
+          echo "Creating archive for version $VERSION"
+          zip -r compress-utils-python-${VERSION}.zip wheelhouse/
+          echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            compress-utils-python-${{ env.RELEASE_VERSION }}.zip
+          generate_release_notes: false
+          fail_on_unmatched_files: false
+          draft: false
+          tag_name: ${{ github.ref_name }}
+          
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheelhouse/
+          skip-existing: true
