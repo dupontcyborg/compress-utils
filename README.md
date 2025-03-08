@@ -1,7 +1,7 @@
 # compress-utils
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test.yml" alt="GitHub Actions Workflow Status"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml" alt="GitHub Actions Workflow Status"/>
   <img src="https://img.shields.io/github/v/release/dupontcyborg/compress-utils" alt="GitHub Release"/>
 </p>
 <p align="center">
