@@ -44,18 +44,17 @@ jobs:
         run: cibuildwheel --output-dir wheelhouse
 
       - name: Build Source Distribution (sdist)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
         run: python -m build --sdist --outdir wheelhouse
 
       - name: Upload Wheels as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: wheelhouse/*.whl
-          retention-days: 5
           
       - name: Upload Source Distribution as GitHub Artifact
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
         uses: actions/upload-artifact@v4
         with:
           name: python-sdist
@@ -76,14 +75,9 @@ jobs:
       - name: Prepare for Upload
         run: |
           mkdir -p wheelhouse
-          cp dist/python-wheels-*/*.whl wheelhouse/
-          cp dist/python-sdist/*.tar.gz wheelhouse/ || echo "No source distribution found"
+          find dist -type f -name "*.whl" -exec cp {} wheelhouse/ \;
+          find dist -type f -name "*.tar.gz" -exec cp {} wheelhouse/ \; || echo "No source distribution found"
           ls -la wheelhouse/
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
