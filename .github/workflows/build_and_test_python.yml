@@ -6,6 +6,7 @@ on:
     tags: 
       - "v*"
   pull_request:
+    types: [opened, synchronize]
     branches: ["main"]
   workflow_dispatch:
 
@@ -14,25 +15,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest] # TODO - revert this
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up QEMU (Linux ARM64)
-        if: matrix.os == 'ubuntu-latest'
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: "arm64"
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install cibuildwheel
-        run: pip install cibuildwheel
+      - name: Install cibuildwheel and build
+        run: pip install cibuildwheel build
 
       - name: Copy Python Bindings Configuration
         run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py .
@@ -42,18 +38,26 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS_LINUX: "x86_64" # TODO - change this to "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
-          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "ARM64 ARM64"
+          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "AMD64 ARM64"
         run: cibuildwheel --output-dir wheelhouse
 
       - name: Build Source Distribution (sdist)
         if: matrix.os == 'ubuntu-latest'
-        run: python setup.py sdist --dist-dir wheelhouse
+        run: python -m build --sdist --outdir wheelhouse
 
       - name: Upload Wheels as GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheels-${{ matrix.os == 'ubuntu-latest' && 'manylinux' || matrix.os }}
+          name: python-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
+          retention-days: 5
+          
+      - name: Upload Source Distribution as GitHub Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-sdist
+          path: wheelhouse/*.tar.gz
           retention-days: 5
 
   publish_to_pypi:
@@ -62,11 +66,17 @@ jobs:
     # if: github.ref_type == 'tag' # TODO - revert this before merge
 
     steps:
-      - name: Download Wheels Artifact
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: python-wheels-ubuntu-latest
-          path: wheelhouse
+          path: dist
+          
+      - name: Prepare for Upload
+        run: |
+          mkdir -p wheelhouse
+          cp dist/python-wheels-*/*.whl wheelhouse/
+          cp dist/python-sdist/*.tar.gz wheelhouse/ || echo "No source distribution found"
+          ls -la wheelhouse/
 
       - name: Set up Python
         uses: actions/setup-python@v4
