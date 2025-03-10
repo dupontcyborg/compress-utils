@@ -42,6 +42,7 @@ jobs:
   
       - name: Set Version from Tag for Wheels
         if: github.ref_type == 'tag'
+        shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Setting exact version $VERSION for tag build"
