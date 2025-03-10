@@ -59,9 +59,10 @@ setup(
             'compress_utils_py*.so',
             'compress_utils_py*.dylib',
             'compress_utils_py*.pyd',
+            'compress_utils_py.pyi',
         ]
     },
-    setup_requires=["setuptools_scm"],  # Add this
+    setup_requires=["setuptools_scm"],
     cmake_args=cmake_args,
     classifiers=[
         "Intended Audience :: Developers",
