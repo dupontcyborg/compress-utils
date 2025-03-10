@@ -1,4 +1,10 @@
 # __init__.py
 
-# Import the compiled extension module
-from .compress_utils_py import *
+from .compress_utils_py import (
+    compress, 
+    decompress,
+    compressor,
+    Algorithm
+)
+
+__all__ = ['compress', 'decompress', 'compressor', 'Algorithm']
