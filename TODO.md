@@ -23,9 +23,9 @@
 
 ## Additions
 
+- [X] Github Workflow for artifact publishing
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
-- [ ] Github Workflow for artifact publishing
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
 - [ ] Streaming compression/decompression support
 
