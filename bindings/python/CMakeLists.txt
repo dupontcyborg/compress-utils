@@ -96,5 +96,15 @@ if(ENABLE_TESTS)
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
         WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
     )
-    set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")
+    
+    # Set the PYTHONPATH differently based on platform
+    if(WIN32)
+        # Windows uses semicolons as path separators
+        set_tests_properties(unit_tests_py PROPERTIES
+            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR};${CMAKE_BINARY_DIR};${PYTHON_DIST_DIR}")
+    else()
+        # Unix-like systems use colons as path separators
+        set_tests_properties(unit_tests_py PROPERTIES 
+            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}:${PYTHON_DIST_DIR}")
+    endif()
 endif()
