@@ -19,6 +19,14 @@ jobs:
         fetch-depth: 0
         clean: true
 
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Install Python Dependencies
+      run: pip install pybind11 pytest
+
     - name: Configure CMake for All Language Bindings & All Compressors
       run: |
         mkdir build
