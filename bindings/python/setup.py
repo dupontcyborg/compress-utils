@@ -34,7 +34,10 @@ if platform.system() == "Windows":
 
 setup(
     name="compress-utils",
-    use_scm_version=True,
+    use_scm_version={
+        "version_scheme": "guess-next-dev",
+        "local_scheme": "no-local-version",
+    },
     description="Simple & high-performance compression utilities for Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
