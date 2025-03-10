@@ -3,6 +3,8 @@ name: Build, Test and Package C/C++
 on:
   push:
     branches: [ "main" ]
+    tags: 
+      - "v*"
 
 jobs:
   build:
@@ -194,3 +196,26 @@ jobs:
       with:
         name: compress-utils-cpp
         path: compress-utils-cpp.zip
+
+    ##### Attach Artifacts to Release (if Tag) #####
+
+    - name: Extract Version from Tag
+      if: github.ref_type == 'tag'
+      run: |
+        VERSION=${GITHUB_REF_NAME#v}  # Strip the 'v' prefix if present
+        echo "Creating archive for version $VERSION"
+        mv compress-utils-c.zip compress-utils-c-${VERSION}.zip
+        mv compress-utils-cpp.zip compress-utils-cpp-${VERSION}.zip
+        echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Publish to GitHub Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          compress-utils-c-${{ env.RELEASE_VERSION }}.zip
+          compress-utils-cpp-${{ env.RELEASE_VERSION }}.zip
+        generate_release_notes: false
+        fail_on_unmatched_files: false
+        draft: false
+        tag_name: ${{ github.ref_name }}

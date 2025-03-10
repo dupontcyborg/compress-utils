@@ -38,7 +38,7 @@
 |:---:|:---:|:---:|
 | C++ | _TBD_ | [C++ API](bindings/cpp/README.md) |
 | C | _TBD_ | [C API](bindings/c/README.md)
-| Python | _TBD_ | [Python API](bindings/python/README.md) |
+| Python | [compress-utils](https://pypi.org/project/compress-utils) | [Python API](bindings/python/README.md) |
 
 ## Usage
 
@@ -92,7 +92,11 @@ You can find language-specific code examples below:
 
 ### Install From Package Manager
 
-_To be added_
+#### Python
+
+```sh
+pip install compress-utils
+```
 
 ### Build From Source
 

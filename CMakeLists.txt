@@ -75,6 +75,7 @@ option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 
 # Options to build bindings
 option(BUILD_C_BINDINGS "Build C bindings" ON)
+option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 
 ######### INCLUDE DIRECTORIES #########
 

@@ -78,14 +78,15 @@ else()
     install(FILES ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml
         DESTINATION ${CMAKE_INSTALL_PREFIX}
     )
-
-    # Move the built Python module to the package directory (from Release/ to the package directory)
-    add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:${PYTHON_MODULE_NAME}>
-        ${PYTHON_PACKAGE_DIR}
-    )
 endif()
+
+# Move the built Python module to the package directory
+add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:${PYTHON_MODULE_NAME}>
+    ${PYTHON_PACKAGE_DIR}
+    COMMENT "Copying Python module to package directory"
+)
 
 ######### TESTS #########
 
@@ -96,5 +97,15 @@ if(ENABLE_TESTS)
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
         WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
     )
-    set_tests_properties(unit_tests_py PROPERTIES ENVIRONMENT "PYTHONPATH=${PYTHON_DIST_DIR}:$ENV{PYTHONPATH}")
+    
+    # Set the PYTHONPATH differently based on platform
+    if(WIN32)
+        # Windows uses semicolons as path separators
+        set_tests_properties(unit_tests_py PROPERTIES
+            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR};${CMAKE_BINARY_DIR};${PYTHON_DIST_DIR}")
+    else()
+        # Unix-like systems use colons as path separators
+        set_tests_properties(unit_tests_py PROPERTIES 
+            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}:${PYTHON_DIST_DIR}")
+    endif()
 endif()
