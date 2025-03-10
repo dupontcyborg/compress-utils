@@ -52,6 +52,7 @@ jobs:
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_BUILD: "${{ matrix.python-version }}-*"
+          CIBW_ENVIRONMENT: "SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.SETUPTOOLS_SCM_PRETEND_VERSION }}"
           CIBW_ARCHS_LINUX: "x86_64" # TODO - change this to "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
           CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "AMD64 ARM64"
@@ -113,8 +114,8 @@ jobs:
           draft: false
           tag_name: ${{ github.ref_name }}
           
-      # - name: Publish to PyPI
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     packages-dir: wheelhouse/
-      #     skip-existing: true
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheelhouse/
+          skip-existing: true
