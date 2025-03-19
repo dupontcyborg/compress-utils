@@ -22,7 +22,7 @@ usage() {
     echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
     echo "                             Available algorithms: brotli, zstd, zlib, xz (lzma)"
     echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
-    echo "                             Available languages: c, js, python"
+    echo "                             Available languages: c, python, js, ts, wasm"
     echo "  --cores=N                  Number of cores to use for building. Default: 1"
     echo "  -h, --help                 Show this help message and exit."
     echo ""
@@ -70,27 +70,6 @@ if ! command -v cmake &> /dev/null; then
     exit 1
 fi
 
-# Clean the build directory if requested
-if [ "$CLEAN_BUILD" = true ]; then
-    echo "Cleaning build directory..."
-    rm -rf "$BUILD_DIR"
-
-    # Remove the build directories under `algorithms/`
-    rm -rf algorithms/*/build
-
-    # Remove the build directories under `bindings/`
-    rm -rf bindings/*/build
-
-    # Remove the `dist/` directory
-    rm -rf dist
-
-    # Remove the `algorithms/dist` directory
-    rm -rf algorithms/dist
-fi
-
-# Create the build directory if it doesn't exist
-mkdir -p "$BUILD_DIR"
-
 # Prepare CMake options
 CMAKE_OPTIONS=""
 
@@ -105,7 +84,7 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=OFF -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
@@ -136,17 +115,31 @@ else
 fi
 
 # Handle language bindings
+USING_EMSCRIPTEN=false
 if [ ${#LANGUAGES[@]} -gt 0 ]; then
     # Disable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_WASM_BINDINGS=OFF"
     # Enable specified bindings
     for lang in "${LANGUAGES[@]}"; do
         case $lang in
-            js)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
-                ;;
-            ts)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
+            js|ts|wasm)
+                # Check if there are more than one language bindings
+                if [ ${#LANGUAGES[@]} -gt 1 ]; then
+                    echo "Warning: WebAssembly bindings cannot be built with other language bindings."
+                    echo "Please build the WebAssembly bindings separately."
+                    exit 1
+                fi
+                
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_WASM_BINDINGS=ON"
+                USING_EMSCRIPTEN=true
+                BUILD_DIR="build_wasm"
+
+                # # Check if Emscripten is available
+                # if [ -z "$EMSDK" ]; then
+                #     echo "Warning: EMSDK environment variable not set. WebAssembly bindings may not compile correctly."
+                #     echo "Please install and activate Emscripten SDK: https://emscripten.org/docs/getting_started/"
+                #     exit 1
+                # fi
                 ;;
             python)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
@@ -162,25 +155,74 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
         esac
     done
 else
-    # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    # Enable all bindings by default except WASM (which requires Emscripten)
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON -DBUILD_WASM_BINDINGS=OFF"
     CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
 fi
 
+# Check if emscripten is available when WASM is selected
+if [ "$USING_EMSCRIPTEN" = true ]; then
+  if ! command -v emcc &> /dev/null; then
+    echo "Error: emcc (Emscripten compiler) not found."
+    echo "Please install and activate Emscripten SDK: https://emscripten.org/docs/getting_started/"
+    exit 1
+  fi
+  
+  # Clear the build directory for emscripten to avoid cross-compilation conflicts
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+  
+  # Clean any existing external library builds to ensure they are built with emscripten
+  rm -rf algorithms/*/build
+fi
+
+# Clean the build directory if requested
+if [ "$CLEAN_BUILD" = true ]; then
+    echo "Cleaning build directory..."
+    rm -rf "$BUILD_DIR"
+
+    # Remove the build directories under `algorithms/`
+    rm -rf algorithms/*/build
+
+    # Remove the build directories under `bindings/`
+    rm -rf bindings/*/build
+
+    # Remove the `dist/` directory
+    rm -rf dist
+
+    # Remove the `algorithms/dist` directory
+    rm -rf algorithms/dist
+fi
+
+# Create the build directory if it doesn't exist
+mkdir -p "$BUILD_DIR"
+
 # Move into the build directory
-cd "$BUILD_DIR"
+cd "$BUILD_DIR" || exit 1
 
 # Run CMake configuration
 echo "Running CMake with options: $CMAKE_OPTIONS"
-cmake .. $CMAKE_OPTIONS
-
-# Build the project with the specified number of cores
-echo "Building the project with $CORES cores..."
-cmake --build . -j"$CORES"
-
-# Install the project (this will trigger the CMake install() commands)
-echo "Installing the project..."
-cmake --install .
+if [ "$USING_EMSCRIPTEN" = true ]; then
+    emcmake cmake .. $CMAKE_OPTIONS
+    
+    # Build the project with the specified number of cores
+    echo "Building the project with $CORES cores..."
+    emmake make -j"$CORES"
+    
+    # Install the project
+    echo "Installing the project..."
+    emmake make install
+else
+    cmake .. $CMAKE_OPTIONS
+    
+    # Build the project with the specified number of cores
+    echo "Building the project with $CORES cores..."
+    cmake --build . -j"$CORES"
+    
+    # Install the project
+    echo "Installing the project..."
+    cmake --install .
+fi
 
 # Run tests if not skipped
 if [ "$SKIP_TESTS" = false ]; then

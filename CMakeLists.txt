@@ -76,6 +76,16 @@ option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 # Options to build bindings
 option(BUILD_C_BINDINGS "Build C bindings" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+option(BUILD_WASM_BINDINGS "Build WebAssembly bindings for TS/JS" ON)
+
+# Ensure all external projects use the Emscripten toolchain
+if(BUILD_WASM_BINDINGS)
+  set(EXTERNAL_PROJECT_CMAKE_ARGS
+    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+  )
+else()
+  set(EXTERNAL_PROJECT_CMAKE_ARGS "")
+endif()
 
 ######### INCLUDE DIRECTORIES #########
 
@@ -287,9 +297,15 @@ endif()
 if (ENABLE_TESTS)
     enable_testing()
     message(STATUS "Tests are enabled. Including the tests directory.")
-    add_subdirectory(tests)
-    add_dependencies(unit_tests compress_utils)
-    add_dependencies(unit_tests_static compress_utils_static)
+    
+    # Only build the core tests if we are not building the WebAssembly bindings
+    if (NOT BUILD_WASM_BINDINGS)
+        add_subdirectory(tests)
+        add_dependencies(unit_tests compress_utils)
+        add_dependencies(unit_tests_static compress_utils_static)
+    else()
+        message(STATUS "Skipping the core tests as WebAssembly bindings are enabled.")
+    endif()
 else()
     message(STATUS "Tests are disabled. Skipping the tests directory.")
 endif()
@@ -309,4 +325,10 @@ if (BUILD_PYTHON_BINDINGS)
     message(STATUS "Building Python binding...")
     add_subdirectory(bindings/python)
     add_dependencies(compress_utils_py compress_utils)
+endif()
+
+# WebAssembly Bindings for TS/JS
+if (BUILD_WASM_BINDINGS)
+    message(STATUS "Building WebAssembly binding for TS/JS...")
+    add_subdirectory(bindings/wasm)
 endif()

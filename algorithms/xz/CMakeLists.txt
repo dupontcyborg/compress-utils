@@ -45,6 +45,7 @@ ExternalProject_Add(
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DBUILD_SHARED_LIBS=OFF
         -DLZMA_API_STATIC=ON
+        ${EXTERNAL_PROJECT_CMAKE_ARGS}
     BUILD_IN_SOURCE 0
     BUILD_COMMAND ${CMAKE_COMMAND} --build . --target liblzma --config $<CONFIG>
     UPDATE_DISCONNECTED 1

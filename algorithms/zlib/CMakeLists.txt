@@ -19,6 +19,9 @@ if(UNIX AND NOT APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 endif()
 
+# Print the external cmake args
+message(STATUS "External project cmake args: ${EXTERNAL_PROJECT_CMAKE_ARGS}")
+
 # External project for zlib
 include(ExternalProject)
 ExternalProject_Add(
@@ -35,6 +38,7 @@ ExternalProject_Add(
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         -DBUILD_SHARED_LIBS=OFF
         -DZLIB_BUILD_EXAMPLES=OFF
+        ${EXTERNAL_PROJECT_CMAKE_ARGS}
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
     INSTALL_COMMAND ""
