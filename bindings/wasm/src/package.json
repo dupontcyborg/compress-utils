@@ -1,0 +1,42 @@
+{
+  "name": "compress-utils",
+  "version": "1.0.0",
+  "description": "WebAssembly bindings for compress-utils library",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/*.js",
+    "dist/*.d.ts",
+    "dist/*.wasm"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "prebuild": "npm run clean",
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "compression",
+    "wasm",
+    "brotli",
+    "zlib",
+    "zstd",
+    "xz",
+    "lzma",
+    "webassembly"
+  ],
+  "author": "Nicolas Dupont",
+  "license": "MIT"
+}
