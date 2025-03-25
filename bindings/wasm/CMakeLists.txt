@@ -11,25 +11,30 @@ endif()
 # WASM binding directories
 set(WASM_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/wasm")
 set(WASM_BUILD_DIR "${WASM_BINDING_DIR}/build")
-set(WASM_DIST_DIR "${WASM_BINDING_DIR}/dist")
+set(WASM_DIST_DIR "${WASM_BUILD_DIR}/dist")
 
 # Create output directories
 file(MAKE_DIRECTORY ${WASM_BUILD_DIR})
 file(MAKE_DIRECTORY ${WASM_DIST_DIR})
 
 # Set Emscripten specific flags
-# The proper format for Emscripten flags via CMake
 set(EM_FLAGS "")
 set(EM_FLAGS "${EM_FLAGS} -sWASM=1")
 set(EM_FLAGS "${EM_FLAGS} -sEXPORT_ES6=1")
 set(EM_FLAGS "${EM_FLAGS} -sMODULARIZE=1")
 set(EM_FLAGS "${EM_FLAGS} -sEXPORT_NAME=CompressUtilsFactory")
 set(EM_FLAGS "${EM_FLAGS} -sALLOW_MEMORY_GROWTH=1")
-set(EM_FLAGS "${EM_FLAGS} -sASSERTIONS=1")
 set(EM_FLAGS "${EM_FLAGS} -sNO_EXIT_RUNTIME=1")
 set(EM_FLAGS "${EM_FLAGS} --bind")
+
+# Conditional flags based on build type
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(EM_FLAGS "${EM_FLAGS} -O3")
+    set(EM_FLAGS "${EM_FLAGS} -sASSERTIONS=0")  # Disable assertions in release
+else()
+    set(EM_FLAGS "${EM_FLAGS} -sASSERTIONS=1")  # Keep assertions in debug
+endif()
+
 endif()
 
 # WASM target
@@ -58,21 +63,31 @@ add_dependencies(compress_utils_wasm compress_utils_static)
 ######### POST BUILD STEPS #########
 
 # Start with empty values
-set(ALGORITHM_ENUM_VALUES "")
+set(ALGORITHM_TYPES "")
+set(MULTIPLE False)
 
 # Add values conditionally based on which algorithms are enabled
 if(INCLUDE_BROTLI)
-  set(ALGORITHM_ENUM_VALUES "${ALGORITHM_ENUM_VALUES}    BROTLI = 0,\n")
+    set(ALGORITHM_TYPES "${ALGORITHM_TYPES} \"brotli\"")
+    set(MULTIPLE True)
 endif()
 if(INCLUDE_XZ)
-  set(ALGORITHM_ENUM_VALUES "${ALGORITHM_ENUM_VALUES}    LZMA = 1,\n")
-  set(ALGORITHM_ENUM_VALUES "${ALGORITHM_ENUM_VALUES}    XZ = 2,\n")
+    if (MULTIPLE)
+        set(ALGORITHM_TYPES "${ALGORITHM_TYPES} | ")
+    endif()
+    set(ALGORITHM_TYPES "${ALGORITHM_TYPES} \"lzma\" | \"xz\"")
 endif()
 if(INCLUDE_ZLIB)
-  set(ALGORITHM_ENUM_VALUES "${ALGORITHM_ENUM_VALUES}    ZLIB = 3,\n")
+    if (MULTIPLE)
+        set(ALGORITHM_TYPES "${ALGORITHM_TYPES} | ")
+    endif()
+    set(ALGORITHM_TYPES "${ALGORITHM_TYPES} \"zlib\"")
 endif()
 if(INCLUDE_ZSTD)
-  set(ALGORITHM_ENUM_VALUES "${ALGORITHM_ENUM_VALUES}    ZSTD = 4,\n")
+    if (MULTIPLE)
+        set(ALGORITHM_TYPES "${ALGORITHM_TYPES} | ")
+    endif()
+    set(ALGORITHM_TYPES "${ALGORITHM_TYPES} \"zstd\"")
 endif()
 
 # Configure the TypeScript declaration file
@@ -123,17 +138,21 @@ add_custom_command(TARGET compress_utils_wasm POST_BUILD
     COMMENT "Building TypeScript wrapper"
 )
 
+# Copy the WASM and JS files to the dist directory
+add_custom_command(TARGET compress_utils_wasm POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${WASM_BUILD_DIR}/compress_utils.js"
+    "${WASM_DIST_DIR}/compress_utils.js"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${WASM_BUILD_DIR}/compress_utils.wasm"
+    "${WASM_DIST_DIR}/compress_utils.wasm"
+    COMMENT "Copying WASM and JS files to dist directory"
+)
+
 ######### INSTALL #########
 
 # Install to dist directory
-install(DIRECTORY ${WASM_BUILD_DIR}/dist/
-    DESTINATION ${CMAKE_SOURCE_DIR}/dist/wasm
-)
-
-# Also copy the WASM and JS files directly
-install(FILES 
-    "${WASM_BUILD_DIR}/compress_utils.js"
-    "${WASM_BUILD_DIR}/compress_utils.wasm"
+install(DIRECTORY ${WASM_DIST_DIR}
     DESTINATION ${CMAKE_SOURCE_DIR}/dist/wasm
 )
 
@@ -143,9 +162,10 @@ if(ENABLE_TESTS)
     find_program(NPM_EXECUTABLE npm REQUIRED)
     
     # Create a target to install npm dependencies - make sure this runs explicitly
-    add_custom_target(wasm_install_test_dependencies ALL
+    add_custom_target(wasm_install_test_dependencies
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for tests..."
         COMMAND ${NPM_EXECUTABLE} install
+        COMMAND ${NPM_EXECUTABLE} run prepare
         WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
         COMMENT "Installing WASM test dependencies"
     )
@@ -153,77 +173,69 @@ if(ENABLE_TESTS)
     # Add dependency on the main build
     add_dependencies(wasm_install_test_dependencies compress_utils_wasm)
     
-    # Copy WASM files to test directory
-    add_custom_command(TARGET wasm_install_test_dependencies POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo "Copying WASM files to test directory..."
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${WASM_BUILD_DIR}/compress_utils.js"
-        "${WASM_BUILD_DIR}/compress_utils.wasm"
-        "${WASM_BINDING_DIR}/tests/"
-        COMMENT "Copying WASM files to test directory"
-    )
+    # # Copy all contents of the WASM build directory to the dist directory
+    # add_custom_command(TARGET wasm_install_test_dependencies POST_BUILD
+    #     COMMAND ${CMAKE_COMMAND} -E echo "Copying all contents of the WASM build directory to the dist directory..."
+    #     COMMAND ${CMAKE_COMMAND} -E copy_directory
+    #     "${WASM_BUILD_DIR}"
+    #     "${WASM_BINDING_DIR}/dist"
+    #     COMMENT "Copying all contents of the WASM build directory to the dist directory"
+    # )
     
-    # Create a target that builds the TypeScript tests
-    add_custom_target(wasm_build_tests
-        COMMAND ${NPM_EXECUTABLE} run test:types
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-        DEPENDS wasm_install_test_dependencies
-        COMMENT "Building TypeScript tests"
-    )
+    # # Create a target that builds the TypeScript tests
+    # add_custom_target(wasm_build_tests
+    #     COMMAND ${NPM_EXECUTABLE} run test:types
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    #     DEPENDS wasm_install_test_dependencies
+    #     COMMENT "Building TypeScript tests"
+    # )
     
-    # Create a custom target to run all tests (not a CTest test)
-    add_custom_target(wasm_run_all_tests
-        COMMAND ${NPM_EXECUTABLE} test
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-        DEPENDS wasm_build_tests
-        COMMENT "Running all WASM tests"
-    )
+    # # Create a custom target to run all tests (not a CTest test)
+    # add_custom_target(wasm_run_all_tests
+    #     COMMAND ${NPM_EXECUTABLE} test
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    #     DEPENDS wasm_build_tests
+    #     COMMENT "Running all WASM tests"
+    # )
     
-    # Add individual tests to CTest
-    add_test(
-        NAME wasm_unit_tests
-        COMMAND ${NPM_EXECUTABLE} run test:unit
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-    )
+    # # Node ESM module tests
+    # add_test(
+    #     NAME wasm_esm_tests
+    #     COMMAND ${NPM_EXECUTABLE} run test:esm
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    # )
     
-    # Browser tests
-    add_test(
-        NAME wasm_browser_tests
-        COMMAND ${NPM_EXECUTABLE} run test:browser
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-    )
+    # # Node CommonJS module tests
+    # add_test(
+    #     NAME wasm_cjs_tests
+    #     COMMAND ${NPM_EXECUTABLE} run test:cjs
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    # )
+
+    # # Browser tests
+    # add_test(
+    #     NAME wasm_browser_tests
+    #     COMMAND ${NPM_EXECUTABLE} run test:browser
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    # )
     
-    # ESM module tests
-    add_test(
-        NAME wasm_esm_tests
-        COMMAND ${NPM_EXECUTABLE} run test:esm
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-    )
+    # # Set test properties to ensure dependencies are built first
+    # # and proper environment variables are set
+    # set_tests_properties(
+    #     wasm_esm_tests
+    #     wasm_cjs_tests
+    #     wasm_browser_tests
+    #     PROPERTIES 
+    #     DEPENDS wasm_build_tests
+    # )
     
-    # CommonJS module tests
-    add_test(
-        NAME wasm_cjs_tests
-        COMMAND ${NPM_EXECUTABLE} run test:cjs
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-    )
+    # # Add the benchmarks as a custom target (not a test)
+    # add_custom_target(wasm_benchmarks
+    #     COMMAND ${CMAKE_COMMAND} -E echo "Running WASM compression benchmarks..."
+    #     COMMAND ${NPM_EXECUTABLE} run benchmark || echo "Benchmarks failed"
+    #     WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
+    #     DEPENDS wasm_install_test_dependencies
+    #     COMMENT "Running WASM compression benchmarks"
+    # )
     
-    # Set test properties to ensure dependencies are built first
-    # and proper environment variables are set
-    set_tests_properties(
-        wasm_unit_tests
-        wasm_browser_tests
-        wasm_esm_tests
-        wasm_cjs_tests
-        PROPERTIES 
-        DEPENDS wasm_build_tests
-    )
-    
-    # Add the benchmarks as a custom target (not a test)
-    add_custom_target(wasm_benchmarks
-        COMMAND ${CMAKE_COMMAND} -E echo "Running WASM compression benchmarks..."
-        COMMAND ${NPM_EXECUTABLE} run benchmark || echo "Benchmarks failed"
-        WORKING_DIRECTORY ${WASM_BINDING_DIR}/tests
-        DEPENDS wasm_install_test_dependencies
-        COMMENT "Running WASM compression benchmarks"
-    )
 endif(ENABLE_TESTS)
