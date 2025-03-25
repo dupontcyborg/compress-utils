@@ -1,0 +1,85 @@
+/**
+ * Compress-Utils TypeScript Definitions
+ */
+
+/**
+ * Available compression algorithms
+ * Note: Only algorithms included in your build will be available at runtime.
+ * Use getAvailableAlgorithms() to determine which algorithms are actually available.
+ */
+export type Algorithm = @ALGORITHM_TYPES@;
+
+/**
+ * CompressUtils Module Interface
+ * This is the interface for the instance returned by the factory function
+ */
+export interface CompressUtilsModule {
+  /**
+   * OOP interface for compression
+   */
+  Compressor: {
+    /**
+     * Creates a new compressor instance
+     * @param algorithm The compression algorithm to use
+     * @throws {Error} If the algorithm is not supported
+     */
+    new (algorithm: Algorithm): {
+      /**
+       * Compresses data
+       * @param data Data to compress
+       * @param level Compression level (1=fastest, 9=best compression, default=3)
+       * @returns Compressed data as Uint8Array
+       * @throws {Error} If compression fails
+       */
+      compress(data: Uint8Array | ArrayBuffer | number[], level?: number): Uint8Array;
+      
+      /**
+       * Decompresses data
+       * @param data Data to decompress
+       * @returns Decompressed data as Uint8Array
+       * @throws {Error} If decompression fails
+       */
+      decompress(data: Uint8Array | ArrayBuffer | number[]): Uint8Array;
+    };
+  };
+
+  /**
+   * Compresses data using the specified algorithm
+   * @param data Data to compress
+   * @param algorithm Compression algorithm to use
+   * @param level Compression level (1=fastest, 9=best compression, default=3)
+   * @returns Compressed data as Uint8Array
+   * @throws {Error} If compression fails
+   */
+  compress(
+    data: Uint8Array | ArrayBuffer | number[],
+    algorithm: Algorithm,
+    level?: number
+  ): Uint8Array;
+
+  /**
+   * Decompresses data using the specified algorithm
+   * @param data Data to decompress
+   * @param algorithm Compression algorithm to use
+   * @returns Decompressed data as Uint8Array
+   * @throws {Error} If decompression fails
+   */
+  decompress(
+    data: Uint8Array | ArrayBuffer | number[],
+    algorithm: Algorithm
+  ): Uint8Array;
+
+  /**
+   * Returns a list of available compression algorithms
+   * @returns Array of available algorithm names
+   */
+  getAvailableAlgorithms(): Algorithm[];
+}
+
+/**
+ * Factory function that initializes and returns the CompressUtils module
+ * @returns Promise that resolves to the CompressUtils module
+ */
+declare function CompressUtilsFactory(): Promise<CompressUtilsModule>;
+
+export default CompressUtilsFactory;
