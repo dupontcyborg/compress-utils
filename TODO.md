@@ -13,6 +13,7 @@
 - [ ] Merge all static lib dependencies into `compress-utils-static*` libraries
     - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
     - [ ] Set up `whole-archive` for all platforms
+- [ ] Lazy-load each compressor with code-splitting in WASM
 
 ## Optimizations
 
