@@ -1,0 +1,15 @@
+# Don't count CMake in the language statistics
+CMakeLists.txt linguist-vendored
+*.cmake linguist-vendored
+
+# Adjust .in templates
+*.h.in linguist-language=C
+*.hpp.in linguist-language=C++
+*.ts.in linguist-language=TypeScript
+
+# Python files
+*.pyi linguist-language=Python
+
+# Shell scripts
+*.sh linguist-vendored
+*.ps1 linguist-vendored
