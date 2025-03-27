@@ -57,7 +57,7 @@ ExternalProject_Add_Step(zlib_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external-build/${ZLIB_LIB_DIR}${ZLIB_LIB} ${ZLIB_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external/zlib.h ${ZLIB_INSTALL_DIR_INCLUDE}
     COMMAND ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external-build/zconf.h ${ZLIB_INSTALL_DIR_INCLUDE}
-    DEPENDEES install
+    DEPENDEES build
 )
 
 # Create an imported library target for zlib

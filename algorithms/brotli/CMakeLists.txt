@@ -63,7 +63,7 @@ ExternalProject_Add_Step(brotli_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${BROTLI_BUILD_DIR}/src/brotli_external/c/include/brotli ${BROTLI_INSTALL_DIR_INCLUDE}
-    DEPENDEES install
+    DEPENDEES build
 )
 
 # Create imported targets for Brotli libraries

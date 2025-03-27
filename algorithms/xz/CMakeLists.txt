@@ -68,7 +68,7 @@ ExternalProject_Add_Step(xz_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external-build/${XZ_LIB_DIR}${XZ_LIB} ${XZ_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma.h ${XZ_INSTALL_DIR_INCLUDE}
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma ${XZ_INSTALL_DIR_INCLUDE}/lzma
-    DEPENDEES install
+    DEPENDEES build
 )
 
 # Create an imported library target for XZ

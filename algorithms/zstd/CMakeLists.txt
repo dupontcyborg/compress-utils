@@ -61,7 +61,7 @@ ExternalProject_Add_Step(zstd_external copy_artifacts
     COMMAND ${CMAKE_COMMAND} -E make_directory ${ZSTD_INSTALL_DIR_LIB} ${ZSTD_INSTALL_DIR_INCLUDE}
     COMMAND ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB}
     COMMAND ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd.h ${ZSTD_INSTALL_DIR_INCLUDE}
-    DEPENDEES install
+    DEPENDEES build
 )
 
 # Create an imported library target for zstd
