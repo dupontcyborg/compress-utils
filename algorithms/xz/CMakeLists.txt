@@ -57,6 +57,8 @@ ExternalProject_Add(
     BUILD_IN_SOURCE 0
     BUILD_COMMAND ${CMAKE_COMMAND} --build . --target liblzma --config $<CONFIG>
     UPDATE_DISCONNECTED 1
+    BUILD_BYPRODUCTS 
+        ${XZ_INSTALL_DIR_LIB}/${XZ_LIB}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${XZ_INSTALL_DIR_LIB} ${XZ_INSTALL_DIR_INCLUDE} &&
         ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external-build/${XZ_LIB_DIR}${XZ_LIB} ${XZ_INSTALL_DIR_LIB} &&

@@ -51,6 +51,8 @@ ExternalProject_Add(
     SOURCE_SUBDIR build/cmake
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
+    BUILD_BYPRODUCTS 
+        ${ZSTD_INSTALL_DIR_LIB}/${ZSTD_LIB}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${ZSTD_INSTALL_DIR_LIB} ${ZSTD_INSTALL_DIR_INCLUDE} &&
         ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB} &&

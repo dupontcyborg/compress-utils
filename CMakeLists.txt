@@ -112,6 +112,9 @@ if (INCLUDE_BROTLI)
     message(STATUS "Including Brotli algorithm")
     # Add the subdirectory for Brotli which contains its own CMakeLists.txt
     add_subdirectory(algorithms/brotli)
+    # Ensure that Brotli is cloned before compress_utils
+    add_dependencies(compress_utils brotli_external)
+    add_dependencies(compress_utils_static brotli_external)
     # Ensure that Brotli is built before compress_utils
     add_dependencies(compress_utils brotlienc)
     add_dependencies(compress_utils_static brotlienc)
@@ -135,6 +138,9 @@ if (INCLUDE_XZ)
     message(STATUS "Including XZ/LZMA algorithm")
     # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
     add_subdirectory(algorithms/xz)
+    # Ensure that XZ is cloned before compress_utils
+    add_dependencies(compress_utils xz_external)
+    add_dependencies(compress_utils_static xz_external)
     # Ensure that xz is built before compress_utils
     add_dependencies(compress_utils xz_library)
     add_dependencies(compress_utils_static xz_library)
@@ -155,6 +161,9 @@ if (INCLUDE_ZLIB)
     message(STATUS "Including zlib algorithm")
     # Add the subdirectory for zlib which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zlib)
+    # Ensure that zlib is cloned before compress_utils
+    add_dependencies(compress_utils zlib_external)
+    add_dependencies(compress_utils_static zlib_external)
     # Ensure that zlib is built before compress_utils
     add_dependencies(compress_utils zlib_library)
     add_dependencies(compress_utils_static zlib_library)
@@ -174,6 +183,9 @@ if (INCLUDE_ZSTD)
     message(STATUS "Including Zstd algorithm")
     # Add the subdirectory for zstd which contains its own CMakeLists.txt
     add_subdirectory(algorithms/zstd)
+    # Ensure that Zstd is cloned before compress_utils
+    add_dependencies(compress_utils zstd_external)
+    add_dependencies(compress_utils_static zstd_external)
     # Ensure that Zstd is built before compress_utils
     add_dependencies(compress_utils zstd_library)
     add_dependencies(compress_utils_static zstd_library)

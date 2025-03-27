@@ -51,6 +51,10 @@ ExternalProject_Add(
         -DBROTLI_BUNDLED_MODE=ON
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
+    BUILD_BYPRODUCTS 
+        ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_ENC}
+        ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_DEC}
+        ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_COMMON}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${BROTLI_INSTALL_DIR_LIB} ${BROTLI_INSTALL_DIR_INCLUDE} &&
         ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB} &&
@@ -60,7 +64,6 @@ ExternalProject_Add(
 )
 
 ######### INSTALL #########
-
 
 # Create imported targets for Brotli libraries
 add_library(brotlienc STATIC IMPORTED GLOBAL)
