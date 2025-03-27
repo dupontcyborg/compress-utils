@@ -19,6 +19,19 @@ if(UNIX AND NOT APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 endif()
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(BROTLI_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(BROTLI_LIB_ENC "brotlienc.lib")
+    set(BROTLI_LIB_DEC "brotlidec.lib")
+    set(BROTLI_LIB_COMMON "brotlicommon.lib")
+else()
+    set(BROTLI_LIB_DIR "")
+    set(BROTLI_LIB_ENC "libbrotlienc.a")
+    set(BROTLI_LIB_DEC "libbrotlidec.a")
+    set(BROTLI_LIB_COMMON "libbrotlicommon.a")
+endif()
+
 # External project for Brotli
 include(ExternalProject)
 ExternalProject_Add(
@@ -38,33 +51,16 @@ ExternalProject_Add(
         -DBROTLI_BUNDLED_MODE=ON
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1
-    INSTALL_COMMAND ""
+    INSTALL_COMMAND
+        ${CMAKE_COMMAND} -E make_directory ${BROTLI_INSTALL_DIR_LIB} ${BROTLI_INSTALL_DIR_INCLUDE} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy_directory ${BROTLI_BUILD_DIR}/src/brotli_external/c/include/brotli ${BROTLI_INSTALL_DIR_INCLUDE}
 )
 
 ######### INSTALL #########
 
-# Handle Windows-specific library naming
-if (WIN32)
-    set(BROTLI_LIB_DIR ${CMAKE_BUILD_TYPE}/)
-    set(BROTLI_LIB_ENC "brotlienc.lib")
-    set(BROTLI_LIB_DEC "brotlidec.lib")
-    set(BROTLI_LIB_COMMON "brotlicommon.lib")
-else()
-    set(BROTLI_LIB_DIR "")
-    set(BROTLI_LIB_ENC "libbrotlienc.a")
-    set(BROTLI_LIB_DEC "libbrotlidec.a")
-    set(BROTLI_LIB_COMMON "libbrotlicommon.a")
-endif()
-
-# Copy built libraries and headers to dist directory
-ExternalProject_Add_Step(brotli_external copy_artifacts
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${BROTLI_INSTALL_DIR_LIB} ${BROTLI_INSTALL_DIR_INCLUDE}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${BROTLI_BUILD_DIR}/src/brotli_external/c/include/brotli ${BROTLI_INSTALL_DIR_INCLUDE}
-    DEPENDEES build
-)
 
 # Create imported targets for Brotli libraries
 add_library(brotlienc STATIC IMPORTED GLOBAL)

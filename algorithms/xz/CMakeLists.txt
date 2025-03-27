@@ -31,6 +31,15 @@ else()
     set(XZ_CXX_FLAGS "")
 endif()
 
+# Handle Windows-specific library naming
+if (WIN32)
+    set(XZ_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(XZ_LIB "lzma.lib")
+else()
+    set(XZ_LIB_DIR "")
+    set(XZ_LIB "liblzma.a")
+endif()
+
 ExternalProject_Add(
     xz_external
     PREFIX ${XZ_BUILD_DIR}
@@ -48,28 +57,15 @@ ExternalProject_Add(
     BUILD_IN_SOURCE 0
     BUILD_COMMAND ${CMAKE_COMMAND} --build . --target liblzma --config $<CONFIG>
     UPDATE_DISCONNECTED 1
-    INSTALL_COMMAND ""
+    INSTALL_COMMAND
+        ${CMAKE_COMMAND} -E make_directory ${XZ_INSTALL_DIR_LIB} ${XZ_INSTALL_DIR_INCLUDE} &&
+        ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external-build/${XZ_LIB_DIR}${XZ_LIB} ${XZ_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma.h ${XZ_INSTALL_DIR_INCLUDE} &&
+        ${CMAKE_COMMAND} -E copy_directory ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma ${XZ_INSTALL_DIR_INCLUDE}/lzma
 )
 
 ######### INSTALL #########
 
-# Handle Windows-specific library naming
-if (WIN32)
-    set(XZ_LIB_DIR ${CMAKE_BUILD_TYPE}/)
-    set(XZ_LIB "lzma.lib")
-else()
-    set(XZ_LIB_DIR "")
-    set(XZ_LIB "liblzma.a")
-endif()
-
-# Copy built library and headers to dist directory
-ExternalProject_Add_Step(xz_external copy_artifacts
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${XZ_INSTALL_DIR_LIB} ${XZ_INSTALL_DIR_INCLUDE}
-    COMMAND ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external-build/${XZ_LIB_DIR}${XZ_LIB} ${XZ_INSTALL_DIR_LIB}
-    COMMAND ${CMAKE_COMMAND} -E copy ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma.h ${XZ_INSTALL_DIR_INCLUDE}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${XZ_BUILD_DIR}/src/xz_external/src/liblzma/api/lzma ${XZ_INSTALL_DIR_INCLUDE}/lzma
-    DEPENDEES build
-)
 
 # Create an imported library target for XZ
 add_library(xz_library STATIC IMPORTED GLOBAL)
