@@ -28,7 +28,7 @@ inline int GetCompressionLevel(int level) {
     return level;
 }
 
-std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
     // Get Brotli compression level
     int brotli_level = GetCompressionLevel(level);
 
@@ -64,7 +64,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t> data) {
     // Create Brotli decompressor state
     BrotliDecoderState* state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
     if (!state) {

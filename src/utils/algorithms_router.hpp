@@ -19,8 +19,8 @@ namespace compress_utils::internal {
  * @brief Struct that holds the compression and decompression functions for a specific algorithm
  */
 struct CompressionFunctions {
-    std::vector<uint8_t> (*Compress)(std::span<const uint8_t>& data, int level);
-    std::vector<uint8_t> (*Decompress)(std::span<const uint8_t>& data);
+    std::vector<uint8_t> (*Compress)(std::span<const uint8_t> data, int level);
+    std::vector<uint8_t> (*Decompress)(std::span<const uint8_t> data);
 };
 
 /**

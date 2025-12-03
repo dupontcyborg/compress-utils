@@ -1,0 +1,48 @@
+#ifndef COMPRESS_UTILS_VERSION_HPP_
+#define COMPRESS_UTILS_VERSION_HPP_
+
+namespace compress_utils {
+
+// Version components
+#define COMPRESS_UTILS_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define COMPRESS_UTILS_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define COMPRESS_UTILS_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+// Full version string
+#define COMPRESS_UTILS_VERSION "@PROJECT_VERSION@"
+
+/**
+ * @brief Get the library version as a string
+ * @return Version string in format "major.minor.patch"
+ */
+inline const char* Version() {
+    return COMPRESS_UTILS_VERSION;
+}
+
+/**
+ * @brief Get the major version number
+ * @return Major version number
+ */
+inline int VersionMajor() {
+    return COMPRESS_UTILS_VERSION_MAJOR;
+}
+
+/**
+ * @brief Get the minor version number
+ * @return Minor version number
+ */
+inline int VersionMinor() {
+    return COMPRESS_UTILS_VERSION_MINOR;
+}
+
+/**
+ * @brief Get the patch version number
+ * @return Patch version number
+ */
+inline int VersionPatch() {
+    return COMPRESS_UTILS_VERSION_PATCH;
+}
+
+}  // namespace compress_utils
+
+#endif  // COMPRESS_UTILS_VERSION_HPP_

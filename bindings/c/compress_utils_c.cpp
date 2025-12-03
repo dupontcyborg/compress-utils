@@ -8,13 +8,31 @@
 #include <cstring>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
+
+namespace {
+
+// Thread-local storage for error messages
+thread_local std::string g_last_error;
+
+void SetLastError(const std::string& error) {
+    g_last_error = error;
+}
+
+void ClearLastError() {
+    g_last_error.clear();
+}
+
+}  // namespace
 
 extern "C" {
 
 // Compression function implementation
 int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm,
                       int level) {
+    ClearLastError();
+
     try {
         // Call the C++ Compress function
         std::vector<uint8_t> compressed_data = compress_utils::Compress(
@@ -25,6 +43,7 @@ int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algori
 
         // Return -1 if memory allocation fails
         if (*output == nullptr) {
+            SetLastError("Memory allocation failed");
             return -1;
         }
 
@@ -34,13 +53,18 @@ int64_t compress_data(const uint8_t* data, size_t size, uint8_t** output, Algori
         // Return the size of the compressed data
         return static_cast<int64_t>(compressed_data.size());
     } catch (const std::exception& e) {
-        // Handle any exceptions thrown by the C++ code and return -1 to indicate failure
+        SetLastError(e.what());
+        return -1;
+    } catch (...) {
+        SetLastError("Unknown error occurred during compression");
         return -1;
     }
 }
 
 // Decompression function implementation
 int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output, Algorithm algorithm) {
+    ClearLastError();
+
     try {
         // Call the C++ Decompress function
         std::vector<uint8_t> decompressed_data = compress_utils::Decompress(
@@ -51,6 +75,7 @@ int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output, Algo
 
         // Return -1 if memory allocation fails
         if (*output == nullptr) {
+            SetLastError("Memory allocation failed");
             return -1;
         }
 
@@ -60,9 +85,22 @@ int64_t decompress_data(const uint8_t* data, size_t size, uint8_t** output, Algo
         // Return the size of the decompressed data
         return static_cast<int64_t>(decompressed_data.size());
     } catch (const std::exception& e) {
-        // Handle any exceptions thrown by the C++ code and return -1 to indicate failure
+        SetLastError(e.what());
+        return -1;
+    } catch (...) {
+        SetLastError("Unknown error occurred during decompression");
         return -1;
     }
+}
+
+// Get the last error message
+const char* compress_utils_last_error(void) {
+    return g_last_error.c_str();
+}
+
+// Clear the last error message
+void compress_utils_clear_error(void) {
+    ClearLastError();
 }
 
 }  // extern "C"

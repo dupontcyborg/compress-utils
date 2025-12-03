@@ -21,7 +21,7 @@ inline int GetCompressionLevel(int level) {
     return level - 1;
 }
 
-std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
     // Get the XZ compression level
     int xz_level = GetCompressionLevel(level);
 
@@ -84,7 +84,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t> data) {
     // Initialize the XZ decoder
     lzma_stream strm = LZMA_STREAM_INIT;
     if (lzma_auto_decoder(&strm, UINT64_MAX, LZMA_CONCATENATED) != LZMA_OK) {

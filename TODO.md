@@ -2,23 +2,23 @@
 
 ## Bugs & Critical Issues
 
-- [ ] **Fix comment/code mismatch in zlib.cpp:60-61** - Comment says "max 4 times" but code uses `retries = 10`
-- [ ] **C API discards all error context** - `catch (const std::exception& e)` returns `-1` with no way to diagnose failures
-  - [ ] Add error retrieval function (e.g., `compress_utils_last_error()`)
-  - [ ] Or add thread-local error storage
-  - [ ] Or return error codes enum instead of generic `-1`
-- [ ] **Add semantic versioning** - No `VERSION` in CMakeLists.txt or headers
-  - [ ] Add `project(compress-utils VERSION x.y.z)` to CMakeLists.txt
-  - [ ] Add version macros to public headers
-  - [ ] Add runtime version query function
+- [X] **Fix comment/code mismatch in zlib.cpp:60-61** - Comment says "max 4 times" but code uses `retries = 10`
+- [X] **C API discards all error context** - `catch (const std::exception& e)` returns `-1` with no way to diagnose failures
+  - [X] Add error retrieval function (`compress_utils_last_error()`)
+  - [X] Add thread-local error storage
+- [X] **Add semantic versioning** - No `VERSION` in CMakeLists.txt or headers
+  - [X] Add `project(compress-utils VERSION 0.1.0)` to CMakeLists.txt
+  - [X] Add version macros to public headers (`version.hpp`)
+  - [X] Add runtime version query functions
 
 ## Code Quality
 
-- [ ] **Fix span parameter const-correctness** - All algorithm headers pass `std::span<const uint8_t>&` instead of `const std::span<const uint8_t>&` or by value
-  - [ ] `src/algorithms/zstd/zstd.hpp`
-  - [ ] `src/algorithms/brotli/brotli.hpp`
-  - [ ] `src/algorithms/xz/xz.hpp`
-  - [ ] `src/algorithms/zlib/zlib.hpp`
+- [X] **Fix span parameter const-correctness** - All algorithm headers now pass `std::span<const uint8_t>` by value (idiomatic)
+  - [X] `src/algorithms/zstd/zstd.hpp`
+  - [X] `src/algorithms/brotli/brotli.hpp`
+  - [X] `src/algorithms/xz/xz.hpp`
+  - [X] `src/algorithms/zlib/zlib.hpp`
+- [X] **Fix docstring copy-paste errors** - brotli.hpp and xz.hpp incorrectly said "Zstandard"
 - [ ] **Extract magic numbers to constants.hpp**
   - [ ] `xz.cpp:36` - `64 * 1024` buffer size
   - [ ] `xz.cpp:100` - `16384` minimum buffer
@@ -57,6 +57,7 @@
 - [ ] **Document thread-safety guarantees**
   - [ ] Functional API is thread-safe (stateless)
   - [ ] Compressor class requires external synchronization for shared instances
+  - [ ] Streaming classes are NOT thread-safe (documented in header)
 - [ ] **Document compression level mappings per algorithm**
   - [ ] ZSTD: 1-10 → 2-22
   - [ ] Brotli: 1-10 → 1-11
@@ -68,11 +69,12 @@
 ## New Features
 
 - [X] Github Workflow for artifact publishing
-- [ ] **Streaming compression/decompression support** (high priority - enables large file handling)
-  - [ ] Design streaming API (CompressStream/DecompressStream classes)
-  - [ ] Implement for each algorithm using native streaming APIs
+- [X] **Streaming compression/decompression support** (C++ API complete)
+  - [X] Design streaming API (CompressStream/DecompressStream classes)
+  - [X] Implement for each algorithm using native streaming APIs (ZSTD, Brotli, zlib, XZ)
   - [ ] Add Python bindings for streaming
   - [ ] Add C bindings for streaming
+  - [ ] Add streaming unit tests
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`

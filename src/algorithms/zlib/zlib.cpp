@@ -23,7 +23,7 @@ inline int GetCompressionLevel(int level) {
     return level;
 }
 
-std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
     // Get zlib compression level (1-9)
     int zlib_level = GetCompressionLevel(level);
 
@@ -48,7 +48,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t> data) {
     // Start with a buffer 4 times the size of the compressed data
     size_t initial_size = data.size() * 4;
     std::vector<uint8_t> decompressed_data(initial_size);
@@ -57,7 +57,7 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     uLongf decompressed_size = decompressed_data.size();
     int result = uncompress(decompressed_data.data(), &decompressed_size, data.data(), data.size());
 
-    // If the buffer was too small, keep resizing it and try again (max 4 times)
+    // If the buffer was too small, keep resizing it and try again
     int retries = 10;
     while (result == Z_BUF_ERROR && retries-- > 0) {
         // Resize the buffer (double the size)
