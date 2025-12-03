@@ -19,13 +19,15 @@
   - [X] `src/algorithms/xz/xz.hpp`
   - [X] `src/algorithms/zlib/zlib.hpp`
 - [X] **Fix docstring copy-paste errors** - brotli.hpp and xz.hpp incorrectly said "Zstandard"
-- [ ] **Extract magic numbers to constants.hpp**
-  - [ ] `xz.cpp:36` - `64 * 1024` buffer size
-  - [ ] `xz.cpp:100` - `16384` minimum buffer
-  - [ ] `zlib.cpp:53` - `data.size() * 4` initial buffer multiplier
-  - [ ] `zlib.cpp:61` - `10` retry count
+- [X] **Extract magic numbers to constants.hpp**
+  - [X] `xz.cpp:36` - `64 * 1024` buffer size → `internal::DEFAULT_BUFFER_SIZE`
+  - [X] `xz.cpp:100` - `16384` minimum buffer → `internal::MIN_DECOMP_BUFFER_SIZE`
+  - [X] `zlib.cpp:53` - `data.size() * 4` initial buffer multiplier → `internal::DECOMP_BUFFER_MULTIPLIER_ZLIB`
+  - [X] `zlib.cpp:61` - `10` retry count → `internal::MAX_DECOMP_RETRIES`
+  - [X] Algorithm max levels (ZSTD_MAX_LEVEL, BROTLI_MAX_LEVEL, etc.)
+  - [X] Helper functions MapLevel() and MapLevelZeroBased()
 - [ ] **Deduplicate buffer resizing logic** - Each algorithm implements its own buffer-doubling loop; extract to shared utility
-- [ ] **Remove `using namespace` from compress_utils_py.cpp:7** - Bad practice in implementation files
+- [X] **Remove `using namespace` from compress_utils_py.cpp:7** - Fixed during streaming bindings implementation
 - [ ] **Add allocation failure checks in C tests** - `test_compress_utils.c` doesn't check malloc return values
 - [ ] **Replace hardcoded test values with named constants** - `1024 * 1024`, `1024 * 1024 * 32`, etc.
 
@@ -54,27 +56,28 @@
 
 ## Documentation
 
-- [ ] **Document thread-safety guarantees**
-  - [ ] Functional API is thread-safe (stateless)
-  - [ ] Compressor class requires external synchronization for shared instances
-  - [ ] Streaming classes are NOT thread-safe (documented in header)
-- [ ] **Document compression level mappings per algorithm**
-  - [ ] ZSTD: 1-10 → 2-22
-  - [ ] Brotli: 1-10 → 1-11
-  - [ ] zlib: 1-10 → 1-9 (capped)
-  - [ ] XZ: 1-10 → 0-9
+- [X] **Document thread-safety guarantees** (documented in compress_utils.hpp and compress_utils_stream.hpp)
+  - [X] Functional API is thread-safe (stateless)
+  - [X] Compressor class requires external synchronization for shared instances
+  - [X] Streaming classes are NOT thread-safe (documented in header)
+- [X] **Document compression level mappings per algorithm** (documented in constants.hpp)
+  - [X] ZSTD: 1-10 → 2-22 (via MapLevel with ZSTD_MAX_LEVEL=22)
+  - [X] Brotli: 1-10 → 0-11 (via MapLevel with BROTLI_MAX_LEVEL=11)
+  - [X] zlib: 1-10 → 1-9 (capped at ZLIB_MAX_LEVEL=9)
+  - [X] XZ: 1-10 → 0-9 (via MapLevelZeroBased)
 - [ ] **Add API reference documentation** (Doxygen or similar)
 - [ ] **Add CHANGELOG.md** for tracking releases
 
 ## New Features
 
 - [X] Github Workflow for artifact publishing
-- [X] **Streaming compression/decompression support** (C++ API complete)
+- [X] **Streaming compression/decompression support** (Complete)
   - [X] Design streaming API (CompressStream/DecompressStream classes)
   - [X] Implement for each algorithm using native streaming APIs (ZSTD, Brotli, zlib, XZ)
-  - [ ] Add Python bindings for streaming
-  - [ ] Add C bindings for streaming
-  - [ ] Add streaming unit tests
+  - [X] Add Python bindings for streaming (CompressStream/DecompressStream)
+  - [X] Add C bindings for streaming (compress_stream_*/decompress_stream_* functions)
+  - [X] Add streaming unit tests (C++, C, and Python)
+  - [ ] Fix move semantics for zlib/XZ DecompressStream (internal state not properly transferred)
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
@@ -87,7 +90,7 @@
 - [ ] `go`
 - [ ] `java`
 - [ ] `js/ts` (WebAssembly via Emscripten)
-- [X] `python` (3.6 - 3.13)
+- [X] `python` (3.10 - 3.14)
 - [ ] `rust`
 - [ ] `swift`
 - [ ] `cli` (standalone command-line tool)

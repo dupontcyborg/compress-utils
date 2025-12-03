@@ -1,6 +1,27 @@
 #ifndef COMPRESS_UTILS_FUNC_HPP_
 #define COMPRESS_UTILS_FUNC_HPP_
 
+/**
+ * @file compress_utils_func.hpp
+ * @brief Functional API for the compress-utils library
+ *
+ * This file provides stateless Compress/Decompress functions that can be called
+ * directly without creating a Compressor object.
+ *
+ * ## Thread Safety
+ *
+ * All functions in this file are **thread-safe**. They are stateless and can be
+ * safely called from multiple threads concurrently. Each call allocates its own
+ * temporary buffers and does not share state.
+ *
+ * ## Compression Levels
+ *
+ * Level 1-10 where:
+ * - Level 1: Fastest compression, larger output
+ * - Level 10: Slowest compression, smallest output
+ * - Default: Level 3
+ */
+
 #include "algorithms.hpp"
 #include "symbol_exports.hpp"
 

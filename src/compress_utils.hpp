@@ -1,6 +1,39 @@
 #ifndef COMPRESS_UTILS_HPP_
 #define COMPRESS_UTILS_HPP_
 
+/**
+ * @file compress_utils.hpp
+ * @brief Main header for the compress-utils library (OOP interface)
+ *
+ * This file provides the Compressor class for compression and decompression
+ * operations using various algorithms (ZSTD, Brotli, zlib, XZ/LZMA).
+ *
+ * ## Thread Safety
+ *
+ * - **Compressor class**: NOT inherently thread-safe. If you share a Compressor
+ *   instance between threads, you must provide external synchronization.
+ *   Alternatively, create separate Compressor instances per thread.
+ *
+ * - **Functional API** (compress_utils_func.hpp): Thread-safe. Each call is
+ *   stateless and can be safely called from multiple threads concurrently.
+ *
+ * - **Streaming API** (compress_utils_stream.hpp): NOT thread-safe. Each
+ *   CompressStream/DecompressStream instance should be used by a single thread.
+ *
+ * ## Compression Levels
+ *
+ * All algorithms accept a unified compression level from 1-10:
+ * - Level 1: Fastest compression, larger output
+ * - Level 10: Slowest compression, smallest output
+ * - Default: Level 3 (good balance)
+ *
+ * Level mappings per algorithm:
+ * - ZSTD: 1-10 maps to native 2-22
+ * - Brotli: 1-10 maps to native 0-11
+ * - zlib: 1-10 maps to native 1-9 (levels 10 capped at 9)
+ * - XZ/LZMA: 1-10 maps to native 0-9
+ */
+
 #include "algorithms.hpp"
 #include "symbol_exports.hpp"
 
@@ -15,7 +48,10 @@ namespace compress_utils {
  * @brief Compressor class that provides compression and decompression functionalities
  *
  * The class provides two methods, Compress and Decompress, that can be used to compress and
- * decompress
+ * decompress data using a specified algorithm.
+ *
+ * @note This class is NOT thread-safe. For concurrent access, use separate instances
+ *       per thread or provide external synchronization.
  */
 class EXPORT Compressor {
    public:
