@@ -3,7 +3,7 @@ name: Build, Test and Package Python Wheels
 on:
   push:
     branches: ["main"]
-    tags: 
+    tags:
       - "v*"
 
 jobs:
@@ -12,15 +12,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
-        python-version: ["cp36", "cp37", "cp38", "cp39", "cp310", "cp311", "cp312", "cp313"]
+        python-version: ["cp310", "cp311", "cp312", "cp313", "cp314"]
         exclude:
-          # Exclude Python 3.6 - 3.8 on macOS (Apple Silicon incompatible)
-          - os: macos-latest
-            python-version: "cp36"
-          - os: macos-latest
-            python-version: "cp37"
-          - os: macos-latest
-            python-version: "cp38"
+          # Exclude Python 3.14 on ARM Linux until wheels are available
+          - os: ubuntu-24.04-arm
+            python-version: "cp314"
       fail-fast: false
 
     steps:
@@ -30,16 +26,16 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install cibuildwheel and build
         run: pip install cibuildwheel build
 
       - name: Copy Python Bindings Configuration
-        run: cp bindings/python/pyproject.toml . && cp bindings/python/setup.py . && cp bindings/python/README.md .
-  
+        run: cp bindings/python/pyproject.toml . && cp bindings/python/README.md .
+
       - name: Set Version from Tag for Wheels
         if: github.ref_type == 'tag'
         shell: bash
@@ -53,13 +49,13 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_BUILD: "${{ matrix.python-version }}-*"
           CIBW_ENVIRONMENT: "SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.SETUPTOOLS_SCM_PRETEND_VERSION }}"
-          CIBW_ARCHS_LINUX: "${{ contains(matrix.os, 'arm') && 'aarch64' || 'x86_64' }}" # Build for ARM64 on ARM and x86_64 on latest
-          CIBW_ARCHS_MACOS: "arm64" # TODO - change this to Universal2
-          CIBW_ARCHS_WINDOWS: "AMD64" # TODO - change this to "AMD64 ARM64"
+          CIBW_ARCHS_LINUX: "${{ contains(matrix.os, 'arm') && 'aarch64' || 'x86_64' }}"
+          CIBW_ARCHS_MACOS: "arm64"
+          CIBW_ARCHS_WINDOWS: "AMD64"
         run: cibuildwheel --output-dir wheelhouse
 
       - name: Build Source Distribution (sdist)
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp312'
         run: python -m build --sdist --outdir wheelhouse
 
       - name: Upload Wheels as GitHub Artifact
@@ -67,9 +63,9 @@ jobs:
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: wheelhouse/*.whl
-          
+
       - name: Upload Source Distribution as GitHub Artifact
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp310'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == 'cp312'
         uses: actions/upload-artifact@v4
         with:
           name: python-sdist
@@ -83,7 +79,7 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    
+
     steps:
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
@@ -96,7 +92,7 @@ jobs:
           find dist -type f -name "*.whl" -exec cp {} wheelhouse/ \;
           find dist -type f -name "*.tar.gz" -exec cp {} wheelhouse/ \; || echo "No source distribution found"
           ls -la wheelhouse/
-          
+
       - name: Create Combined Archive
         run: |
           VERSION=${GITHUB_REF_NAME#v}  # Strip the 'v' prefix if present
@@ -113,7 +109,7 @@ jobs:
           fail_on_unmatched_files: false
           draft: false
           tag_name: ${{ github.ref_name }}
-          
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

@@ -15,10 +15,8 @@ namespace compress_utils::xz {
  */
 inline int GetCompressionLevel(int level) {
     internal::ValidateLevel(level);
-
-    // XZ compression levels are 0-9, so we scale the input level 1-10 to 0-9
-    const size_t xz_max_level = 9;
-    return level - 1;
+    // XZ compression levels are 0-9, so we map 1-10 to 0-9
+    return internal::MapLevelZeroBased(level);
 }
 
 std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
@@ -32,8 +30,8 @@ std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
         throw std::runtime_error("XZ encoder initialization failed");
     }
 
-    // Initial buffer size (64 KB)
-    size_t buffer_size = 64 * 1024;
+    // Initial buffer size
+    size_t buffer_size = internal::DEFAULT_BUFFER_SIZE;
     std::vector<uint8_t> compressed_data(buffer_size);
 
     // Set up input and output pointers
@@ -50,7 +48,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
         // If we run out of buffer, resize it and continue
         if (ret == LZMA_OK && strm.avail_out == 0) {
             size_t compressed_size = compressed_data.size();
-            compressed_data.resize(compressed_size * 2);  // Double the buffer size
+            compressed_data.resize(compressed_size * internal::BUFFER_GROWTH_FACTOR);
             strm.next_out = compressed_data.data() + compressed_size;
             strm.avail_out = compressed_data.size() - compressed_size;
         } else if (ret != LZMA_OK) {
@@ -63,7 +61,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
     while ((ret = lzma_code(&strm, LZMA_FINISH)) == LZMA_OK) {
         if (strm.avail_out == 0) {
             size_t compressed_size = compressed_data.size();
-            compressed_data.resize(compressed_size * 2);
+            compressed_data.resize(compressed_size * internal::BUFFER_GROWTH_FACTOR);
             strm.next_out = compressed_data.data() + compressed_size;
             strm.avail_out = compressed_data.size() - compressed_size;
         }
@@ -95,18 +93,19 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t> data) {
     strm.next_in = data.data();
     strm.avail_in = data.size();
 
-    // Allocate the output buffer (initial size = 16 KB)
+    // Allocate the output buffer
     std::vector<uint8_t> decompressed_data;
-    size_t buffer_size = std::max(data.size() * 2, static_cast<size_t>(16384));
+    size_t buffer_size = std::max(data.size() * internal::DECOMP_BUFFER_MULTIPLIER_XZ,
+                                  internal::MIN_DECOMP_BUFFER_SIZE);
     decompressed_data.resize(buffer_size);
 
     // Perform the decompression
     size_t total_output = 0;
     lzma_ret ret;
     do {
-        // Resize the buffer if needed (double the size)
+        // Resize the buffer if needed
         if (total_output == decompressed_data.size()) {
-            decompressed_data.resize(decompressed_data.size() * 2);
+            decompressed_data.resize(decompressed_data.size() * internal::BUFFER_GROWTH_FACTOR);
         }
 
         // Set up the output buffer
