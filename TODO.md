@@ -77,7 +77,7 @@
   - [X] Add Python bindings for streaming (CompressStream/DecompressStream)
   - [X] Add C bindings for streaming (compress_stream_*/decompress_stream_* functions)
   - [X] Add streaming unit tests (C++, C, and Python)
-  - [ ] Fix move semantics for zlib/XZ DecompressStream (internal state not properly transferred)
+  - [X] Fix move semantics tests for streaming API (was a test bug, not implementation bug)
 - [ ] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`

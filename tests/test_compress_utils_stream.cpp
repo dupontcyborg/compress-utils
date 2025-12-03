@@ -176,12 +176,15 @@ TEST_P(StreamingTest, MoveCompressStream) {
     auto algorithm = GetParam();
 
     compress_utils::CompressStream stream1(algorithm, 3);
-    stream1.Compress(SAMPLE_DATA);
+    auto partial = stream1.Compress(SAMPLE_DATA);
 
     // Move construct
     compress_utils::CompressStream stream2(std::move(stream1));
-    auto compressed = stream2.Finish();
-    EXPECT_FALSE(compressed.empty());
+    auto finish_output = stream2.Finish();
+
+    // Combine outputs
+    partial.insert(partial.end(), finish_output.begin(), finish_output.end());
+    EXPECT_FALSE(partial.empty());
     EXPECT_TRUE(stream2.IsFinished());
 }
 
@@ -189,15 +192,29 @@ TEST_P(StreamingTest, MoveCompressStream) {
 TEST_P(StreamingTest, MoveDecompressStream) {
     auto algorithm = GetParam();
 
-    // Create decompress stream
+    // First compress some data - must collect output from both Compress() and Finish()
+    compress_utils::CompressStream compress_stream(algorithm, 3);
+    auto compressed = compress_stream.Compress(SAMPLE_DATA);
+    auto finish_output = compress_stream.Finish();
+    compressed.insert(compressed.end(), finish_output.begin(), finish_output.end());
+
+    // Create decompress stream and move it
     compress_utils::DecompressStream stream1(algorithm);
 
-    // Move construct - verify the move compiles and doesn't crash
+    // Move construct before using
     compress_utils::DecompressStream stream2(std::move(stream1));
 
     // Verify the moved-to stream has the correct algorithm
     EXPECT_EQ(stream2.algorithm(), algorithm);
     EXPECT_FALSE(stream2.IsFinished());
+
+    // Actually use the moved stream to decompress
+    auto decompressed = stream2.Decompress(compressed);
+    auto final_output = stream2.Finish();
+    decompressed.insert(decompressed.end(), final_output.begin(), final_output.end());
+
+    EXPECT_EQ(decompressed, SAMPLE_DATA);
+    EXPECT_TRUE(stream2.IsFinished());
 }
 
 // Test compression levels with streaming

@@ -65,6 +65,12 @@ struct CompressStream::Impl {
         Cleanup();
     }
 
+    // Non-copyable and non-movable - the unique_ptr handles ownership
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(Impl&&) = delete;
+
     void Cleanup() {
 #ifdef INCLUDE_ZSTD
         if (zstd_stream) {
@@ -407,6 +413,12 @@ struct DecompressStream::Impl {
         Cleanup();
     }
 
+    // Non-copyable and non-movable - the unique_ptr handles ownership
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(Impl&&) = delete;
+
     void Cleanup() {
 #ifdef INCLUDE_ZSTD
         if (zstd_stream) {
@@ -566,7 +578,7 @@ std::vector<uint8_t> DecompressStream::Decompress(std::span<const uint8_t> data)
 
                 int ret = inflate(&impl_->zlib_stream, Z_NO_FLUSH);
                 if (ret == Z_STREAM_ERROR || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
-                    throw std::runtime_error("zlib decompression error");
+                    throw std::runtime_error("zlib decompression error: code " + std::to_string(ret));
                 }
 
                 size_t bytes_written = impl_->output_buffer.size() - impl_->zlib_stream.avail_out;
