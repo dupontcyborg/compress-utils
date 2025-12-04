@@ -2,7 +2,14 @@
 
 cmake_minimum_required(VERSION 3.17)
 
-project(compress-utils)
+# Default version (used when git tag is not available)
+set(DEFAULT_VERSION "0.1.0")
+
+# Include git version extraction module
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitVersion.cmake)
+get_version_from_git(PROJECT_VERSION_FROM_GIT ${DEFAULT_VERSION})
+
+project(compress-utils VERSION ${PROJECT_VERSION_FROM_GIT} LANGUAGES CXX C)
 
 ######### PROJECT SETUP #########
 
@@ -245,6 +252,13 @@ configure_file(
     @ONLY
 )
 
+# Configure the version header
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/version.hpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/version.hpp
+    @ONLY
+)
+
 # Set the output directory for the library and header files
 set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
 set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
@@ -265,7 +279,9 @@ if (NOT SCIKIT_BUILD)
     # Install the headers for the shared and static libraries
     file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compress_utils.hpp
                 ${CMAKE_SOURCE_DIR}/src/compress_utils_func.hpp
-                ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp)
+                ${CMAKE_SOURCE_DIR}/src/compress_utils_stream.hpp
+                ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
+                ${CMAKE_CURRENT_BINARY_DIR}/version.hpp)
     install(FILES ${HEADERS}
             DESTINATION ${CPP_SHARED_DIR}/include)
     install(FILES ${HEADERS}

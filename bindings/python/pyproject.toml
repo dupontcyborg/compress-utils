@@ -1,27 +1,90 @@
 [build-system]
 requires = [
-    "setuptools>=59.5",
-    "wheel",
-    "scikit-build",
-    "cmake>=3.17",
-    "pybind11[global]>=2.6",
-    "setuptools_scm[toml]>=6.2",
+    "scikit-build-core>=0.8",
+    "pybind11>=2.11",
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "compress-utils"
+dynamic = ["version"]
+description = "Simple & high-performance compression utilities for Python"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Nicolas Dupont", email = "nicolas@dupontcyborg.com"}
+]
+keywords = ["compression", "zlib", "brotli", "zstd", "xz", "lzma", "utility", "performance"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: C++",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Archiving :: Compression",
+    "Topic :: Software Development :: Libraries",
+]
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/dupontcyborg/compress-utils"
+Documentation = "https://github.com/dupontcyborg/compress-utils#readme"
+Repository = "https://github.com/dupontcyborg/compress-utils"
+"Bug Tracker" = "https://github.com/dupontcyborg/compress-utils/issues"
+
+[tool.scikit-build]
+cmake.args = [
+    "-DBUILD_PYTHON_BINDINGS=ON",
+    "-DBUILD_C_BINDINGS=OFF",
+    "-DSCIKIT_BUILD=ON",
+    "-DENABLE_TESTS=OFF",
+]
+cmake.build-type = "Release"
+wheel.packages = ["bindings/python/compress_utils"]
+wheel.install-dir = "compress_utils"
+sdist.include = [
+    "src/**",
+    "algorithms/**",
+    "bindings/python/**",
+    "cmake/**",
+    "CMakeLists.txt",
+    "README.md",
+    "LICENSE",
+]
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.setuptools_scm"
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
-# Skip 32-bit builds
+# Skip 32-bit builds and other unsupported platforms
 skip = "*-win32 *-musllinux* *_i686 *_ppc64le *_s390x *_armv7l"
 
-# Set parallel build environment variable
-environment = "CMAKE_BUILD_PARALLEL_LEVEL=4"
+# Build for Python 3.10+
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 
-# Install the required dependencies for testing
+# Set parallel build environment variable
+environment = {CMAKE_BUILD_PARALLEL_LEVEL = "4"}
+
+# Install test dependencies
 test-requires = "pytest"
 
-# Run the package tests using `pytest`
-test-command = "pytest {project}/bindings/python/tests" # TODO
+# Run tests
+test-command = "pytest {project}/bindings/python/tests -v"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]  # TODO: Change to universal2 when ready
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]  # TODO: Add ARM64 when ready

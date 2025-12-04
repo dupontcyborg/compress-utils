@@ -34,6 +34,9 @@ The API is simple and universal across all [available algorithms](/README.md#bui
     - [Decompression](#decompression-1)
         - [From a Vector](#from-a-vector-3)
         - [From a Pointer](#from-a-pointer-3)
+- [Streaming API](#streaming-api)
+    - [Compression Streaming](#compression-streaming)
+    - [Decompression Streaming](#decompression-streaming)
         
 ## Installation
 
@@ -232,3 +235,103 @@ Decompression is also available by passing a pointer and size:
 // Decompress data from a pointer & size
 std::vector<uint8_t> compressed_data = compress_utils::Decompress(data_ptr, data_size, algorithm);
 ```
+
+## Streaming API
+
+For processing large data in chunks or when data arrives incrementally (e.g., from a network stream or large file), use the streaming API. This is more memory-efficient than loading entire datasets at once.
+
+### Compression Streaming
+
+To use the streaming header, include:
+
+```cpp
+#include "compress_utils_stream.hpp"
+```
+
+#### Basic Usage
+
+```cpp
+// Create a compression stream
+compress_utils::Algorithm algorithm = compress_utils::Algorithm::ZSTD;
+int level = 3;  // Compression level: 1 (fastest) to 10 (smallest)
+compress_utils::CompressStream stream(algorithm, level);
+
+// Compress data in chunks
+std::vector<uint8_t> all_compressed_data;
+
+for (const auto& chunk : data_chunks) {
+    // Process each chunk
+    std::vector<uint8_t> compressed_chunk = stream.Compress(chunk);
+    all_compressed_data.insert(all_compressed_data.end(),
+                               compressed_chunk.begin(),
+                               compressed_chunk.end());
+}
+
+// Finalize compression (important!)
+std::vector<uint8_t> final_chunk = stream.Finish();
+all_compressed_data.insert(all_compressed_data.end(),
+                           final_chunk.begin(),
+                           final_chunk.end());
+```
+
+#### Using std::span
+
+```cpp
+// Compress from a span (no copy)
+std::span<const uint8_t> chunk_span(data_ptr, chunk_size);
+std::vector<uint8_t> compressed_chunk = stream.Compress(chunk_span);
+```
+
+#### Stream State
+
+```cpp
+// Check if stream has been finalized
+bool finished = stream.IsFinished();
+
+// Get the algorithm being used
+compress_utils::Algorithm algo = stream.GetAlgorithm();
+```
+
+### Decompression Streaming
+
+```cpp
+// Create a decompression stream
+compress_utils::DecompressStream stream(algorithm);
+
+// Decompress data in chunks
+std::vector<uint8_t> all_decompressed_data;
+
+for (const auto& compressed_chunk : compressed_chunks) {
+    std::vector<uint8_t> decompressed_chunk = stream.Decompress(compressed_chunk);
+    all_decompressed_data.insert(all_decompressed_data.end(),
+                                 decompressed_chunk.begin(),
+                                 decompressed_chunk.end());
+}
+
+// Finalize decompression (important!)
+std::vector<uint8_t> final_chunk = stream.Finish();
+all_decompressed_data.insert(all_decompressed_data.end(),
+                             final_chunk.begin(),
+                             final_chunk.end());
+```
+
+#### Move Semantics
+
+Both `CompressStream` and `DecompressStream` support move semantics for efficient resource management:
+
+```cpp
+// Move constructor
+compress_utils::CompressStream stream1(algorithm, level);
+compress_utils::CompressStream stream2 = std::move(stream1);
+
+// Move assignment
+compress_utils::DecompressStream stream3(algorithm);
+stream3 = std::move(stream2);
+```
+
+**Key points about streaming:**
+- Always call `Finish()` when done to flush any remaining buffered data
+- After calling `Finish()`, calling `Compress()` or `Decompress()` will throw an exception
+- Use `IsFinished()` to check stream state
+- Streams are movable but not copyable
+- Ideal for processing files that don't fit in memory, network streams, or real-time data

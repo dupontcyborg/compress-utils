@@ -7,10 +7,6 @@
 
 namespace compress_utils::brotli {
 
-// Size to start with when decompressing
-constexpr int DECOMP_BUFFER_SIZE_MULTIPLE = 2;
-constexpr int BROTLI_MAX_LEVEL = 11;
-
 /**
  * @brief Translate the compression level to the Brotli compression level
  *
@@ -18,17 +14,12 @@ constexpr int BROTLI_MAX_LEVEL = 11;
  * @return int Brotli compression level
  */
 inline int GetCompressionLevel(int level) {
-    // Validate that level is between 1 and 10
     internal::ValidateLevel(level);
-
-    // Brotli compression levels are 0-11, so we need to scale the input level
-    // from 1-10 to 0-11; so 1 -> 0, 10 -> 11
-    level = (level * BROTLI_MAX_LEVEL) / internal::MAX_LEVEL;
-
-    return level;
+    // Brotli compression levels are 0-11, so we scale 1-10 to 0-11
+    return internal::MapLevel(level, internal::BROTLI_MAX_LEVEL);
 }
 
-std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
+std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
     // Get Brotli compression level
     int brotli_level = GetCompressionLevel(level);
 
@@ -64,7 +55,7 @@ std::vector<uint8_t> Compress(std::span<const uint8_t>& data, int level) {
     return compressed_data;
 }
 
-std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
+std::vector<uint8_t> Decompress(std::span<const uint8_t> data) {
     // Create Brotli decompressor state
     BrotliDecoderState* state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
     if (!state) {
@@ -72,7 +63,7 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
     }
 
     // Allocate an initial buffer
-    size_t buffer_size = data.size() * DECOMP_BUFFER_SIZE_MULTIPLE;
+    size_t buffer_size = data.size() * internal::DECOMP_BUFFER_MULTIPLIER_BROTLI;
     std::vector<uint8_t> decompressed_data(buffer_size);
 
     // Set up input and output
@@ -94,7 +85,7 @@ std::vector<uint8_t> Decompress(std::span<const uint8_t>& data) {
         if (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
             // Resize buffer when more output space is needed
             size_t decompressed_size = decompressed_data.size();
-            decompressed_data.resize(decompressed_size * 2);  // Double the buffer size
+            decompressed_data.resize(decompressed_size * internal::BUFFER_GROWTH_FACTOR);
             next_out = decompressed_data.data() +
                        decompressed_size;  // Move pointer to the new part of the buffer
             available_out =
