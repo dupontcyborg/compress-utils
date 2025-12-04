@@ -47,6 +47,41 @@ compressed = compress(b"Hello, world!", "zstd", level=3)
 original = decompress(compressed, "zstd")
 ```
 
+### Streaming API
+
+For processing large data in chunks or when data arrives incrementally (e.g., from a network stream), use the streaming API:
+
+```python
+from compress_utils import CompressStream, DecompressStream
+
+# Compression streaming
+stream = CompressStream("zstd", level=3)
+compressed_chunks = []
+
+# Process data in chunks
+for chunk in data_chunks:
+    compressed_chunks.append(stream.compress(chunk))
+
+# Finalize compression (important!)
+compressed_chunks.append(stream.finish())
+
+# Decompression streaming
+decompress_stream = DecompressStream("zstd")
+decompressed_chunks = []
+
+for chunk in compressed_chunks:
+    decompressed_chunks.append(decompress_stream.decompress(chunk))
+
+# Finalize decompression
+decompressed_chunks.append(decompress_stream.finish())
+```
+
+The streaming API is ideal for:
+- Processing files that don't fit in memory
+- Network data that arrives in chunks
+- Real-time compression/decompression
+- Pipeline processing where data flows through multiple stages
+
 ## Available Algorithms
 
 The following algorithms are supported (availability depends on build configuration):

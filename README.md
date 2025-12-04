@@ -42,10 +42,13 @@
 
 ## Usage
 
-This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compress-utils` API is made available in two flavors:
+This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compress-utils` API is made available in three flavors:
 
-- Object-Oriented (OOP)
-- Functional
+- **Object-Oriented (OOP)** - For one-shot compression/decompression
+- **Functional** - For one-shot compression/decompression
+- **Streaming** - For processing data in chunks (large files, network streams, etc.)
+
+### One-Shot Compression
 
 Both of these APIs are made dead simple. Here's an OOP example in Python:
 
@@ -79,6 +82,38 @@ compressed_data = compress(data, 'zstd', 5)
 # Decompress data
 decompressed_data = decompress(compressed_data, 'zstd')
 ```
+
+### Streaming API
+
+For processing large data in chunks or when data arrives incrementally (e.g., from network streams, large files, or real-time data), use the streaming API:
+
+```py
+from compress_utils import CompressStream, DecompressStream
+
+# Create a compression stream
+stream = CompressStream('zstd', level=3)
+
+# Process data in chunks
+compressed_chunks = []
+for chunk in data_chunks:
+    compressed_chunks.append(stream.compress(chunk))
+
+# Finalize compression (important!)
+compressed_chunks.append(stream.finish())
+
+# Decompression works similarly
+decompress_stream = DecompressStream('zstd')
+decompressed_chunks = []
+for chunk in compressed_chunks:
+    decompressed_chunks.append(decompress_stream.decompress(chunk))
+decompressed_chunks.append(decompress_stream.finish())
+```
+
+**Benefits of streaming:**
+- Process files that don't fit in memory
+- Handle network data that arrives in chunks
+- Real-time compression/decompression
+- Reduced memory footprint for large datasets
 
 ## Language-Specific Examples
 
