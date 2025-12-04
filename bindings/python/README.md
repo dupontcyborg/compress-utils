@@ -1,6 +1,7 @@
 # compress-utils
 
 [![PyPI version](https://badge.fury.io/py/compress-utils.svg)](https://badge.fury.io/py/compress-utils)
+[![PyPI Downloads](https://static.pepy.tech/badge/compress-utils)](https://pepy.tech/projects/compress-utils)
 [![Python Versions](https://img.shields.io/pypi/pyversions/compress-utils.svg)](https://pypi.org/project/compress-utils/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
