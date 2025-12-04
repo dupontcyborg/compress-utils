@@ -20,11 +20,14 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Handle Windows-specific library naming
+# Note: On Windows with multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
+# is not set at configure time. We use $<CONFIG> generator expression for the build
+# directory path (evaluated at build time) but keep a fixed path for BUILD_BYPRODUCTS.
 if (WIN32)
-    set(ZLIB_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(ZLIB_LIB_DIR_GENEX "$<CONFIG>/")  # Generator expression for INSTALL_COMMAND
     set(ZLIB_LIB "zlibstatic.lib")
 else()
-    set(ZLIB_LIB_DIR "")
+    set(ZLIB_LIB_DIR_GENEX "")
     set(ZLIB_LIB "libz.a")
 endif()
 
@@ -50,7 +53,7 @@ ExternalProject_Add(
         ${ZLIB_INSTALL_DIR_LIB}/${ZLIB_LIB}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${ZLIB_INSTALL_DIR_LIB} ${ZLIB_INSTALL_DIR_INCLUDE} &&
-        ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external-build/${ZLIB_LIB_DIR}${ZLIB_LIB} ${ZLIB_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external-build/${ZLIB_LIB_DIR_GENEX}${ZLIB_LIB} ${ZLIB_INSTALL_DIR_LIB} &&
         ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external/zlib.h ${ZLIB_INSTALL_DIR_INCLUDE} &&
         ${CMAKE_COMMAND} -E copy ${ZLIB_BUILD_DIR}/src/zlib_external-build/zconf.h ${ZLIB_INSTALL_DIR_INCLUDE}
 )
