@@ -20,11 +20,14 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Handle Windows-specific library naming
+# Note: On Windows with multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
+# is not set at configure time. We use $<CONFIG> generator expression for the build
+# directory path (evaluated at build time) but keep a fixed path for BUILD_BYPRODUCTS.
 if (WIN32)
-    set(ZSTD_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(ZSTD_LIB_DIR_GENEX "$<CONFIG>/")  # Generator expression for INSTALL_COMMAND
     set(ZSTD_LIB "zstd_static.lib")
 else()
-    set(ZSTD_LIB_DIR "")
+    set(ZSTD_LIB_DIR_GENEX "")
     set(ZSTD_LIB "libzstd.a")
 endif()
 
@@ -55,7 +58,7 @@ ExternalProject_Add(
         ${ZSTD_INSTALL_DIR_LIB}/${ZSTD_LIB}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${ZSTD_INSTALL_DIR_LIB} ${ZSTD_INSTALL_DIR_INCLUDE} &&
-        ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR_GENEX}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB} &&
         ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd.h ${ZSTD_INSTALL_DIR_INCLUDE}
 )
 

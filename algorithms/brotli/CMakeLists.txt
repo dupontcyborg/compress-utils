@@ -20,13 +20,16 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Handle Windows-specific library naming
+# Note: On Windows with multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
+# is not set at configure time. We use $<CONFIG> generator expression for the build
+# directory path (evaluated at build time) but keep a fixed path for BUILD_BYPRODUCTS.
 if (WIN32)
-    set(BROTLI_LIB_DIR ${CMAKE_BUILD_TYPE}/)
+    set(BROTLI_LIB_DIR_GENEX "$<CONFIG>/")  # Generator expression for INSTALL_COMMAND
     set(BROTLI_LIB_ENC "brotlienc.lib")
     set(BROTLI_LIB_DEC "brotlidec.lib")
     set(BROTLI_LIB_COMMON "brotlicommon.lib")
 else()
-    set(BROTLI_LIB_DIR "")
+    set(BROTLI_LIB_DIR_GENEX "")
     set(BROTLI_LIB_ENC "libbrotlienc.a")
     set(BROTLI_LIB_DEC "libbrotlidec.a")
     set(BROTLI_LIB_COMMON "libbrotlicommon.a")
@@ -57,9 +60,9 @@ ExternalProject_Add(
         ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_COMMON}
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${BROTLI_INSTALL_DIR_LIB} ${BROTLI_INSTALL_DIR_INCLUDE} &&
-        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB} &&
-        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB} &&
-        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR_GENEX}${BROTLI_LIB_ENC} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR_GENEX}${BROTLI_LIB_DEC} ${BROTLI_INSTALL_DIR_LIB} &&
+        ${CMAKE_COMMAND} -E copy ${BROTLI_BUILD_DIR}/src/brotli_external-build/${BROTLI_LIB_DIR_GENEX}${BROTLI_LIB_COMMON} ${BROTLI_INSTALL_DIR_LIB} &&
         ${CMAKE_COMMAND} -E copy_directory ${BROTLI_BUILD_DIR}/src/brotli_external/c/include/brotli ${BROTLI_INSTALL_DIR_INCLUDE}
 )
 
