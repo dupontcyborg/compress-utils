@@ -20,9 +20,11 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Handle Windows-specific library naming
+# Note: LZ4's CMake only uses "lz4_static" name when both shared and static libs are built
+# Since we build with BUILD_SHARED_LIBS=OFF, the library is just named "lz4.lib"
 if (WIN32)
     set(LZ4_LIB_DIR_GENEX "$<CONFIG>/")  # Generator expression for INSTALL_COMMAND
-    set(LZ4_LIB "lz4_static.lib")
+    set(LZ4_LIB "lz4.lib")
 else()
     set(LZ4_LIB_DIR_GENEX "")
     set(LZ4_LIB "liblz4.a")

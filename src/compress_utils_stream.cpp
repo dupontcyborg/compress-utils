@@ -328,8 +328,17 @@ std::vector<uint8_t> CompressStream::Compress(std::span<const uint8_t> data) {
 
             // Compress the data
             if (data.size() > 0) {
+                // Rebuild preferences to calculate correct bound
+                LZ4F_preferences_t prefs = {};
+                if (impl_->level <= 3) {
+                    prefs.compressionLevel = 0;
+                } else {
+                    prefs.compressionLevel = ((impl_->level - 3) * 12) / 7;
+                    if (prefs.compressionLevel < 1) prefs.compressionLevel = 1;
+                }
+
                 // Calculate required output buffer size using LZ4F_compressBound
-                size_t bound = LZ4F_compressBound(data.size(), nullptr);
+                size_t bound = LZ4F_compressBound(data.size(), &prefs);
                 // Ensure output buffer is large enough
                 std::vector<uint8_t> compress_buffer(bound);
 
