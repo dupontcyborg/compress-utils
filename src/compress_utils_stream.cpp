@@ -328,9 +328,14 @@ std::vector<uint8_t> CompressStream::Compress(std::span<const uint8_t> data) {
 
             // Compress the data
             if (data.size() > 0) {
+                // Calculate required output buffer size using LZ4F_compressBound
+                size_t bound = LZ4F_compressBound(data.size(), nullptr);
+                // Ensure output buffer is large enough
+                std::vector<uint8_t> compress_buffer(bound);
+
                 size_t compressed_size = LZ4F_compressUpdate(impl_->lz4_cctx,
-                                                              impl_->output_buffer.data(),
-                                                              impl_->output_buffer.size(),
+                                                              compress_buffer.data(),
+                                                              compress_buffer.size(),
                                                               data.data(),
                                                               data.size(),
                                                               nullptr);
@@ -338,8 +343,8 @@ std::vector<uint8_t> CompressStream::Compress(std::span<const uint8_t> data) {
                     throw std::runtime_error("LZ4 compression error: " +
                                              std::string(LZ4F_getErrorName(compressed_size)));
                 }
-                result.insert(result.end(), impl_->output_buffer.data(),
-                              impl_->output_buffer.data() + compressed_size);
+                result.insert(result.end(), compress_buffer.data(),
+                              compress_buffer.data() + compressed_size);
             }
             break;
         }

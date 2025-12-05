@@ -15,7 +15,10 @@ namespace compress_utils::bz2 {
 inline int GetCompressionLevel(int level) {
     internal::ValidateLevel(level);
     // bzip2 compression levels are 1-9, so we scale 1-10 to 1-9
-    return internal::MapLevel(level, internal::BZ2_MAX_LEVEL);
+    int bz2_level = internal::MapLevel(level, internal::BZ2_MAX_LEVEL);
+    // Ensure level is at least 1 (MapLevel can return 0 for level=1 due to integer division)
+    if (bz2_level < 1) bz2_level = 1;
+    return bz2_level;
 }
 
 std::vector<uint8_t> Compress(std::span<const uint8_t> data, int level) {
