@@ -76,6 +76,8 @@ option(ENABLE_TESTS "Enable building tests" ON)
 
 # Options to include algorithms (set through build.sh)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
+option(INCLUDE_BZ2 "Include bzip2 compression algorithm" ON)
+option(INCLUDE_LZ4 "Include LZ4 compression algorithm" ON)
 option(INCLUDE_XZ "Include XZ/LZMA compression algorithm" ON)
 option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
 option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
@@ -89,6 +91,7 @@ option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 # Include main src & algorithms' directories
 include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/algorithms/dist/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})  # For generated algorithms.hpp
 set(ALGORITHMS_LIB_DIR ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
 
 ######### SOURCE FILES #########
@@ -105,7 +108,7 @@ add_library(compress_utils_static STATIC)
 ######### ALGORITHMS #########
 
 # Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_BROTLI AND NOT INCLUDE_XZ AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
+if (NOT INCLUDE_BROTLI AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
     message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
 endif()
 
@@ -138,6 +141,50 @@ if (INCLUDE_BROTLI)
     list(APPEND ALL_SOURCE_FILES ${BROTLI_SOURCE_FILES})
     # Add Brotli to the enum
     list(APPEND ALGORITHMS_ENUM "BROTLI")
+endif()
+
+# bzip2 Algorithm
+if (INCLUDE_BZ2)
+    message(STATUS "Including bzip2 algorithm")
+    # Add the subdirectory for bz2 which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/bz2)
+    # Ensure that bz2 is cloned before compress_utils
+    add_dependencies(compress_utils bz2_external)
+    add_dependencies(compress_utils_static bz2_external)
+    # Ensure that bz2 is built before compress_utils
+    add_dependencies(compress_utils bz2_library)
+    add_dependencies(compress_utils_static bz2_library)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS bz2_library)
+    # Define preprocessor directive to include bz2 in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_BZ2)
+    # Add source files for bz2
+    file(GLOB BZ2_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/bz2/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/bz2/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${BZ2_SOURCE_FILES})
+    # Add BZ2 to the enum
+    list(APPEND ALGORITHMS_ENUM "BZ2")
+endif()
+
+# LZ4 Algorithm
+if (INCLUDE_LZ4)
+    message(STATUS "Including LZ4 algorithm")
+    # Add the subdirectory for LZ4 which contains its own CMakeLists.txt
+    add_subdirectory(algorithms/lz4)
+    # Ensure that LZ4 is cloned before compress_utils
+    add_dependencies(compress_utils lz4_external)
+    add_dependencies(compress_utils_static lz4_external)
+    # Ensure that LZ4 is built before compress_utils
+    add_dependencies(compress_utils lz4_library)
+    add_dependencies(compress_utils_static lz4_library)
+    # Ensure that the algorithm-specific libraries are linked to compress_utils
+    list(APPEND TARGET_LIBS lz4_library)
+    # Define preprocessor directive to include LZ4 in the code
+    list(APPEND TARGET_DEFINITIONS INCLUDE_LZ4)
+    # Add source files for LZ4
+    file(GLOB LZ4_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/lz4/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/lz4/*.hpp")
+    list(APPEND ALL_SOURCE_FILES ${LZ4_SOURCE_FILES})
+    # Add LZ4 to the enum
+    list(APPEND ALGORITHMS_ENUM "LZ4")
 endif()
 
 # XZ/LZMA Algorithm

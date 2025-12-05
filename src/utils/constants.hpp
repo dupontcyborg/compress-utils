@@ -17,6 +17,8 @@ constexpr int MAX_LEVEL = 10;
 // Algorithm-specific maximum compression levels (for level mapping)
 constexpr int ZSTD_MAX_LEVEL = 22;      // ZSTD supports 1-22
 constexpr int BROTLI_MAX_LEVEL = 11;    // Brotli supports 0-11
+constexpr int BZ2_MAX_LEVEL = 9;        // bzip2 supports 1-9
+constexpr int LZ4_HC_MAX_LEVEL = 12;    // LZ4 HC mode supports 1-12
 constexpr int XZ_MAX_LEVEL = 9;         // XZ/LZMA supports 0-9
 constexpr int ZLIB_MAX_LEVEL = 9;       // zlib supports 1-9
 
@@ -33,6 +35,7 @@ constexpr size_t MIN_DECOMP_BUFFER_SIZE = 16 * 1024;
 // Initial decompression buffer multiplier (relative to compressed size)
 constexpr size_t DECOMP_BUFFER_MULTIPLIER_ZLIB = 4;
 constexpr size_t DECOMP_BUFFER_MULTIPLIER_BROTLI = 2;
+constexpr size_t DECOMP_BUFFER_MULTIPLIER_BZ2 = 10;   // bzip2 typically achieves ~10:1 compression
 constexpr size_t DECOMP_BUFFER_MULTIPLIER_XZ = 2;
 
 // Buffer growth factor when resizing

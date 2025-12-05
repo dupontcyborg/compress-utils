@@ -27,6 +27,12 @@ compress_utils::Algorithm parse_algorithm(const py::object& algorithm) {
 #ifdef INCLUDE_BROTLI
         if (alg_str == "brotli") return compress_utils::Algorithm::BROTLI;
 #endif
+#ifdef INCLUDE_BZ2
+        if (alg_str == "bz2" || alg_str == "bzip2") return compress_utils::Algorithm::BZ2;
+#endif
+#ifdef INCLUDE_LZ4
+        if (alg_str == "lz4") return compress_utils::Algorithm::LZ4;
+#endif
 #ifdef INCLUDE_XZ
         if (alg_str == "xz") return compress_utils::Algorithm::XZ;
         if (alg_str == "lzma") return compress_utils::Algorithm::LZMA;
@@ -56,6 +62,14 @@ PYBIND11_MODULE(compress_utils_py, m) {
 #ifdef INCLUDE_BROTLI
     py_algorithm.value("brotli", compress_utils::Algorithm::BROTLI);
     members["brotli"] = compress_utils::Algorithm::BROTLI;
+#endif
+#ifdef INCLUDE_BZ2
+    py_algorithm.value("bz2", compress_utils::Algorithm::BZ2);
+    members["bz2"] = compress_utils::Algorithm::BZ2;
+#endif
+#ifdef INCLUDE_LZ4
+    py_algorithm.value("lz4", compress_utils::Algorithm::LZ4);
+    members["lz4"] = compress_utils::Algorithm::LZ4;
 #endif
 #ifdef INCLUDE_XZ
     py_algorithm.value("lzma", compress_utils::Algorithm::LZMA);

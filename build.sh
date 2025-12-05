@@ -20,7 +20,7 @@ usage() {
     echo "  --skip-tests               Skip building and running tests."
     echo "  --debug                    Build the project in debug mode."
     echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
-    echo "                             Available algorithms: brotli, zstd, zlib, xz (lzma)"
+    echo "                             Available algorithms: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)"
     echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
     echo "                             Available languages: c, js, python"
     echo "  --cores=N                  Number of cores to use for building. Default: 1"
@@ -105,12 +105,18 @@ fi
 # Handle algorithms
 if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_BZ2=OFF -DINCLUDE_LZ4=OFF -DINCLUDE_XZ=OFF -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
     # Enable specified algorithms
     for algo in "${ALGORITHMS[@]}"; do
         case $algo in
             brotli)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON"
+                ;;
+            bz2|bzip2)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BZ2=ON"
+                ;;
+            lz4)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_LZ4=ON"
                 ;;
             lzma)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
@@ -132,7 +138,7 @@ if [ ${#ALGORITHMS[@]} -gt 0 ]; then
     done
 else
     # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON -DINCLUDE_BZ2=ON -DINCLUDE_LZ4=ON -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
 fi
 
 # Handle language bindings
