@@ -51,18 +51,12 @@ async function instantiateModule(
     // Use streaming instantiation if available (better performance)
     let instance: WebAssembly.Instance;
 
-    if (typeof WebAssembly.instantiateStreaming === 'function') {
-      // Create a Response from the bytes for streaming instantiation
-      const response = new Response(wasmBytes, {
-        headers: { 'Content-Type': 'application/wasm' },
-      });
-      const result = await WebAssembly.instantiateStreaming(response);
-      instance = result.instance;
-    } else {
-      // Fallback to non-streaming instantiation
-      const module = await WebAssembly.compile(wasmBytes);
-      instance = await WebAssembly.instantiate(module);
-    }
+    // Use non-streaming instantiation (simpler and works everywhere)
+    // Note: instantiateStreaming requires a fetch Response with proper MIME type
+    const result = await WebAssembly.instantiate(
+      wasmBytes.buffer as ArrayBuffer
+    );
+    instance = (result as WebAssembly.WebAssemblyInstantiatedSource).instance;
 
     // Validate that all required exports exist
     const exports = instance.exports as Record<string, unknown>;

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>compress-utils Browser Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 1rem;
+      overflow-x: auto;
+    }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>compress-utils Browser Test</h1>
+  <p>This page is used for Playwright browser tests.</p>
+
+  <div id="status">Loading...</div>
+  <pre id="output"></pre>
+
+  <script type="module">
+    // Import all algorithms for testing
+    // In a real app, you'd only import what you need
+    import * as zstd from '/dist/algorithms/zstd/index.js';
+    import * as brotli from '/dist/algorithms/brotli/index.js';
+    import * as zlib from '/dist/algorithms/zlib/index.js';
+    import * as bz2 from '/dist/algorithms/bz2/index.js';
+    import * as lz4 from '/dist/algorithms/lz4/index.js';
+    import * as xz from '/dist/algorithms/xz/index.js';
+
+    // Expose to window for Playwright tests
+    window.compressUtils = {
+      zstd,
+      brotli,
+      zlib,
+      bz2,
+      lz4,
+      xz,
+    };
+
+    const status = document.getElementById('status');
+    const output = document.getElementById('output');
+
+    async function runQuickTest() {
+      try {
+        const { compress, decompress } = zstd;
+
+        const original = new TextEncoder().encode('Hello, Browser!');
+        const compressed = await compress(original);
+        const decompressed = await decompress(compressed);
+
+        const success = JSON.stringify(Array.from(decompressed)) ===
+                       JSON.stringify(Array.from(original));
+
+        status.textContent = success ? '✅ Ready for testing' : '❌ Quick test failed';
+        status.className = success ? 'success' : 'error';
+
+        output.textContent = JSON.stringify({
+          algorithm: 'zstd',
+          originalLength: original.length,
+          compressedLength: compressed.length,
+          decompressedLength: decompressed.length,
+          roundtripSuccess: success,
+        }, null, 2);
+
+      } catch (e) {
+        status.textContent = '❌ Error: ' + e.message;
+        status.className = 'error';
+        output.textContent = e.stack;
+      }
+    }
+
+    runQuickTest();
+  </script>
+</body>
+</html>

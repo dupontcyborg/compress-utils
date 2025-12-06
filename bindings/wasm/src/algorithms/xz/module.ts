@@ -9,17 +9,17 @@ import {
   type WasmModule,
 } from '../../core/index.js';
 
-let WASM_BASE64: string | undefined;
+let wasmBase64Cache: string | null = null;
 
 async function loadWasmBase64(): Promise<string> {
-  if (WASM_BASE64) {
-    return WASM_BASE64;
+  if (wasmBase64Cache !== null) {
+    return wasmBase64Cache;
   }
 
   try {
-    const module = await import('./wasm.generated.js');
-    WASM_BASE64 = module.WASM_BASE64;
-    return WASM_BASE64;
+    const module = await import('./wasm.generated.js') as { WASM_BASE64: string };
+    wasmBase64Cache = module.WASM_BASE64;
+    return wasmBase64Cache;
   } catch {
     throw new Error(
       'XZ WASM module not found. Run the build script first: npm run build:wasm'
