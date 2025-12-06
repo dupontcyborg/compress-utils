@@ -3,6 +3,7 @@
 #include "bz2/bzlib.h"
 
 #include <stdexcept>
+#include <string>
 
 namespace compress_utils::bz2 {
 
