@@ -36,8 +36,11 @@ PROJECT_ROOT="$(dirname "$(dirname "$WASM_DIR")")"
 BUILD_DIR="${WASM_DIR}/wasm-build"
 GENERATED_DIR="${WASM_DIR}/src/algorithms"
 
-# Directory for downloaded algorithm sources
-DEPS_DIR="${WASM_DIR}/deps"
+# CMake downloads sources here (from main build)
+CMAKE_DEPS_DIR="${PROJECT_ROOT}/algorithms"
+
+# Fallback directory for downloaded algorithm sources (if CMake hasn't run)
+FALLBACK_DEPS_DIR="${WASM_DIR}/deps"
 
 # All supported algorithms
 ALL_ALGORITHMS="zstd brotli zlib bz2 lz4 xz"
@@ -91,59 +94,104 @@ echo ""
 if [ "$CLEAN" = true ]; then
   echo -e "${YELLOW}Cleaning build artifacts...${NC}"
   rm -rf "$BUILD_DIR"
-  rm -rf "$DEPS_DIR"
+  rm -rf "$FALLBACK_DEPS_DIR"
 fi
 
 # Create build directory
 mkdir -p "$BUILD_DIR"
-mkdir -p "$DEPS_DIR"
 
-# Function to download algorithm sources if needed
-download_algorithm_sources() {
+# Associative array to store source paths for each algorithm
+declare -A ALGO_SOURCE_DIR
+
+# Function to get the source directory for an algorithm
+# First checks if CMake has downloaded it, otherwise downloads to fallback dir
+get_algo_source_dir() {
+  local algo=$1
+  local cmake_path=""
+  local cmake_name=""
+  local git_url=""
+  local git_tag=""
+
+  case $algo in
+    zstd)
+      cmake_name="zstd_external"
+      cmake_path="${CMAKE_DEPS_DIR}/zstd/build/src/${cmake_name}"
+      git_url="https://github.com/facebook/zstd.git"
+      git_tag="v1.5.6"
+      ;;
+    brotli)
+      cmake_name="brotli_external"
+      cmake_path="${CMAKE_DEPS_DIR}/brotli/build/src/${cmake_name}"
+      git_url="https://github.com/google/brotli.git"
+      git_tag="v1.1.0"
+      ;;
+    zlib)
+      cmake_name="zlib_external"
+      cmake_path="${CMAKE_DEPS_DIR}/zlib/build/src/${cmake_name}"
+      git_url="https://github.com/madler/zlib.git"
+      git_tag="v1.3.1"
+      ;;
+    bz2)
+      cmake_name="bzip2_external"
+      cmake_path="${CMAKE_DEPS_DIR}/bz2/build/src/${cmake_name}"
+      git_url="https://gitlab.com/bzip2/bzip2.git"
+      git_tag="bzip2-1.0.8"
+      ;;
+    lz4)
+      cmake_name="lz4_external"
+      cmake_path="${CMAKE_DEPS_DIR}/lz4/build/src/${cmake_name}"
+      git_url="https://github.com/lz4/lz4.git"
+      git_tag="v1.10.0"
+      ;;
+    xz)
+      cmake_name="xz_external"
+      cmake_path="${CMAKE_DEPS_DIR}/xz/build/src/${cmake_name}"
+      git_url="https://github.com/tukaani-project/xz.git"
+      git_tag="v5.6.3"
+      ;;
+    *)
+      echo ""
+      return 1
+      ;;
+  esac
+
+  # Check if CMake has already downloaded the sources
+  if [ -d "$cmake_path" ]; then
+    echo "$cmake_path"
+    return 0
+  fi
+
+  # Fall back to downloading
+  local fallback_path="${FALLBACK_DEPS_DIR}/${algo}"
+  if [ ! -d "$fallback_path" ]; then
+    mkdir -p "$FALLBACK_DEPS_DIR"
+    echo -e "  Downloading ${algo}..." >&2
+    git clone --depth 1 --branch "$git_tag" "$git_url" "$fallback_path" 2>/dev/null || true
+  fi
+  echo "$fallback_path"
+}
+
+# Function to check and setup algorithm sources
+setup_algorithm_sources() {
   echo -e "${BLUE}Checking algorithm sources...${NC}"
 
-  # zstd
-  if [[ " $ALGORITHMS " =~ " zstd " ]] && [ ! -d "${DEPS_DIR}/zstd" ]; then
-    echo -e "  Downloading zstd..."
-    git clone --depth 1 --branch v1.5.6 https://github.com/facebook/zstd.git "${DEPS_DIR}/zstd" 2>/dev/null || true
-  fi
-
-  # brotli
-  if [[ " $ALGORITHMS " =~ " brotli " ]] && [ ! -d "${DEPS_DIR}/brotli" ]; then
-    echo -e "  Downloading brotli..."
-    git clone --depth 1 --branch v1.1.0 https://github.com/google/brotli.git "${DEPS_DIR}/brotli" 2>/dev/null || true
-  fi
-
-  # zlib
-  if [[ " $ALGORITHMS " =~ " zlib " ]] && [ ! -d "${DEPS_DIR}/zlib" ]; then
-    echo -e "  Downloading zlib..."
-    git clone --depth 1 --branch v1.3.1 https://github.com/madler/zlib.git "${DEPS_DIR}/zlib" 2>/dev/null || true
-  fi
-
-  # bz2
-  if [[ " $ALGORITHMS " =~ " bz2 " ]] && [ ! -d "${DEPS_DIR}/bz2" ]; then
-    echo -e "  Downloading bzip2..."
-    git clone --depth 1 --branch bzip2-1.0.8 https://gitlab.com/bzip2/bzip2.git "${DEPS_DIR}/bz2" 2>/dev/null || true
-  fi
-
-  # lz4
-  if [[ " $ALGORITHMS " =~ " lz4 " ]] && [ ! -d "${DEPS_DIR}/lz4" ]; then
-    echo -e "  Downloading lz4..."
-    git clone --depth 1 --branch v1.10.0 https://github.com/lz4/lz4.git "${DEPS_DIR}/lz4" 2>/dev/null || true
-  fi
-
-  # xz (liblzma)
-  if [[ " $ALGORITHMS " =~ " xz " ]] && [ ! -d "${DEPS_DIR}/xz" ]; then
-    echo -e "  Downloading xz..."
-    git clone --depth 1 --branch v5.6.3 https://github.com/tukaani-project/xz.git "${DEPS_DIR}/xz" 2>/dev/null || true
-  fi
+  for algo in $ALGORITHMS; do
+    local source_dir
+    source_dir=$(get_algo_source_dir "$algo")
+    if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
+      ALGO_SOURCE_DIR[$algo]="$source_dir"
+      echo -e "  ${GREEN}✓${NC} ${algo}: ${source_dir}"
+    else
+      echo -e "  ${RED}✗${NC} ${algo}: sources not found"
+    fi
+  done
 
   echo -e "${GREEN}  Algorithm sources ready${NC}"
   echo ""
 }
 
-# Download algorithm sources
-download_algorithm_sources
+# Setup algorithm sources
+setup_algorithm_sources
 
 # Common Emscripten flags
 COMMON_FLAGS=(
@@ -181,6 +229,13 @@ build_algorithm() {
     return 0
   fi
 
+  # Get the source directory for this algorithm
+  local src_dir="${ALGO_SOURCE_DIR[$algo]}"
+  if [ -z "$src_dir" ] || [ ! -d "$src_dir" ]; then
+    echo -e "${RED}  Error: Source directory not found for ${algo}${NC}"
+    return 1
+  fi
+
   # Algorithm-specific source files and include paths
   local algo_sources=()
   local algo_includes=()
@@ -189,87 +244,87 @@ build_algorithm() {
   case $algo in
     zstd)
       algo_includes=(
-        "-I${DEPS_DIR}/zstd/lib"
-        "-I${DEPS_DIR}/zstd/lib/common"
+        "-I${src_dir}/lib"
+        "-I${src_dir}/lib/common"
       )
       # Collect zstd source files (glob expansion happens here)
       algo_sources=()
-      for f in "${DEPS_DIR}"/zstd/lib/common/*.c "${DEPS_DIR}"/zstd/lib/compress/*.c "${DEPS_DIR}"/zstd/lib/decompress/*.c; do
+      for f in "${src_dir}"/lib/common/*.c "${src_dir}"/lib/compress/*.c "${src_dir}"/lib/decompress/*.c; do
         [ -f "$f" ] && algo_sources+=("$f")
       done
       ;;
     brotli)
       algo_includes=(
-        "-I${DEPS_DIR}/brotli/c/include"
+        "-I${src_dir}/c/include"
       )
       algo_sources=()
-      for f in "${DEPS_DIR}"/brotli/c/common/*.c "${DEPS_DIR}"/brotli/c/enc/*.c "${DEPS_DIR}"/brotli/c/dec/*.c; do
+      for f in "${src_dir}"/c/common/*.c "${src_dir}"/c/enc/*.c "${src_dir}"/c/dec/*.c; do
         [ -f "$f" ] && algo_sources+=("$f")
       done
       ;;
     zlib)
       algo_includes=(
-        "-I${DEPS_DIR}/zlib"
+        "-I${src_dir}"
       )
       # zlib source files (excluding gz* files that require filesystem, and test/example files)
       algo_sources=(
-        "${DEPS_DIR}/zlib/adler32.c"
-        "${DEPS_DIR}/zlib/compress.c"
-        "${DEPS_DIR}/zlib/crc32.c"
-        "${DEPS_DIR}/zlib/deflate.c"
-        "${DEPS_DIR}/zlib/infback.c"
-        "${DEPS_DIR}/zlib/inffast.c"
-        "${DEPS_DIR}/zlib/inflate.c"
-        "${DEPS_DIR}/zlib/inftrees.c"
-        "${DEPS_DIR}/zlib/trees.c"
-        "${DEPS_DIR}/zlib/uncompr.c"
-        "${DEPS_DIR}/zlib/zutil.c"
+        "${src_dir}/adler32.c"
+        "${src_dir}/compress.c"
+        "${src_dir}/crc32.c"
+        "${src_dir}/deflate.c"
+        "${src_dir}/infback.c"
+        "${src_dir}/inffast.c"
+        "${src_dir}/inflate.c"
+        "${src_dir}/inftrees.c"
+        "${src_dir}/trees.c"
+        "${src_dir}/uncompr.c"
+        "${src_dir}/zutil.c"
       )
       ;;
     bz2)
       algo_includes=(
-        "-I${DEPS_DIR}/bz2"
+        "-I${src_dir}"
       )
       algo_sources=(
-        "${DEPS_DIR}/bz2/blocksort.c"
-        "${DEPS_DIR}/bz2/huffman.c"
-        "${DEPS_DIR}/bz2/crctable.c"
-        "${DEPS_DIR}/bz2/randtable.c"
-        "${DEPS_DIR}/bz2/compress.c"
-        "${DEPS_DIR}/bz2/decompress.c"
-        "${DEPS_DIR}/bz2/bzlib.c"
+        "${src_dir}/blocksort.c"
+        "${src_dir}/huffman.c"
+        "${src_dir}/crctable.c"
+        "${src_dir}/randtable.c"
+        "${src_dir}/compress.c"
+        "${src_dir}/decompress.c"
+        "${src_dir}/bzlib.c"
       )
       ;;
     lz4)
       algo_includes=(
-        "-I${DEPS_DIR}/lz4/lib"
+        "-I${src_dir}/lib"
       )
       algo_sources=(
-        "${DEPS_DIR}/lz4/lib/lz4.c"
-        "${DEPS_DIR}/lz4/lib/lz4hc.c"
+        "${src_dir}/lib/lz4.c"
+        "${src_dir}/lib/lz4hc.c"
       )
       ;;
     xz)
       algo_includes=(
-        "-I${DEPS_DIR}/xz/src/liblzma/api"
-        "-I${DEPS_DIR}/xz/src/liblzma/common"
-        "-I${DEPS_DIR}/xz/src/liblzma/check"
-        "-I${DEPS_DIR}/xz/src/liblzma/lz"
-        "-I${DEPS_DIR}/xz/src/liblzma/lzma"
-        "-I${DEPS_DIR}/xz/src/liblzma/rangecoder"
-        "-I${DEPS_DIR}/xz/src/liblzma/delta"
-        "-I${DEPS_DIR}/xz/src/liblzma/simple"
-        "-I${DEPS_DIR}/xz/src/common"
+        "-I${src_dir}/src/liblzma/api"
+        "-I${src_dir}/src/liblzma/common"
+        "-I${src_dir}/src/liblzma/check"
+        "-I${src_dir}/src/liblzma/lz"
+        "-I${src_dir}/src/liblzma/lzma"
+        "-I${src_dir}/src/liblzma/rangecoder"
+        "-I${src_dir}/src/liblzma/delta"
+        "-I${src_dir}/src/liblzma/simple"
+        "-I${src_dir}/src/common"
       )
       # XZ/LZMA source files (excluding multi-threaded files that require pthreads)
       algo_sources=()
-      for f in "${DEPS_DIR}"/xz/src/liblzma/common/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/check/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/lz/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/lzma/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/rangecoder/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/delta/*.c \
-               "${DEPS_DIR}"/xz/src/liblzma/simple/*.c; do
+      for f in "${src_dir}"/src/liblzma/common/*.c \
+               "${src_dir}"/src/liblzma/check/*.c \
+               "${src_dir}"/src/liblzma/lz/*.c \
+               "${src_dir}"/src/liblzma/lzma/*.c \
+               "${src_dir}"/src/liblzma/rangecoder/*.c \
+               "${src_dir}"/src/liblzma/delta/*.c \
+               "${src_dir}"/src/liblzma/simple/*.c; do
         # Skip multi-threaded files
         case "$(basename "$f")" in
           *_mt.c|outqueue.c|hardware_cputhreads.c)
