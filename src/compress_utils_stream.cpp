@@ -14,6 +14,16 @@
 #include "brotli/encode.h"
 #endif
 
+#ifdef INCLUDE_BZ2
+#include "bz2/bzlib.h"
+#endif
+
+#ifdef INCLUDE_LZ4
+#include "lz4/lz4.h"
+#include "lz4/lz4hc.h"
+#include "lz4/lz4frame.h"
+#endif
+
 #ifdef INCLUDE_ZLIB
 #include "zlib/zlib.h"
 #endif
@@ -47,6 +57,14 @@ struct CompressStream::Impl {
 #endif
 #ifdef INCLUDE_BROTLI
     BrotliEncoderState* brotli_state = nullptr;
+#endif
+#ifdef INCLUDE_BZ2
+    bz_stream bz2_stream = {};
+    bool bz2_initialized = false;
+#endif
+#ifdef INCLUDE_LZ4
+    LZ4F_cctx* lz4_cctx = nullptr;
+    bool lz4_header_written = false;
 #endif
 #ifdef INCLUDE_ZLIB
     z_stream zlib_stream = {};
@@ -82,6 +100,18 @@ struct CompressStream::Impl {
         if (brotli_state) {
             BrotliEncoderDestroyInstance(brotli_state);
             brotli_state = nullptr;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        if (bz2_initialized) {
+            BZ2_bzCompressEnd(&bz2_stream);
+            bz2_initialized = false;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        if (lz4_cctx) {
+            LZ4F_freeCompressionContext(lz4_cctx);
+            lz4_cctx = nullptr;
         }
 #endif
 #ifdef INCLUDE_ZLIB
@@ -129,6 +159,33 @@ CompressStream::CompressStream(Algorithm algorithm, int level)
             // Map level 1-10 to Brotli 0-11
             int brotli_level = (level * 11) / 10;
             BrotliEncoderSetParameter(impl_->brotli_state, BROTLI_PARAM_QUALITY, brotli_level);
+            break;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2: {
+            impl_->bz2_stream.bzalloc = nullptr;
+            impl_->bz2_stream.bzfree = nullptr;
+            impl_->bz2_stream.opaque = nullptr;
+            // Map level 1-10 to bzip2 1-9
+            int bz2_level = (level * 9) / 10;
+            if (bz2_level < 1) bz2_level = 1;
+            int result = BZ2_bzCompressInit(&impl_->bz2_stream, bz2_level, 0, 0);
+            if (result != BZ_OK) {
+                throw std::runtime_error("Failed to initialize bzip2 compression stream");
+            }
+            impl_->bz2_initialized = true;
+            break;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4: {
+            LZ4F_errorCode_t err = LZ4F_createCompressionContext(&impl_->lz4_cctx, LZ4F_VERSION);
+            if (LZ4F_isError(err)) {
+                throw std::runtime_error("Failed to create LZ4 compression context: " +
+                                         std::string(LZ4F_getErrorName(err)));
+            }
+            impl_->lz4_header_written = false;
             break;
         }
 #endif
@@ -217,6 +274,86 @@ std::vector<uint8_t> CompressStream::Compress(std::span<const uint8_t> data) {
                 if (available_in == 0 && !BrotliEncoderHasMoreOutput(impl_->brotli_state)) {
                     break;
                 }
+            }
+            break;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2: {
+            impl_->bz2_stream.next_in = const_cast<char*>(reinterpret_cast<const char*>(data.data()));
+            impl_->bz2_stream.avail_in = static_cast<unsigned int>(data.size());
+
+            while (impl_->bz2_stream.avail_in > 0) {
+                impl_->bz2_stream.next_out = reinterpret_cast<char*>(impl_->output_buffer.data());
+                impl_->bz2_stream.avail_out = static_cast<unsigned int>(impl_->output_buffer.size());
+
+                int ret = BZ2_bzCompress(&impl_->bz2_stream, BZ_RUN);
+                if (ret != BZ_RUN_OK) {
+                    throw std::runtime_error("bzip2 compression error");
+                }
+
+                size_t bytes_written = impl_->output_buffer.size() - impl_->bz2_stream.avail_out;
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + bytes_written);
+            }
+            break;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4: {
+            // Write header on first compress call
+            if (!impl_->lz4_header_written) {
+                LZ4F_preferences_t prefs = {};
+                // Map level 1-10: levels 1-3 use fast mode, 4-10 use HC mode
+                if (impl_->level <= 3) {
+                    prefs.compressionLevel = 0;  // Default fast
+                } else {
+                    // Map 4-10 to LZ4HC levels 1-12
+                    prefs.compressionLevel = ((impl_->level - 3) * 12) / 7;
+                    if (prefs.compressionLevel < 1) prefs.compressionLevel = 1;
+                }
+
+                size_t header_size = LZ4F_compressBegin(impl_->lz4_cctx,
+                                                         impl_->output_buffer.data(),
+                                                         impl_->output_buffer.size(),
+                                                         &prefs);
+                if (LZ4F_isError(header_size)) {
+                    throw std::runtime_error("LZ4 compression begin error: " +
+                                             std::string(LZ4F_getErrorName(header_size)));
+                }
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + header_size);
+                impl_->lz4_header_written = true;
+            }
+
+            // Compress the data
+            if (data.size() > 0) {
+                // Rebuild preferences to calculate correct bound
+                LZ4F_preferences_t prefs = {};
+                if (impl_->level <= 3) {
+                    prefs.compressionLevel = 0;
+                } else {
+                    prefs.compressionLevel = ((impl_->level - 3) * 12) / 7;
+                    if (prefs.compressionLevel < 1) prefs.compressionLevel = 1;
+                }
+
+                // Calculate required output buffer size using LZ4F_compressBound
+                size_t bound = LZ4F_compressBound(data.size(), &prefs);
+                // Ensure output buffer is large enough
+                std::vector<uint8_t> compress_buffer(bound);
+
+                size_t compressed_size = LZ4F_compressUpdate(impl_->lz4_cctx,
+                                                              compress_buffer.data(),
+                                                              compress_buffer.size(),
+                                                              data.data(),
+                                                              data.size(),
+                                                              nullptr);
+                if (LZ4F_isError(compressed_size)) {
+                    throw std::runtime_error("LZ4 compression error: " +
+                                             std::string(LZ4F_getErrorName(compressed_size)));
+                }
+                result.insert(result.end(), compress_buffer.data(),
+                              compress_buffer.data() + compressed_size);
             }
             break;
         }
@@ -320,6 +457,56 @@ std::vector<uint8_t> CompressStream::Finish() {
             break;
         }
 #endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2: {
+            int ret;
+            do {
+                impl_->bz2_stream.next_out = reinterpret_cast<char*>(impl_->output_buffer.data());
+                impl_->bz2_stream.avail_out = static_cast<unsigned int>(impl_->output_buffer.size());
+
+                ret = BZ2_bzCompress(&impl_->bz2_stream, BZ_FINISH);
+                if (ret != BZ_FINISH_OK && ret != BZ_STREAM_END) {
+                    throw std::runtime_error("bzip2 finish error");
+                }
+
+                size_t bytes_written = impl_->output_buffer.size() - impl_->bz2_stream.avail_out;
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + bytes_written);
+            } while (ret != BZ_STREAM_END);
+            break;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4: {
+            // If no data was ever compressed, write the header first
+            if (!impl_->lz4_header_written) {
+                LZ4F_preferences_t prefs = {};
+                size_t header_size = LZ4F_compressBegin(impl_->lz4_cctx,
+                                                         impl_->output_buffer.data(),
+                                                         impl_->output_buffer.size(),
+                                                         &prefs);
+                if (LZ4F_isError(header_size)) {
+                    throw std::runtime_error("LZ4 compression begin error: " +
+                                             std::string(LZ4F_getErrorName(header_size)));
+                }
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + header_size);
+            }
+
+            // Write the end frame
+            size_t end_size = LZ4F_compressEnd(impl_->lz4_cctx,
+                                                impl_->output_buffer.data(),
+                                                impl_->output_buffer.size(),
+                                                nullptr);
+            if (LZ4F_isError(end_size)) {
+                throw std::runtime_error("LZ4 compression end error: " +
+                                         std::string(LZ4F_getErrorName(end_size)));
+            }
+            result.insert(result.end(), impl_->output_buffer.data(),
+                          impl_->output_buffer.data() + end_size);
+            break;
+        }
+#endif
 #ifdef INCLUDE_ZLIB
         case Algorithm::ZLIB: {
             impl_->zlib_stream.next_in = nullptr;
@@ -396,6 +583,13 @@ struct DecompressStream::Impl {
 #ifdef INCLUDE_BROTLI
     BrotliDecoderState* brotli_state = nullptr;
 #endif
+#ifdef INCLUDE_BZ2
+    bz_stream bz2_stream = {};
+    bool bz2_initialized = false;
+#endif
+#ifdef INCLUDE_LZ4
+    LZ4F_dctx* lz4_dctx = nullptr;
+#endif
 #ifdef INCLUDE_ZLIB
     z_stream zlib_stream = {};
     bool zlib_initialized = false;
@@ -430,6 +624,18 @@ struct DecompressStream::Impl {
         if (brotli_state) {
             BrotliDecoderDestroyInstance(brotli_state);
             brotli_state = nullptr;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        if (bz2_initialized) {
+            BZ2_bzDecompressEnd(&bz2_stream);
+            bz2_initialized = false;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        if (lz4_dctx) {
+            LZ4F_freeDecompressionContext(lz4_dctx);
+            lz4_dctx = nullptr;
         }
 #endif
 #ifdef INCLUDE_ZLIB
@@ -468,6 +674,29 @@ DecompressStream::DecompressStream(Algorithm algorithm) : impl_(std::make_unique
             impl_->brotli_state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
             if (!impl_->brotli_state) {
                 throw std::runtime_error("Failed to create Brotli decompression stream");
+            }
+            break;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2: {
+            impl_->bz2_stream.bzalloc = nullptr;
+            impl_->bz2_stream.bzfree = nullptr;
+            impl_->bz2_stream.opaque = nullptr;
+            int result = BZ2_bzDecompressInit(&impl_->bz2_stream, 0, 0);
+            if (result != BZ_OK) {
+                throw std::runtime_error("Failed to initialize bzip2 decompression stream");
+            }
+            impl_->bz2_initialized = true;
+            break;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4: {
+            LZ4F_errorCode_t err = LZ4F_createDecompressionContext(&impl_->lz4_dctx, LZ4F_VERSION);
+            if (LZ4F_isError(err)) {
+                throw std::runtime_error("Failed to create LZ4 decompression context: " +
+                                         std::string(LZ4F_getErrorName(err)));
             }
             break;
         }
@@ -561,6 +790,63 @@ std::vector<uint8_t> DecompressStream::Decompress(std::span<const uint8_t> data)
                     break;
                 }
                 if (available_in == 0 && !BrotliDecoderHasMoreOutput(impl_->brotli_state)) {
+                    break;
+                }
+            }
+            break;
+        }
+#endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2: {
+            impl_->bz2_stream.next_in = const_cast<char*>(reinterpret_cast<const char*>(data.data()));
+            impl_->bz2_stream.avail_in = static_cast<unsigned int>(data.size());
+
+            while (impl_->bz2_stream.avail_in > 0) {
+                impl_->bz2_stream.next_out = reinterpret_cast<char*>(impl_->output_buffer.data());
+                impl_->bz2_stream.avail_out = static_cast<unsigned int>(impl_->output_buffer.size());
+
+                int ret = BZ2_bzDecompress(&impl_->bz2_stream);
+                if (ret != BZ_OK && ret != BZ_STREAM_END) {
+                    throw std::runtime_error("bzip2 decompression error");
+                }
+
+                size_t bytes_written = impl_->output_buffer.size() - impl_->bz2_stream.avail_out;
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + bytes_written);
+
+                if (ret == BZ_STREAM_END) {
+                    break;
+                }
+            }
+            break;
+        }
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4: {
+            const uint8_t* src = data.data();
+            size_t src_size = data.size();
+
+            while (src_size > 0) {
+                size_t dst_size = impl_->output_buffer.size();
+                size_t consumed = src_size;
+
+                size_t ret = LZ4F_decompress(impl_->lz4_dctx,
+                                              impl_->output_buffer.data(), &dst_size,
+                                              src, &consumed,
+                                              nullptr);
+                if (LZ4F_isError(ret)) {
+                    throw std::runtime_error("LZ4 decompression error: " +
+                                             std::string(LZ4F_getErrorName(ret)));
+                }
+
+                result.insert(result.end(), impl_->output_buffer.data(),
+                              impl_->output_buffer.data() + dst_size);
+
+                src += consumed;
+                src_size -= consumed;
+
+                // If ret is 0, we've finished decompressing
+                if (ret == 0) {
                     break;
                 }
             }

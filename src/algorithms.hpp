@@ -13,6 +13,12 @@ enum class Algorithm {
 #ifdef INCLUDE_BROTLI
     BROTLI,
 #endif
+#ifdef INCLUDE_BZ2
+    BZ2,
+#endif
+#ifdef INCLUDE_LZ4
+    LZ4,
+#endif
 #ifdef INCLUDE_XZ
     LZMA,
     XZ,

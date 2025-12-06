@@ -3,6 +3,8 @@
 
 #include "algorithms.hpp"
 #include "algorithms/brotli/brotli.hpp"
+#include "algorithms/bz2/bz2.hpp"
+#include "algorithms/lz4/lz4.hpp"
 #include "algorithms/xz/xz.hpp"
 #include "algorithms/zlib/zlib.hpp"
 #include "algorithms/zstd/zstd.hpp"
@@ -35,6 +37,14 @@ CompressionFunctions GetCompressionFunctions(const Algorithm algorithm) {
 #ifdef INCLUDE_BROTLI
         case Algorithm::BROTLI:
             return {brotli::Compress, brotli::Decompress};
+#endif
+#ifdef INCLUDE_BZ2
+        case Algorithm::BZ2:
+            return {bz2::Compress, bz2::Decompress};
+#endif
+#ifdef INCLUDE_LZ4
+        case Algorithm::LZ4:
+            return {lz4::Compress, lz4::Decompress};
 #endif
 #ifdef INCLUDE_XZ
         case Algorithm::XZ:
