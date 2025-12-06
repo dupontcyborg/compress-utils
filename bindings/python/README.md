@@ -9,7 +9,7 @@ A unified, high-performance interface for multiple compression algorithms across
 
 ## Features
 
-- **Multiple Algorithms**: Integrated support for Brotli, LZMA, XZ, zlib, and Zstandard
+- **Multiple Algorithms**: Integrated support for Brotli, bzip2, lz4, LZMA, XZ, zlib, and Zstandard
 - **Consistent API**: Same interface across all supported algorithms
 - **Cross-Language**: Core C++ library with language bindings for Python (and more to come)
 - **Performance Focused**: Built to minimize overhead over native compression libraries

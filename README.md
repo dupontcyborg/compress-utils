@@ -1,26 +1,26 @@
 # compress-utils
 
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml" alt="GitHub Actions Workflow Status"/>
-  <img src="https://img.shields.io/github/v/release/dupontcyborg/compress-utils" alt="GitHub Release"/>
+  <img src="https://img.shields.io/badge/algorithms-6-green?style=flat" alt="Algorithms"/>
+  <img src="https://img.shields.io/badge/languages-3-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/algorithms-4-darkgreen?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-3-darkgreen?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml" alt="GitHub Actions Workflow Status"/>
+  <img src="https://img.shields.io/github/v/release/dupontcyborg/compress-utils" alt="GitHub Release"/>
   <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils" alt="Code Size"/>
-  <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 
 `compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
 
 ## Features
 
-- [4 built-in data compression algorithms](#built-in-compression-algorithms)
+- [6 built-in data compression algorithms](#built-in-compression-algorithms)
 - [3 languages supported](#supported-languages)
 - [Standardized API](#usage) across all algorithms & languages
 - Portable & cross-platform (Linux, macOS, Windows)
 - Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
-- Native or near-native [compression & decompression performance](#benchmarks)
+- Native [compression & decompression performance](#benchmarks)
 - Lightweight binary (30 kB with single algorithm, 4 MB with all)
 
 ## Built-in Compression Algorithms
@@ -28,6 +28,8 @@
 | Algorithm | Description | Benchmarks |
 |:---:|---|:---:|
 | [brotli](https://github.com/google/brotli.git) | General-purpose with high-to-very-high compression rates | [Benchmarks](#benchmarks) |
+| [bzip2](https://sourceware.org/bzip2) | Very-high compression ratio algorithm | [Benchmarks](#benchmarks) |
+| [lz4](https://github.com/lz4/lz4) | Very-high speed compression algorithm | [Benchmarks](#benchmarks) |
 | [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) | [Benchmarks](#benchmarks) |
 | [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm | [Benchmarks](#benchmarks) |
 | [xz/lzma](https://github.com/tukaani-project/xz.git) | Very-high compression ratio algorithm | [Benchmarks](#benchmarks) |
