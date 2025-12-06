@@ -18,7 +18,7 @@ extern "C" {
 // One-shot Compression/Decompression
 // ============================================================================
 
-uint8_t* compress(
+uint8_t* cu_compress(
     const uint8_t* input,
     size_t input_len,
     int level,
@@ -65,7 +65,7 @@ uint8_t* compress(
     return output;
 }
 
-uint8_t* decompress(
+uint8_t* cu_decompress(
     const uint8_t* input,
     size_t input_len,
     size_t* output_len
@@ -129,7 +129,7 @@ struct CompressStreamContext {
     bool finished;
 };
 
-void* stream_compress_create(int level) {
+void* cu_stream_compress_create(int level) {
     BrotliEncoderState* state = BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
     if (!state) {
         return nullptr;
@@ -150,7 +150,7 @@ void* stream_compress_create(int level) {
     return ctx;
 }
 
-int32_t stream_compress_write(
+int32_t cu_stream_compress_write(
     void* ctx,
     const uint8_t* input,
     size_t input_len,
@@ -184,7 +184,7 @@ int32_t stream_compress_write(
     return static_cast<int32_t>(output_cap - available_out);
 }
 
-int32_t stream_compress_finish(
+int32_t cu_stream_compress_finish(
     void* ctx,
     uint8_t* output,
     size_t output_cap
@@ -220,7 +220,7 @@ int32_t stream_compress_finish(
     return static_cast<int32_t>(output_cap - available_out);
 }
 
-void stream_compress_destroy(void* ctx) {
+void cu_stream_compress_destroy(void* ctx) {
     auto* context = static_cast<CompressStreamContext*>(ctx);
     if (context) {
         if (context->state) {
@@ -239,7 +239,7 @@ struct DecompressStreamContext {
     bool finished;
 };
 
-void* stream_decompress_create() {
+void* cu_stream_decompress_create() {
     BrotliDecoderState* state = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
     if (!state) {
         return nullptr;
@@ -258,7 +258,7 @@ void* stream_decompress_create() {
     return ctx;
 }
 
-int32_t stream_decompress_write(
+int32_t cu_stream_decompress_write(
     void* ctx,
     const uint8_t* input,
     size_t input_len,
@@ -295,7 +295,7 @@ int32_t stream_decompress_write(
     return static_cast<int32_t>(output_cap - available_out);
 }
 
-int32_t stream_decompress_finish(void* ctx) {
+int32_t cu_stream_decompress_finish(void* ctx) {
     auto* context = static_cast<DecompressStreamContext*>(ctx);
     if (!context) {
         return -1;
@@ -303,7 +303,7 @@ int32_t stream_decompress_finish(void* ctx) {
     return context->finished ? 1 : 0;
 }
 
-void stream_decompress_destroy(void* ctx) {
+void cu_stream_decompress_destroy(void* ctx) {
     auto* context = static_cast<DecompressStreamContext*>(ctx);
     if (context) {
         if (context->state) {

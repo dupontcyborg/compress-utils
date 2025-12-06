@@ -7,7 +7,6 @@
 #
 # Prerequisites:
 #   - Emscripten SDK installed and activated (emcc in PATH)
-#   - Algorithm dependencies built (run main build.sh first)
 #
 # Usage:
 #   ./scripts/build-wasm.sh [options]
@@ -36,6 +35,9 @@ PROJECT_ROOT="$(dirname "$(dirname "$WASM_DIR")")"
 # Output directories
 BUILD_DIR="${WASM_DIR}/wasm-build"
 GENERATED_DIR="${WASM_DIR}/src/algorithms"
+
+# Directory for downloaded algorithm sources
+DEPS_DIR="${WASM_DIR}/deps"
 
 # All supported algorithms
 ALL_ALGORITHMS="zstd brotli zlib bz2 lz4 xz"
@@ -89,10 +91,59 @@ echo ""
 if [ "$CLEAN" = true ]; then
   echo -e "${YELLOW}Cleaning build artifacts...${NC}"
   rm -rf "$BUILD_DIR"
+  rm -rf "$DEPS_DIR"
 fi
 
 # Create build directory
 mkdir -p "$BUILD_DIR"
+mkdir -p "$DEPS_DIR"
+
+# Function to download algorithm sources if needed
+download_algorithm_sources() {
+  echo -e "${BLUE}Checking algorithm sources...${NC}"
+
+  # zstd
+  if [[ " $ALGORITHMS " =~ " zstd " ]] && [ ! -d "${DEPS_DIR}/zstd" ]; then
+    echo -e "  Downloading zstd..."
+    git clone --depth 1 --branch v1.5.6 https://github.com/facebook/zstd.git "${DEPS_DIR}/zstd" 2>/dev/null || true
+  fi
+
+  # brotli
+  if [[ " $ALGORITHMS " =~ " brotli " ]] && [ ! -d "${DEPS_DIR}/brotli" ]; then
+    echo -e "  Downloading brotli..."
+    git clone --depth 1 --branch v1.1.0 https://github.com/google/brotli.git "${DEPS_DIR}/brotli" 2>/dev/null || true
+  fi
+
+  # zlib
+  if [[ " $ALGORITHMS " =~ " zlib " ]] && [ ! -d "${DEPS_DIR}/zlib" ]; then
+    echo -e "  Downloading zlib..."
+    git clone --depth 1 --branch v1.3.1 https://github.com/madler/zlib.git "${DEPS_DIR}/zlib" 2>/dev/null || true
+  fi
+
+  # bz2
+  if [[ " $ALGORITHMS " =~ " bz2 " ]] && [ ! -d "${DEPS_DIR}/bz2" ]; then
+    echo -e "  Downloading bzip2..."
+    git clone --depth 1 --branch bzip2-1.0.8 https://gitlab.com/bzip2/bzip2.git "${DEPS_DIR}/bz2" 2>/dev/null || true
+  fi
+
+  # lz4
+  if [[ " $ALGORITHMS " =~ " lz4 " ]] && [ ! -d "${DEPS_DIR}/lz4" ]; then
+    echo -e "  Downloading lz4..."
+    git clone --depth 1 --branch v1.10.0 https://github.com/lz4/lz4.git "${DEPS_DIR}/lz4" 2>/dev/null || true
+  fi
+
+  # xz (liblzma)
+  if [[ " $ALGORITHMS " =~ " xz " ]] && [ ! -d "${DEPS_DIR}/xz" ]; then
+    echo -e "  Downloading xz..."
+    git clone --depth 1 --branch v5.6.3 https://github.com/tukaani-project/xz.git "${DEPS_DIR}/xz" 2>/dev/null || true
+  fi
+
+  echo -e "${GREEN}  Algorithm sources ready${NC}"
+  echo ""
+}
+
+# Download algorithm sources
+download_algorithm_sources
 
 # Common Emscripten flags
 COMMON_FLAGS=(
@@ -102,8 +153,9 @@ COMMON_FLAGS=(
   "-s" "ALLOW_MEMORY_GROWTH=1"
   "-s" "MALLOC=emmalloc"
   "-s" "FILESYSTEM=0"
-  "-s" "ENVIRONMENT='web,node'"
-  "-s" "EXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+  "-s" "ENVIRONMENT=web,node"
+  "-s" "EXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPU8','wasmMemory']"
+  "-s" "SINGLE_FILE=1"
   "--no-entry"
 )
 
@@ -137,71 +189,97 @@ build_algorithm() {
   case $algo in
     zstd)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/zstd/lib"
-        "-I${PROJECT_ROOT}/algorithms/zstd/lib/common"
+        "-I${DEPS_DIR}/zstd/lib"
+        "-I${DEPS_DIR}/zstd/lib/common"
       )
-      # Include all zstd source files
-      algo_sources=(
-        "${PROJECT_ROOT}/algorithms/zstd/lib/common/"*.c
-        "${PROJECT_ROOT}/algorithms/zstd/lib/compress/"*.c
-        "${PROJECT_ROOT}/algorithms/zstd/lib/decompress/"*.c
-      )
+      # Collect zstd source files (glob expansion happens here)
+      algo_sources=()
+      for f in "${DEPS_DIR}"/zstd/lib/common/*.c "${DEPS_DIR}"/zstd/lib/compress/*.c "${DEPS_DIR}"/zstd/lib/decompress/*.c; do
+        [ -f "$f" ] && algo_sources+=("$f")
+      done
       ;;
     brotli)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/brotli/c/include"
+        "-I${DEPS_DIR}/brotli/c/include"
       )
-      algo_sources=(
-        "${PROJECT_ROOT}/algorithms/brotli/c/common/"*.c
-        "${PROJECT_ROOT}/algorithms/brotli/c/enc/"*.c
-        "${PROJECT_ROOT}/algorithms/brotli/c/dec/"*.c
-      )
+      algo_sources=()
+      for f in "${DEPS_DIR}"/brotli/c/common/*.c "${DEPS_DIR}"/brotli/c/enc/*.c "${DEPS_DIR}"/brotli/c/dec/*.c; do
+        [ -f "$f" ] && algo_sources+=("$f")
+      done
       ;;
     zlib)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/zlib"
+        "-I${DEPS_DIR}/zlib"
       )
+      # zlib source files (excluding gz* files that require filesystem, and test/example files)
       algo_sources=(
-        "${PROJECT_ROOT}/algorithms/zlib/"*.c
+        "${DEPS_DIR}/zlib/adler32.c"
+        "${DEPS_DIR}/zlib/compress.c"
+        "${DEPS_DIR}/zlib/crc32.c"
+        "${DEPS_DIR}/zlib/deflate.c"
+        "${DEPS_DIR}/zlib/infback.c"
+        "${DEPS_DIR}/zlib/inffast.c"
+        "${DEPS_DIR}/zlib/inflate.c"
+        "${DEPS_DIR}/zlib/inftrees.c"
+        "${DEPS_DIR}/zlib/trees.c"
+        "${DEPS_DIR}/zlib/uncompr.c"
+        "${DEPS_DIR}/zlib/zutil.c"
       )
       ;;
     bz2)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/bz2"
+        "-I${DEPS_DIR}/bz2"
       )
       algo_sources=(
-        "${PROJECT_ROOT}/algorithms/bz2/blocksort.c"
-        "${PROJECT_ROOT}/algorithms/bz2/huffman.c"
-        "${PROJECT_ROOT}/algorithms/bz2/crctable.c"
-        "${PROJECT_ROOT}/algorithms/bz2/randtable.c"
-        "${PROJECT_ROOT}/algorithms/bz2/compress.c"
-        "${PROJECT_ROOT}/algorithms/bz2/decompress.c"
-        "${PROJECT_ROOT}/algorithms/bz2/bzlib.c"
+        "${DEPS_DIR}/bz2/blocksort.c"
+        "${DEPS_DIR}/bz2/huffman.c"
+        "${DEPS_DIR}/bz2/crctable.c"
+        "${DEPS_DIR}/bz2/randtable.c"
+        "${DEPS_DIR}/bz2/compress.c"
+        "${DEPS_DIR}/bz2/decompress.c"
+        "${DEPS_DIR}/bz2/bzlib.c"
       )
       ;;
     lz4)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/lz4/lib"
+        "-I${DEPS_DIR}/lz4/lib"
       )
       algo_sources=(
-        "${PROJECT_ROOT}/algorithms/lz4/lib/lz4.c"
-        "${PROJECT_ROOT}/algorithms/lz4/lib/lz4hc.c"
+        "${DEPS_DIR}/lz4/lib/lz4.c"
+        "${DEPS_DIR}/lz4/lib/lz4hc.c"
       )
       ;;
     xz)
       algo_includes=(
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/api"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/common"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/check"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/lz"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/lzma"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/rangecoder"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/delta"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/liblzma/simple"
-        "-I${PROJECT_ROOT}/algorithms/xz/src/common"
+        "-I${DEPS_DIR}/xz/src/liblzma/api"
+        "-I${DEPS_DIR}/xz/src/liblzma/common"
+        "-I${DEPS_DIR}/xz/src/liblzma/check"
+        "-I${DEPS_DIR}/xz/src/liblzma/lz"
+        "-I${DEPS_DIR}/xz/src/liblzma/lzma"
+        "-I${DEPS_DIR}/xz/src/liblzma/rangecoder"
+        "-I${DEPS_DIR}/xz/src/liblzma/delta"
+        "-I${DEPS_DIR}/xz/src/liblzma/simple"
+        "-I${DEPS_DIR}/xz/src/common"
       )
-      # XZ is complex, uses autotools - may need pre-configuration
-      # For now, we'll handle this separately
+      # XZ/LZMA source files (excluding multi-threaded files that require pthreads)
+      algo_sources=()
+      for f in "${DEPS_DIR}"/xz/src/liblzma/common/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/check/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/lz/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/lzma/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/rangecoder/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/delta/*.c \
+               "${DEPS_DIR}"/xz/src/liblzma/simple/*.c; do
+        # Skip multi-threaded files
+        case "$(basename "$f")" in
+          *_mt.c|outqueue.c|hardware_cputhreads.c)
+            continue
+            ;;
+        esac
+        [ -f "$f" ] && algo_sources+=("$f")
+      done
+      # Add required defines for LZMA (disable threading, configure for WASM)
+      algo_includes+=("-DHAVE_STDINT_H" "-DHAVE_STDBOOL_H" "-DHAVE_INTTYPES_H" "-DMYTHREAD_ENABLED=0" "-DTUKLIB_SYMBOL_PREFIX=lzma_")
       ;;
   esac
 
@@ -213,7 +291,7 @@ build_algorithm() {
     "-I${PROJECT_ROOT}/src"
     "${algo_includes[@]}"
     "${COMMON_FLAGS[@]}"
-    "-s" "EXPORTED_FUNCTIONS=['_malloc','_free','_compress','_decompress','_stream_compress_create','_stream_compress_write','_stream_compress_finish','_stream_compress_destroy','_stream_decompress_create','_stream_decompress_write','_stream_decompress_finish','_stream_decompress_destroy']"
+    "-s" "EXPORTED_FUNCTIONS=['_malloc','_free','_cu_compress','_cu_decompress','_cu_stream_compress_create','_cu_stream_compress_write','_cu_stream_compress_finish','_cu_stream_compress_destroy','_cu_stream_decompress_create','_cu_stream_decompress_write','_cu_stream_decompress_finish','_cu_stream_decompress_destroy']"
     "-o" "$output_js"
   )
 

@@ -93,7 +93,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
         wasm = await getZstdModule();
 
         // Create compression context
-        ctx = wasm.stream_compress_create(level);
+        ctx = wasm.cu_stream_compress_create(level);
         if (ctx === 0) {
           throw CompressError.wasmInitFailed(ALGORITHM);
         }
@@ -101,7 +101,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
         // Allocate output buffer
         outputPtr = wasm.malloc(bufferSize);
         if (outputPtr === 0) {
-          wasm.stream_compress_destroy(ctx);
+          wasm.cu_stream_compress_destroy(ctx);
           throw CompressError.wasmOom(ALGORITHM);
         }
       },
@@ -125,7 +125,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
           let inputOffset = 0;
           while (inputOffset < chunk.length) {
             const remaining = chunk.length - inputOffset;
-            const result = wasm.stream_compress_write(
+            const result = wasm.cu_stream_compress_write(
               ctx,
               inputPtr + inputOffset,
               remaining,
@@ -161,7 +161,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
           // Finish compression and flush remaining data
           let finished = false;
           while (!finished) {
-            const result = wasm.stream_compress_finish(ctx, outputPtr, bufferSize);
+            const result = wasm.cu_stream_compress_finish(ctx, outputPtr, bufferSize);
 
             if (result < 0) {
               throw CompressError.compressionFailed(ALGORITHM, 'failed to finish stream');
@@ -183,7 +183,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
             wasm.free(outputPtr);
           }
           if (ctx !== 0) {
-            wasm.stream_compress_destroy(ctx);
+            wasm.cu_stream_compress_destroy(ctx);
           }
         }
       },
@@ -227,7 +227,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
         wasm = await getZstdModule();
 
         // Create decompression context
-        ctx = wasm.stream_decompress_create();
+        ctx = wasm.cu_stream_decompress_create();
         if (ctx === 0) {
           throw DecompressError.wasmInitFailed(ALGORITHM);
         }
@@ -235,7 +235,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
         // Allocate output buffer
         outputPtr = wasm.malloc(bufferSize);
         if (outputPtr === 0) {
-          wasm.stream_decompress_destroy(ctx);
+          wasm.cu_stream_decompress_destroy(ctx);
           throw DecompressError.wasmOom(ALGORITHM);
         }
       },
@@ -259,7 +259,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
           let inputOffset = 0;
           while (inputOffset < chunk.length) {
             const remaining = chunk.length - inputOffset;
-            const result = wasm.stream_decompress_write(
+            const result = wasm.cu_stream_decompress_write(
               ctx,
               inputPtr + inputOffset,
               remaining,
@@ -292,7 +292,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
 
         try {
           // Check if decompression finished properly
-          const finished = wasm.stream_decompress_finish(ctx);
+          const finished = wasm.cu_stream_decompress_finish(ctx);
           if (finished < 0) {
             throw DecompressError.decompressionFailed(ALGORITHM, 'unexpected end of stream');
           }
@@ -302,7 +302,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
             wasm.free(outputPtr);
           }
           if (ctx !== 0) {
-            wasm.stream_decompress_destroy(ctx);
+            wasm.cu_stream_decompress_destroy(ctx);
           }
         }
       },

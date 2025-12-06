@@ -86,45 +86,45 @@ export interface WasmModule {
   free(ptr: number): void;
 
   // One-shot compression/decompression
-  compress(
+  cu_compress(
     inputPtr: number,
     inputLen: number,
     level: number,
     outputLenPtr: number
   ): number;
-  decompress(
+  cu_decompress(
     inputPtr: number,
     inputLen: number,
     outputLenPtr: number
   ): number;
 
   // Streaming compression
-  stream_compress_create(level: number): number;
-  stream_compress_write(
+  cu_stream_compress_create(level: number): number;
+  cu_stream_compress_write(
     ctx: number,
     inputPtr: number,
     inputLen: number,
     outputPtr: number,
     outputCap: number
   ): number;
-  stream_compress_finish(
+  cu_stream_compress_finish(
     ctx: number,
     outputPtr: number,
     outputCap: number
   ): number;
-  stream_compress_destroy(ctx: number): void;
+  cu_stream_compress_destroy(ctx: number): void;
 
   // Streaming decompression
-  stream_decompress_create(): number;
-  stream_decompress_write(
+  cu_stream_decompress_create(): number;
+  cu_stream_decompress_write(
     ctx: number,
     inputPtr: number,
     inputLen: number,
     outputPtr: number,
     outputCap: number
   ): number;
-  stream_decompress_finish(ctx: number): number;
-  stream_decompress_destroy(ctx: number): void;
+  cu_stream_decompress_finish(ctx: number): number;
+  cu_stream_decompress_destroy(ctx: number): void;
 }
 
 /**

@@ -32,7 +32,7 @@ extern "C" {
  * @param output_len  Pointer to store output length (must be pre-allocated)
  * @return            Pointer to compressed data (caller must free), or nullptr on error
  */
-uint8_t* compress(
+uint8_t* cu_compress(
     const uint8_t* input,
     size_t input_len,
     int level,
@@ -78,7 +78,7 @@ uint8_t* compress(
  * @param output_len  Pointer to store output length (must be pre-allocated)
  * @return            Pointer to decompressed data (caller must free), or nullptr on error
  */
-uint8_t* decompress(
+uint8_t* cu_decompress(
     const uint8_t* input,
     size_t input_len,
     size_t* output_len
@@ -135,7 +135,7 @@ struct CompressStreamContext {
  * @param level  Compression level (ZSTD native: 1-22)
  * @return       Pointer to context, or nullptr on error
  */
-void* stream_compress_create(int level) {
+void* cu_stream_compress_create(int level) {
     ZSTD_CStream* stream = ZSTD_createCStream();
     if (!stream) {
         return nullptr;
@@ -170,7 +170,7 @@ void* stream_compress_create(int level) {
  * @param output_cap  Output buffer capacity
  * @return            Number of bytes written to output, or -1 on error
  */
-int32_t stream_compress_write(
+int32_t cu_stream_compress_write(
     void* ctx,
     const uint8_t* input,
     size_t input_len,
@@ -210,7 +210,7 @@ int32_t stream_compress_write(
  * @return            Number of bytes written to output, or -1 on error.
  *                    Returns 0 when all data has been flushed.
  */
-int32_t stream_compress_finish(
+int32_t cu_stream_compress_finish(
     void* ctx,
     uint8_t* output,
     size_t output_cap
@@ -239,7 +239,7 @@ int32_t stream_compress_finish(
  *
  * @param ctx  Compression context to destroy
  */
-void stream_compress_destroy(void* ctx) {
+void cu_stream_compress_destroy(void* ctx) {
     auto* context = static_cast<CompressStreamContext*>(ctx);
     if (context) {
         if (context->stream) {
@@ -266,7 +266,7 @@ struct DecompressStreamContext {
  *
  * @return  Pointer to context, or nullptr on error
  */
-void* stream_decompress_create() {
+void* cu_stream_decompress_create() {
     ZSTD_DStream* stream = ZSTD_createDStream();
     if (!stream) {
         return nullptr;
@@ -301,7 +301,7 @@ void* stream_decompress_create() {
  * @param output_cap  Output buffer capacity
  * @return            Number of bytes written to output, or -1 on error
  */
-int32_t stream_decompress_write(
+int32_t cu_stream_decompress_write(
     void* ctx,
     const uint8_t* input,
     size_t input_len,
@@ -343,7 +343,7 @@ int32_t stream_decompress_write(
  * @param ctx  Decompression context
  * @return     1 if finished, 0 if not, -1 on error
  */
-int32_t stream_decompress_finish(void* ctx) {
+int32_t cu_stream_decompress_finish(void* ctx) {
     auto* context = static_cast<DecompressStreamContext*>(ctx);
     if (!context) {
         return -1;
@@ -356,7 +356,7 @@ int32_t stream_decompress_finish(void* ctx) {
  *
  * @param ctx  Decompression context to destroy
  */
-void stream_decompress_destroy(void* ctx) {
+void cu_stream_decompress_destroy(void* ctx) {
     auto* context = static_cast<DecompressStreamContext*>(ctx);
     if (context) {
         if (context->stream) {

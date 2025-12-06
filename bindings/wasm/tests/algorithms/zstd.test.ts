@@ -7,8 +7,8 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
-// Tests will be enabled once WASM modules are built
-describe.skip('zstd', () => {
+// Tests are enabled now that WASM modules are built
+describe('zstd', () => {
   describe('compress', () => {
     it('should compress Uint8Array data', async () => {
       const { compress } = await import('../../src/algorithms/zstd/index.js');

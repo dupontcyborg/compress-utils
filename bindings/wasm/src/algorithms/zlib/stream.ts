@@ -37,13 +37,13 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
     super({
       async start() {
         wasm = await getZlibModule();
-        ctx = wasm.stream_compress_create(level);
+        ctx = wasm.cu_stream_compress_create(level);
         if (ctx === 0) {
           throw CompressError.wasmInitFailed(ALGORITHM);
         }
         outputPtr = wasm.malloc(bufferSize);
         if (outputPtr === 0) {
-          wasm.stream_compress_destroy(ctx);
+          wasm.cu_stream_compress_destroy(ctx);
           throw CompressError.wasmOom(ALGORITHM);
         }
       },
@@ -61,7 +61,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
         try {
           copyToWasm(wasm.memory, chunk, inputPtr);
 
-          const result = wasm.stream_compress_write(
+          const result = wasm.cu_stream_compress_write(
             ctx,
             inputPtr,
             chunk.length,
@@ -87,7 +87,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
         try {
           let finished = false;
           while (!finished) {
-            const result = wasm.stream_compress_finish(ctx, outputPtr, bufferSize);
+            const result = wasm.cu_stream_compress_finish(ctx, outputPtr, bufferSize);
             if (result < 0) {
               throw CompressError.compressionFailed(ALGORITHM, 'failed to finish');
             }
@@ -98,7 +98,7 @@ export class CompressStream extends TransformStream<Uint8Array, Uint8Array> {
           }
         } finally {
           if (outputPtr !== 0) wasm.free(outputPtr);
-          if (ctx !== 0) wasm.stream_compress_destroy(ctx);
+          if (ctx !== 0) wasm.cu_stream_compress_destroy(ctx);
         }
       },
     });
@@ -116,13 +116,13 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
     super({
       async start() {
         wasm = await getZlibModule();
-        ctx = wasm.stream_decompress_create();
+        ctx = wasm.cu_stream_decompress_create();
         if (ctx === 0) {
           throw DecompressError.wasmInitFailed(ALGORITHM);
         }
         outputPtr = wasm.malloc(bufferSize);
         if (outputPtr === 0) {
-          wasm.stream_decompress_destroy(ctx);
+          wasm.cu_stream_decompress_destroy(ctx);
           throw DecompressError.wasmOom(ALGORITHM);
         }
       },
@@ -140,7 +140,7 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
         try {
           copyToWasm(wasm.memory, chunk, inputPtr);
 
-          const result = wasm.stream_decompress_write(
+          const result = wasm.cu_stream_decompress_write(
             ctx,
             inputPtr,
             chunk.length,
@@ -164,13 +164,13 @@ export class DecompressStream extends TransformStream<Uint8Array, Uint8Array> {
         if (!wasm || ctx === 0) return;
 
         try {
-          const finished = wasm.stream_decompress_finish(ctx);
+          const finished = wasm.cu_stream_decompress_finish(ctx);
           if (finished < 0) {
             throw DecompressError.decompressionFailed(ALGORITHM, 'unexpected end');
           }
         } finally {
           if (outputPtr !== 0) wasm.free(outputPtr);
-          if (ctx !== 0) wasm.stream_decompress_destroy(ctx);
+          if (ctx !== 0) wasm.cu_stream_decompress_destroy(ctx);
         }
       },
     });

@@ -48,8 +48,9 @@ export {
 // Loader
 export {
   clearModuleCache,
-  decodeBase64,
   getModule,
   isModuleLoaded,
   preloadModule,
+  type EmscriptenModule,
+  type EmscriptenModuleFactory,
 } from './loader.js';

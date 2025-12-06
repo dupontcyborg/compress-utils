@@ -2,6 +2,59 @@ import type { Algorithm, WasmModule } from './types.js';
 import { CompressError } from './errors.js';
 
 /**
+ * Emscripten module factory function type.
+ * This is the default export from Emscripten-generated JS files.
+ */
+export type EmscriptenModuleFactory = (
+  moduleArg?: Record<string, unknown>
+) => Promise<EmscriptenModule>;
+
+/**
+ * Emscripten module instance type.
+ */
+export interface EmscriptenModule {
+  readonly HEAPU8: Uint8Array;
+  readonly wasmMemory: WebAssembly.Memory;
+  _malloc(size: number): number;
+  _free(ptr: number): void;
+  _cu_compress(
+    inputPtr: number,
+    inputLen: number,
+    level: number,
+    outputLenPtr: number
+  ): number;
+  _cu_decompress(
+    inputPtr: number,
+    inputLen: number,
+    outputLenPtr: number
+  ): number;
+  _cu_stream_compress_create(level: number): number;
+  _cu_stream_compress_write(
+    ctx: number,
+    inputPtr: number,
+    inputLen: number,
+    outputPtr: number,
+    outputLen: number
+  ): number;
+  _cu_stream_compress_finish(
+    ctx: number,
+    outputPtr: number,
+    outputLen: number
+  ): number;
+  _cu_stream_compress_destroy(ctx: number): void;
+  _cu_stream_decompress_create(): number;
+  _cu_stream_decompress_write(
+    ctx: number,
+    inputPtr: number,
+    inputLen: number,
+    outputPtr: number,
+    outputLen: number
+  ): number;
+  _cu_stream_decompress_finish(ctx: number): number;
+  _cu_stream_decompress_destroy(ctx: number): void;
+}
+
+/**
  * Cache for initialized WASM modules.
  * Each algorithm's module is initialized once and reused.
  */
@@ -14,67 +67,106 @@ const moduleCache = new Map<Algorithm, WasmModule>();
 const initPromises = new Map<Algorithm, Promise<WasmModule>>();
 
 /**
- * Decodes a base64-encoded string to a Uint8Array.
+ * Wraps an Emscripten module to match our WasmModule interface.
  *
- * @param base64 - Base64-encoded string
- * @returns Decoded bytes
+ * @param emModule - The initialized Emscripten module
+ * @returns A WasmModule interface
  */
-export function decodeBase64(base64: string): Uint8Array {
-  // Check for Node.js Buffer
-  if (typeof Buffer !== 'undefined') {
-    return new Uint8Array(Buffer.from(base64, 'base64'));
-  }
-
-  // Browser environment - use atob
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
+function wrapEmscriptenModule(emModule: EmscriptenModule): WasmModule {
+  return {
+    get memory(): WebAssembly.Memory {
+      return emModule.wasmMemory;
+    },
+    malloc(size: number): number {
+      return emModule._malloc(size);
+    },
+    free(ptr: number): void {
+      emModule._free(ptr);
+    },
+    cu_compress(
+      inputPtr: number,
+      inputLen: number,
+      level: number,
+      outputLenPtr: number
+    ): number {
+      return emModule._cu_compress(inputPtr, inputLen, level, outputLenPtr);
+    },
+    cu_decompress(
+      inputPtr: number,
+      inputLen: number,
+      outputLenPtr: number
+    ): number {
+      return emModule._cu_decompress(inputPtr, inputLen, outputLenPtr);
+    },
+    cu_stream_compress_create(level: number): number {
+      return emModule._cu_stream_compress_create(level);
+    },
+    cu_stream_compress_write(
+      ctx: number,
+      inputPtr: number,
+      inputLen: number,
+      outputPtr: number,
+      outputLen: number
+    ): number {
+      return emModule._cu_stream_compress_write(
+        ctx,
+        inputPtr,
+        inputLen,
+        outputPtr,
+        outputLen
+      );
+    },
+    cu_stream_compress_finish(
+      ctx: number,
+      outputPtr: number,
+      outputLen: number
+    ): number {
+      return emModule._cu_stream_compress_finish(ctx, outputPtr, outputLen);
+    },
+    cu_stream_compress_destroy(ctx: number): void {
+      emModule._cu_stream_compress_destroy(ctx);
+    },
+    cu_stream_decompress_create(): number {
+      return emModule._cu_stream_decompress_create();
+    },
+    cu_stream_decompress_write(
+      ctx: number,
+      inputPtr: number,
+      inputLen: number,
+      outputPtr: number,
+      outputLen: number
+    ): number {
+      return emModule._cu_stream_decompress_write(
+        ctx,
+        inputPtr,
+        inputLen,
+        outputPtr,
+        outputLen
+      );
+    },
+    cu_stream_decompress_finish(ctx: number): number {
+      return emModule._cu_stream_decompress_finish(ctx);
+    },
+    cu_stream_decompress_destroy(ctx: number): void {
+      emModule._cu_stream_decompress_destroy(ctx);
+    },
+  };
 }
 
 /**
- * Instantiates a WASM module from base64-encoded binary.
+ * Instantiates a WASM module from an Emscripten factory.
  *
- * @param wasmBase64 - Base64-encoded WASM binary
+ * @param factory - Emscripten module factory function
  * @param algorithm - Algorithm name for error messages
  * @returns Instantiated WASM module
  */
 async function instantiateModule(
-  wasmBase64: string,
+  factory: EmscriptenModuleFactory,
   algorithm: Algorithm
 ): Promise<WasmModule> {
   try {
-    const wasmBytes = decodeBase64(wasmBase64);
-
-    // Use streaming instantiation if available (better performance)
-    let instance: WebAssembly.Instance;
-
-    // Use non-streaming instantiation (simpler and works everywhere)
-    // Note: instantiateStreaming requires a fetch Response with proper MIME type
-    const result = await WebAssembly.instantiate(
-      wasmBytes.buffer as ArrayBuffer
-    );
-    instance = (result as WebAssembly.WebAssemblyInstantiatedSource).instance;
-
-    // Validate that all required exports exist
-    const exports = instance.exports as Record<string, unknown>;
-    const required = [
-      'memory',
-      'malloc',
-      'free',
-      'compress',
-      'decompress',
-    ];
-
-    for (const name of required) {
-      if (!(name in exports)) {
-        throw new Error(`Missing required WASM export: ${name}`);
-      }
-    }
-
-    return exports as unknown as WasmModule;
+    const emModule = await factory();
+    return wrapEmscriptenModule(emModule);
   } catch (error) {
     throw CompressError.wasmInitFailed(
       algorithm,
@@ -87,12 +179,12 @@ async function instantiateModule(
  * Gets or initializes a WASM module for the given algorithm.
  *
  * @param algorithm - The compression algorithm
- * @param wasmBase64 - Base64-encoded WASM binary
+ * @param factory - Emscripten module factory function
  * @returns The initialized WASM module
  */
 export async function getModule(
   algorithm: Algorithm,
-  wasmBase64: string
+  factory: EmscriptenModuleFactory
 ): Promise<WasmModule> {
   // Check cache first
   const cached = moduleCache.get(algorithm);
@@ -107,7 +199,7 @@ export async function getModule(
   }
 
   // Start initialization
-  initPromise = instantiateModule(wasmBase64, algorithm);
+  initPromise = instantiateModule(factory, algorithm);
   initPromises.set(algorithm, initPromise);
 
   try {
@@ -135,13 +227,13 @@ export function isModuleLoaded(algorithm: Algorithm): boolean {
  * This is useful to avoid first-call latency.
  *
  * @param algorithm - The compression algorithm
- * @param wasmBase64 - Base64-encoded WASM binary
+ * @param factory - Emscripten module factory function
  */
 export async function preloadModule(
   algorithm: Algorithm,
-  wasmBase64: string
+  factory: EmscriptenModuleFactory
 ): Promise<void> {
-  await getModule(algorithm, wasmBase64);
+  await getModule(algorithm, factory);
 }
 
 /**

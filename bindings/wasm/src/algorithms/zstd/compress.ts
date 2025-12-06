@@ -82,7 +82,7 @@ export async function compress(
     copyToWasm(wasm.memory, input, inputPtr);
 
     // Call compression function
-    const outputPtr = wasm.compress(inputPtr, input.length, level, outputLenPtr);
+    const outputPtr = wasm.cu_compress(inputPtr, input.length, level, outputLenPtr);
 
     if (outputPtr === 0) {
       throw CompressError.compressionFailed(ALGORITHM);
@@ -155,7 +155,7 @@ export async function decompress(data: DecompressInput): Promise<Uint8Array> {
     copyToWasm(wasm.memory, input, inputPtr);
 
     // Call decompression function
-    const outputPtr = wasm.decompress(inputPtr, input.length, outputLenPtr);
+    const outputPtr = wasm.cu_decompress(inputPtr, input.length, outputLenPtr);
 
     if (outputPtr === 0) {
       throw DecompressError.decompressionFailed(ALGORITHM);
@@ -240,7 +240,7 @@ async function compressEmpty(): Promise<Uint8Array> {
     }
 
     try {
-      const outputPtr = wasm.compress(dummyPtr, 0, 3, outputLenPtr);
+      const outputPtr = wasm.cu_compress(dummyPtr, 0, 3, outputLenPtr);
       if (outputPtr === 0) {
         throw CompressError.compressionFailed(ALGORITHM, 'empty input');
       }

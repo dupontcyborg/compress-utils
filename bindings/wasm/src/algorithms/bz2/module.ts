@@ -6,20 +6,22 @@ import {
   getModule,
   isModuleLoaded,
   preloadModule,
+  type EmscriptenModuleFactory,
   type WasmModule,
 } from '../../core/index.js';
 
-let wasmBase64Cache: string | null = null;
+let factoryCache: EmscriptenModuleFactory | null = null;
 
-async function loadWasmBase64(): Promise<string> {
-  if (wasmBase64Cache !== null) {
-    return wasmBase64Cache;
+async function loadFactory(): Promise<EmscriptenModuleFactory> {
+  if (factoryCache !== null) {
+    return factoryCache;
   }
 
   try {
-    const module = await import('./wasm.generated.js') as { WASM_BASE64: string };
-    wasmBase64Cache = module.WASM_BASE64;
-    return wasmBase64Cache;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const module = (await import('./wasm.generated.js')) as any;
+    factoryCache = module.default as EmscriptenModuleFactory;
+    return factoryCache;
   } catch {
     throw new Error(
       'Bzip2 WASM module not found. Run the build script first: npm run build:wasm'
@@ -28,8 +30,8 @@ async function loadWasmBase64(): Promise<string> {
 }
 
 export async function getBz2Module(): Promise<WasmModule> {
-  const wasmBase64 = await loadWasmBase64();
-  return getModule('bz2', wasmBase64);
+  const factory = await loadFactory();
+  return getModule('bz2', factory);
 }
 
 export function isBz2ModuleLoaded(): boolean {
@@ -37,6 +39,6 @@ export function isBz2ModuleLoaded(): boolean {
 }
 
 export async function preload(): Promise<void> {
-  const wasmBase64 = await loadWasmBase64();
-  await preloadModule('bz2', wasmBase64);
+  const factory = await loadFactory();
+  await preloadModule('bz2', factory);
 }
