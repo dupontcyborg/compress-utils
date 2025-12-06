@@ -1,0 +1,79 @@
+{
+  "name": "compress-utils",
+  "version": "0.1.0",
+  "description": "High-performance compression library with WASM backends - supports zstd, brotli, zlib, bz2, lz4, xz",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "exports": {
+    "./zstd": {
+      "types": "./dist/algorithms/zstd/index.d.ts",
+      "import": "./dist/algorithms/zstd/index.js"
+    },
+    "./brotli": {
+      "types": "./dist/algorithms/brotli/index.d.ts",
+      "import": "./dist/algorithms/brotli/index.js"
+    },
+    "./zlib": {
+      "types": "./dist/algorithms/zlib/index.d.ts",
+      "import": "./dist/algorithms/zlib/index.js"
+    },
+    "./bz2": {
+      "types": "./dist/algorithms/bz2/index.d.ts",
+      "import": "./dist/algorithms/bz2/index.js"
+    },
+    "./lz4": {
+      "types": "./dist/algorithms/lz4/index.d.ts",
+      "import": "./dist/algorithms/lz4/index.js"
+    },
+    "./xz": {
+      "types": "./dist/algorithms/xz/index.d.ts",
+      "import": "./dist/algorithms/xz/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:wasm": "./scripts/build-wasm.sh",
+    "build:ts": "tsc -p tsconfig.build.json",
+    "build": "npm run build:wasm && npm run build:ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist wasm-build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "keywords": [
+    "compression",
+    "decompression",
+    "zstd",
+    "zstandard",
+    "brotli",
+    "zlib",
+    "gzip",
+    "bz2",
+    "bzip2",
+    "lz4",
+    "xz",
+    "lzma",
+    "wasm",
+    "webassembly"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dupontcyborg/compress-utils"
+  },
+  "bugs": {
+    "url": "https://github.com/dupontcyborg/compress-utils/issues"
+  }
+}

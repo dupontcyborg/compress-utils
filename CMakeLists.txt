@@ -85,6 +85,7 @@ option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
 # Options to build bindings
 option(BUILD_C_BINDINGS "Build C bindings" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
+option(BUILD_WASM_BINDINGS "Build WebAssembly bindings (requires Emscripten)" OFF)
 
 ######### INCLUDE DIRECTORIES #########
 
@@ -384,4 +385,11 @@ if (BUILD_PYTHON_BINDINGS)
     message(STATUS "Building Python binding...")
     add_subdirectory(bindings/python)
     add_dependencies(compress_utils_py compress_utils)
+endif()
+
+# WASM Bindings (built separately via Emscripten)
+if (BUILD_WASM_BINDINGS)
+    message(STATUS "WASM bindings enabled. Use 'npm run build:wasm' in bindings/wasm/ to build.")
+    message(STATUS "  Note: WASM bindings are built with Emscripten, not CMake.")
+    message(STATUS "  See bindings/wasm/README.md for build instructions.")
 endif()
