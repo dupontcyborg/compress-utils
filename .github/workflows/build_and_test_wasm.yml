@@ -1,0 +1,156 @@
+name: Build, Test and Publish WASM/JS Package
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - "v*"
+
+jobs:
+  build_and_test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: ["18", "20", "22"]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: "3.1.50"
+
+      - name: Verify Emscripten
+        run: emcc --version
+
+      - name: Install Dependencies
+        working-directory: bindings/wasm
+        run: npm ci
+
+      - name: Build WASM Modules
+        working-directory: bindings/wasm
+        run: |
+          chmod +x scripts/build-wasm.sh
+          ./scripts/build-wasm.sh
+
+      - name: Build TypeScript
+        working-directory: bindings/wasm
+        run: npm run build:ts
+
+      - name: Copy WASM to dist
+        working-directory: bindings/wasm
+        run: |
+          for algo in zstd brotli zlib bz2 lz4 xz; do
+            cp src/algorithms/$algo/wasm.generated.js dist/algorithms/$algo/
+          done
+
+      - name: Run Node.js Tests
+        working-directory: bindings/wasm
+        run: npm test
+
+      - name: Install Playwright Browsers
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
+        working-directory: bindings/wasm
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Run Browser Tests
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
+        working-directory: bindings/wasm
+        run: npm run test:browser
+
+      - name: Upload Build Artifacts
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-dist
+          path: bindings/wasm/dist/
+          retention-days: 5
+
+  publish_to_npm:
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: "3.1.50"
+
+      - name: Install Dependencies
+        working-directory: bindings/wasm
+        run: npm ci
+
+      - name: Build WASM Modules
+        working-directory: bindings/wasm
+        run: |
+          chmod +x scripts/build-wasm.sh
+          ./scripts/build-wasm.sh
+
+      - name: Build TypeScript
+        working-directory: bindings/wasm
+        run: npm run build:ts
+
+      - name: Copy WASM to dist
+        working-directory: bindings/wasm
+        run: |
+          for algo in zstd brotli zlib bz2 lz4 xz; do
+            cp src/algorithms/$algo/wasm.generated.js dist/algorithms/$algo/
+          done
+
+      - name: Set Version from Tag
+        working-directory: bindings/wasm
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Setting version to $VERSION"
+          npm version $VERSION --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        working-directory: bindings/wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      - name: Create Package Archive
+        working-directory: bindings/wasm
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npm pack
+          mv *.tgz compress-utils-wasm-${VERSION}.tgz
+          echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            bindings/wasm/compress-utils-wasm-${{ env.RELEASE_VERSION }}.tgz
+          generate_release_notes: false
+          fail_on_unmatched_files: false
+          draft: false
+          tag_name: ${{ github.ref_name }}

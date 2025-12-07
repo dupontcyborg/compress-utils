@@ -6,7 +6,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build_and_test:
+  build_and_test_native:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -43,3 +43,67 @@ jobs:
       run: |
         cd build
         ctest --output-on-failure -C Release
+
+  build_and_test_wasm:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: ["20"]
+      fail-fast: false
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        clean: true
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: "3.1.50"
+
+    - name: Verify Emscripten
+      run: emcc --version
+
+    - name: Install Dependencies
+      working-directory: bindings/wasm
+      run: npm ci
+
+    - name: Build WASM Modules
+      working-directory: bindings/wasm
+      run: |
+        chmod +x scripts/build-wasm.sh
+        ./scripts/build-wasm.sh
+
+    - name: Build TypeScript
+      working-directory: bindings/wasm
+      run: npm run build:ts
+
+    - name: Copy WASM to dist
+      working-directory: bindings/wasm
+      shell: bash
+      run: |
+        for algo in zstd brotli zlib bz2 lz4 xz; do
+          cp src/algorithms/$algo/wasm.generated.js dist/algorithms/$algo/
+        done
+
+    - name: Run Node.js Tests
+      working-directory: bindings/wasm
+      run: npm test
+
+    - name: Install Playwright Browsers
+      if: matrix.os == 'ubuntu-latest'
+      working-directory: bindings/wasm
+      run: npx playwright install --with-deps chromium
+
+    - name: Run Browser Tests
+      if: matrix.os == 'ubuntu-latest'
+      working-directory: bindings/wasm
+      run: npm run test:browser

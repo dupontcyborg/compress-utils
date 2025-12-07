@@ -17,7 +17,7 @@ const ALGORITHMS = ['zstd', 'brotli', 'zlib', 'bz2', 'lz4', 'xz'] as const;
 
 test.describe('Browser Compression Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/tests/browser/fixtures/');
   });
 
   test('should load and execute WASM compression', async ({ page }) => {
