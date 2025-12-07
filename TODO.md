@@ -66,6 +66,7 @@
   - [X] zlib: 1-10 → 1-9 (capped at ZLIB_MAX_LEVEL=9)
   - [X] XZ: 1-10 → 0-9 (via MapLevelZeroBased)
 - [ ] **Add API reference documentation** (Doxygen or similar)
+- [ ] **Improve Python README**
 - [ ] **Add CHANGELOG.md** for tracking releases
 
 ## New Features

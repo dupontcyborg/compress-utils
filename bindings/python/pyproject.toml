@@ -14,7 +14,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Nicolas Dupont", email = "nicolas@dupontcyborg.com"}
 ]
-keywords = ["compression", "zlib", "brotli", "zstd", "xz", "lzma", "utility", "performance"]
+keywords = ["compression", "zlib", "brotli", "zstd", "zstandard", "xz", "lzma", "bzip2", "bz2", "lz4", "utility", "performance"]
 classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
