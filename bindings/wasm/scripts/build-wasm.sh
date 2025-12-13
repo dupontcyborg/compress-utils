@@ -110,12 +110,12 @@ mkdir -p "$CMAKE_BUILD_DIR"
 echo -e "${BLUE}Configuring with CMake...${NC}"
 cd "$CMAKE_BUILD_DIR"
 
-CMAKE_ARGS=()
+CMAKE_ARGS=""
 if [ "$DEBUG" = true ]; then
-  CMAKE_ARGS+=("-DWASM_DEBUG=ON")
+  CMAKE_ARGS="-DWASM_DEBUG=ON"
 fi
 
-emcmake cmake "${CMAKE_ARGS[@]}" ..
+emcmake cmake $CMAKE_ARGS ..
 
 # Build
 echo ""
