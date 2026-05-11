@@ -1,4 +1,12 @@
-## Main CMake for `compress-utils` project
+## Main CMake for `compress-utils` project.
+##
+## C-as-core. C++ binding, Python binding, and WASM binding all consume
+## the C ABI declared in include/compress_utils.h.
+##
+## NOTE: this is a Phase 1 in-progress state. Only ZSTD is fully migrated
+## to the C core. Other algorithms (zlib, brotli, bz2, lz4, xz) will be
+## enabled as they get ported. Until then the per-algorithm options
+## default OFF for the un-ported algorithms.
 
 cmake_minimum_required(VERSION 3.17)
 
@@ -9,379 +17,256 @@ set(DEFAULT_VERSION "0.1.0")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitVersion.cmake)
 get_version_from_git(PROJECT_VERSION_FROM_GIT ${DEFAULT_VERSION})
 
-project(compress-utils VERSION ${PROJECT_VERSION_FROM_GIT} LANGUAGES CXX C)
+project(compress-utils
+    VERSION ${PROJECT_VERSION_FROM_GIT}
+    LANGUAGES C CXX
+)
 
 ######### PROJECT SETUP #########
 
-# Set C++ standard
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+# C++ stays available for tests and (eventually) the C++ binding.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set default build type if not specified
-if (NOT CMAKE_BUILD_TYPE)
+# Hidden visibility by default — only CU_API symbols are exported.
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
+# Build everything position-independent. The static archive
+# (compress_utils_static) gets linked into the Python pybind11 module —
+# itself a shared library — and on Linux the linker rejects TLS access
+# patterns (R_X86_64_TPOFF32 against g_last_error) from non-PIC code
+# embedded into a shared object. macOS Mach-O is permissive here, which
+# is why this only surfaces on Linux CI.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Generate compile_commands.json for clangd / IDEs / fuzzers.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-# Set macOS architectures for Universal build
-# if(APPLE)
-#     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for macOS" FORCE)
-# endif()
-# TODO - re-enable this later
-
-# Retrieve the environment variable and assign it to a CMake variable
 if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
-    set(CMAKE_PARALLEL_LEVEL $ENV{CMAKE_BUILD_PARALLEL_LEVEL})
-else()
-    set(CMAKE_PARALLEL_LEVEL "Not set")
+    message(STATUS "CMAKE_BUILD_PARALLEL_LEVEL: $ENV{CMAKE_BUILD_PARALLEL_LEVEL}")
 endif()
-
-# Print CMAKE_BUILD_PARALLEL_LEVEL environment variable
-message(STATUS "CMAKE_BUILD_PARALLEL_LEVEL: ${CMAKE_PARALLEL_LEVEL}")
 
 ######### COMPILER FLAGS #########
 
-# Add LTO and Dead Code Elimination flags based on the compiler
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(LTO_FLAGS "-flto -ffunction-sections -fdata-sections")
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set(OPT_FLAGS "-flto -ffunction-sections -fdata-sections")
     if(APPLE)
-        set(LINKER_FLAGS "-Wl,-dead_strip")  # macOS specific
+        set(LINKER_FLAGS "-Wl,-dead_strip")
     else()
-        set(LINKER_FLAGS "-Wl,--gc-sections")  # Linux/Unix
+        set(LINKER_FLAGS "-Wl,--gc-sections")
     endif()
 elseif(MSVC)
-    set(LTO_FLAGS "/GL")
+    set(OPT_FLAGS "/GL")
     set(LINKER_FLAGS "/OPT:REF")
 endif()
 
-# Linker Flags
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE    "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${LINKER_FLAGS}")
 
-# Set C and C++ Optimization Flags
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} -O3")
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_C_FLAGS_RELEASE   "${CMAKE_C_FLAGS_RELEASE} ${OPT_FLAGS} -O3")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${OPT_FLAGS} -O3")
 elseif(MSVC)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${LTO_FLAGS} /O2")
+    set(CMAKE_C_FLAGS_RELEASE   "${CMAKE_C_FLAGS_RELEASE} ${OPT_FLAGS} /O2")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${OPT_FLAGS} /O2")
 endif()
 
-# Ensure the dynamic runtime library is used (/MD)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 ######### OPTIONS #########
 
-# Option to enable/disable tests
 option(ENABLE_TESTS "Enable building tests" ON)
+option(ENABLE_FUZZ  "Enable libFuzzer harnesses (clang only)" OFF)
 
-# Options to include algorithms (set through build.sh)
+# Per-algorithm inclusion. All six have been migrated to the C core in
+# Phase 1; default to ON. Disable individually for slimmer builds.
+option(INCLUDE_ZSTD   "Include Zstd compression algorithm"   ON)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
-option(INCLUDE_BZ2 "Include bzip2 compression algorithm" ON)
-option(INCLUDE_LZ4 "Include LZ4 compression algorithm" ON)
-option(INCLUDE_XZ "Include XZ/LZMA compression algorithm" ON)
-option(INCLUDE_ZSTD "Include Zstd compression algorithm" ON)
-option(INCLUDE_ZLIB "Include zlib compression algorithm" ON)
+option(INCLUDE_ZLIB   "Include zlib compression algorithm"   ON)
+option(INCLUDE_BZ2    "Include bzip2 compression algorithm"  ON)
+option(INCLUDE_LZ4    "Include LZ4 compression algorithm"    ON)
+option(INCLUDE_XZ     "Include XZ/LZMA compression algorithm" ON)
 
-# Options to build bindings
-option(BUILD_C_BINDINGS "Build C bindings" ON)
-option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
-
-######### INCLUDE DIRECTORIES #########
-
-# Include main src & algorithms' directories
-include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(${CMAKE_SOURCE_DIR}/algorithms/dist/include)
-include_directories(${CMAKE_CURRENT_BINARY_DIR})  # For generated algorithms.hpp
-set(ALGORITHMS_LIB_DIR ${CMAKE_SOURCE_DIR}/algorithms/dist/lib)
-
-######### SOURCE FILES #########
-
-# Get all the files from the src/ directory & remove algorithm files for now
-file(GLOB_RECURSE ALL_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/*.hpp")
-file(GLOB_RECURSE ALGO_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/*.hpp")
-list(REMOVE_ITEM ALL_SOURCE_FILES ${ALGO_SOURCE_FILES})
-
-# Create library targets (shared & static)
-add_library(compress_utils SHARED)
-add_library(compress_utils_static STATIC)
-
-######### ALGORITHMS #########
-
-# Check if no algorithms are included, and throw an error
-if (NOT INCLUDE_BROTLI AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ AND NOT INCLUDE_ZSTD AND NOT INCLUDE_ZLIB)
-    message(FATAL_ERROR "No algorithms included. Please include at least one algorithm.")
+if(NOT INCLUDE_ZSTD AND NOT INCLUDE_BROTLI AND NOT INCLUDE_ZLIB
+        AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ)
+    message(FATAL_ERROR "No algorithms included. Enable at least one INCLUDE_<ALGO>.")
 endif()
 
-# Dependency lists
-set(ALGORITHMS_ENUM "")
-set(TARGET_LIBS "")
-set(TARGET_DEFINITIONS "")
+######### LIBRARY TARGETS #########
 
-# Brotli Algorithm
-if (INCLUDE_BROTLI)
-    message(STATUS "Including Brotli algorithm")
-    # Add the subdirectory for Brotli which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/brotli)
-    # Ensure that Brotli is cloned before compress_utils
-    add_dependencies(compress_utils brotli_external)
-    add_dependencies(compress_utils_static brotli_external)
-    # Ensure that Brotli is built before compress_utils
-    add_dependencies(compress_utils brotlienc)
-    add_dependencies(compress_utils_static brotlienc)
-    add_dependencies(compress_utils brotlidec)
-    add_dependencies(compress_utils_static brotlidec)
-    add_dependencies(compress_utils brotlicommon)
-    add_dependencies(compress_utils_static brotlicommon)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS brotlienc brotlidec brotlicommon)
-    # Define preprocessor directive to include Brotli in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_BROTLI)
-    # Add source files for Brotli
-    file(GLOB BROTLI_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/brotli/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${BROTLI_SOURCE_FILES})
-    # Add Brotli to the enum
-    list(APPEND ALGORITHMS_ENUM "BROTLI")
-endif()
+# Core sources: ABI dispatcher + algorithm registry. Per-algorithm sources
+# get appended below by their respective subdir blocks.
+set(CU_CORE_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/compress_utils.c
+    ${CMAKE_SOURCE_DIR}/src/registry.c
+)
 
-# bzip2 Algorithm
-if (INCLUDE_BZ2)
-    message(STATUS "Including bzip2 algorithm")
-    # Add the subdirectory for bz2 which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/bz2)
-    # Ensure that bz2 is cloned before compress_utils
-    add_dependencies(compress_utils bz2_external)
-    add_dependencies(compress_utils_static bz2_external)
-    # Ensure that bz2 is built before compress_utils
-    add_dependencies(compress_utils bz2_library)
-    add_dependencies(compress_utils_static bz2_library)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS bz2_library)
-    # Define preprocessor directive to include bz2 in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_BZ2)
-    # Add source files for bz2
-    file(GLOB BZ2_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/bz2/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/bz2/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${BZ2_SOURCE_FILES})
-    # Add BZ2 to the enum
-    list(APPEND ALGORITHMS_ENUM "BZ2")
-endif()
+set(CU_TARGET_DEFINITIONS "")
+set(CU_TARGET_LIBS "")
 
-# LZ4 Algorithm
-if (INCLUDE_LZ4)
-    message(STATUS "Including LZ4 algorithm")
-    # Add the subdirectory for LZ4 which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/lz4)
-    # Ensure that LZ4 is cloned before compress_utils
-    add_dependencies(compress_utils lz4_external)
-    add_dependencies(compress_utils_static lz4_external)
-    # Ensure that LZ4 is built before compress_utils
-    add_dependencies(compress_utils lz4_library)
-    add_dependencies(compress_utils_static lz4_library)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS lz4_library)
-    # Define preprocessor directive to include LZ4 in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_LZ4)
-    # Add source files for LZ4
-    file(GLOB LZ4_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/lz4/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/lz4/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${LZ4_SOURCE_FILES})
-    # Add LZ4 to the enum
-    list(APPEND ALGORITHMS_ENUM "LZ4")
-endif()
-
-# XZ/LZMA Algorithm
-if (INCLUDE_XZ)
-    message(STATUS "Including XZ/LZMA algorithm")
-    # Add the subdirectory for XZ/LZMA which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/xz)
-    # Ensure that XZ is cloned before compress_utils
-    add_dependencies(compress_utils xz_external)
-    add_dependencies(compress_utils_static xz_external)
-    # Ensure that xz is built before compress_utils
-    add_dependencies(compress_utils xz_library)
-    add_dependencies(compress_utils_static xz_library)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS xz_library)
-    # Define preprocessor directive to include XZ/LZMA in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
-    # Add source files for XZ
-    file(GLOB XZ_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/xz/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${XZ_SOURCE_FILES})
-    # Add XZ & LZMA to the enum
-    list(APPEND ALGORITHMS_ENUM "LZMA")
-    list(APPEND ALGORITHMS_ENUM "XZ")
-endif()
-
-# zlib Algorithm
-if (INCLUDE_ZLIB)
-    message(STATUS "Including zlib algorithm")
-    # Add the subdirectory for zlib which contains its own CMakeLists.txt
-    add_subdirectory(algorithms/zlib)
-    # Ensure that zlib is cloned before compress_utils
-    add_dependencies(compress_utils zlib_external)
-    add_dependencies(compress_utils_static zlib_external)
-    # Ensure that zlib is built before compress_utils
-    add_dependencies(compress_utils zlib_library)
-    add_dependencies(compress_utils_static zlib_library)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS zlib_library)
-    # Define preprocessor directive to include zlib in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_ZLIB)
-    # Add source files for zlib
-    file(GLOB ZLIB_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zlib/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${ZLIB_SOURCE_FILES})
-    # Add zlib to the enum
-    list(APPEND ALGORITHMS_ENUM "ZLIB")
-endif()
-
-# Zstd Algorithm
-if (INCLUDE_ZSTD)
-    message(STATUS "Including Zstd algorithm")
-    # Add the subdirectory for zstd which contains its own CMakeLists.txt
+# Algorithm fetch + per-algorithm vtable source. Each enabled algorithm
+# pulls in the upstream library (still via the existing algorithms/<algo>/
+# CMakeLists.txt that uses ExternalProject_Add) and adds its .c file to
+# the core sources.
+if(INCLUDE_ZSTD)
+    message(STATUS "Including ZSTD")
     add_subdirectory(algorithms/zstd)
-    # Ensure that Zstd is cloned before compress_utils
-    add_dependencies(compress_utils zstd_external)
-    add_dependencies(compress_utils_static zstd_external)
-    # Ensure that Zstd is built before compress_utils
-    add_dependencies(compress_utils zstd_library)
-    add_dependencies(compress_utils_static zstd_library)
-    # Ensure that the algorithm-specific libraries are linked to compress_utils
-    list(APPEND TARGET_LIBS zstd_library)
-    # Define preprocessor directive to include Zstd in the code
-    list(APPEND TARGET_DEFINITIONS INCLUDE_ZSTD)
-    # Add source files for Zstd
-    file(GLOB ZSTD_SOURCE_FILES "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.cpp" "${CMAKE_SOURCE_DIR}/src/algorithms/zstd/*.hpp")
-    list(APPEND ALL_SOURCE_FILES ${ZSTD_SOURCE_FILES})
-    # Add Zstd to the enum
-    list(APPEND ALGORITHMS_ENUM "ZSTD")
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/zstd/zstd.c)
+    list(APPEND CU_TARGET_LIBS zstd_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_ZSTD)
+endif()
+if(INCLUDE_BROTLI)
+    message(STATUS "Including Brotli")
+    add_subdirectory(algorithms/brotli)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/brotli/brotli.c)
+    list(APPEND CU_TARGET_LIBS brotlienc brotlidec brotlicommon)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_BROTLI)
+endif()
+if(INCLUDE_ZLIB)
+    message(STATUS "Including zlib")
+    add_subdirectory(algorithms/zlib)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/zlib/zlib.c)
+    list(APPEND CU_TARGET_LIBS zlib_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_ZLIB)
+endif()
+if(INCLUDE_BZ2)
+    message(STATUS "Including bzip2")
+    add_subdirectory(algorithms/bz2)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/bz2/bz2.c)
+    list(APPEND CU_TARGET_LIBS bz2_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_BZ2)
+endif()
+if(INCLUDE_LZ4)
+    message(STATUS "Including LZ4")
+    add_subdirectory(algorithms/lz4)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/lz4/lz4.c)
+    list(APPEND CU_TARGET_LIBS lz4_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_LZ4)
+endif()
+if(INCLUDE_XZ)
+    message(STATUS "Including XZ")
+    add_subdirectory(algorithms/xz)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/xz/xz.c)
+    list(APPEND CU_TARGET_LIBS xz_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
 endif()
 
-# Add Windows-specific dependencies
+# Platform link deps.
 if(WIN32)
-    list(APPEND TARGET_LIBS "legacy_stdio_definitions")
-    
-    # Add threading support
     find_package(Threads REQUIRED)
-    list(APPEND TARGET_LIBS Threads::Threads)
-    
-    # Add math library
-    list(APPEND TARGET_LIBS "msvcrt")
+    list(APPEND CU_TARGET_LIBS "legacy_stdio_definitions" Threads::Threads "msvcrt")
+else()
+    # Linux glibc puts log2/pow/etc. in libm, separate from libc. macOS libSystem
+    # bundles them so this is a no-op there. Brotli/zlib/lz4/xz can pull from libm.
+    list(APPEND CU_TARGET_LIBS m)
 endif()
 
-# Apply the libraries and definitions to both libraries
-target_link_libraries(compress_utils PRIVATE ${TARGET_LIBS})
-target_link_libraries(compress_utils_static PRIVATE ${TARGET_LIBS})
-target_compile_definitions(compress_utils PRIVATE ${TARGET_DEFINITIONS})
-target_compile_definitions(compress_utils_static PRIVATE ${TARGET_DEFINITIONS})
-add_compile_definitions(${TARGET_DEFINITIONS})
+# ---------------------------------------------------------------------------
+# Library targets.
+#
+# Layout: one OBJECT library (compress_utils_obj) compiles the source files
+# once; the public SHARED library and the internal consumers (Python
+# pybind11 module, C/fuzz tests) all consume those objects. There is no
+# public static library:
+#
+#   - End users who want a shared lib: use `compress_utils`.
+#   - End users who want a self-contained executable: build with
+#     `-DBUILD_SHARED_LIBS=OFF` (CMake-native) or consume the OBJECT lib
+#     directly from a sibling CMake project.
+#   - The previous public `compress_utils_static.a` was only ~146 KB of
+#     wrapper code — useless without manually linking 6+ algo .a files.
+#     Removed.
+#
+# The OBJECT library is compiled with CU_BUILD_SHARED so its symbols
+# carry dllexport/default visibility. They get exported by whichever
+# shared lib they end up in (compress_utils.dll or compress_utils_py.pyd).
+# ---------------------------------------------------------------------------
 
-# TODO: for static lib, try `whole-archive` options so it includes all the symbols BUT also while supporting LTO/DCE
+add_library(compress_utils_obj OBJECT ${CU_CORE_SOURCES})
+target_include_directories(compress_utils_obj
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/algorithms/dist/include
+)
+target_compile_definitions(compress_utils_obj PRIVATE
+    ${CU_TARGET_DEFINITIONS}
+    CU_BUILD_SHARED
+)
+# INTERFACE link deps propagate to consumers (the shared lib, Python
+# module, tests) so they all pick up the algorithm static archives.
+target_link_libraries(compress_utils_obj INTERFACE ${CU_TARGET_LIBS})
 
-######### MAIN LIBRARY #########
+add_library(compress_utils SHARED $<TARGET_OBJECTS:compress_utils_obj>)
+target_include_directories(compress_utils
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(compress_utils PRIVATE ${CU_TARGET_LIBS})
 
-# Add source files to the shared and static libraries
-target_sources(compress_utils PRIVATE ${ALL_SOURCE_FILES})
-target_sources(compress_utils_static PRIVATE ${ALL_SOURCE_FILES})
-
-# Define symbol visibility for shared and static libraries
-target_compile_definitions(compress_utils PRIVATE COMPRESS_UTILS_EXPORT_SHARED)
-target_compile_definitions(compress_utils_static PRIVATE COMPRESS_UTILS_EXPORT_STATIC)
+# Algorithm subprojects use ExternalProject_Add and need the fetch to
+# complete before our sources compile.
+if(INCLUDE_ZSTD)
+    add_dependencies(compress_utils_obj zstd_external zstd_library)
+endif()
+if(INCLUDE_BROTLI)
+    add_dependencies(compress_utils_obj brotli_external brotlienc brotlidec brotlicommon)
+endif()
+if(INCLUDE_ZLIB)
+    add_dependencies(compress_utils_obj zlib_external zlib_library)
+endif()
+if(INCLUDE_BZ2)
+    add_dependencies(compress_utils_obj bz2_external bz2_library)
+endif()
+if(INCLUDE_LZ4)
+    add_dependencies(compress_utils_obj lz4_external lz4_library)
+endif()
+if(INCLUDE_XZ)
+    add_dependencies(compress_utils_obj xz_external xz_library)
+endif()
 
 ######### INSTALL #########
 
-# Define an option to detect when we are in a scikit-build environment
 option(SCIKIT_BUILD "Build within scikit-build environment" OFF)
 
-# Configure the header with enum
-string(JOIN ",\n    " ALGORITHM_LIST ${ALGORITHMS_ENUM})
-set(ALGORITHM_LIST "    ${ALGORITHM_LIST}")
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.hpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
-    @ONLY
-)
+set(CU_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/c")
 
-# Configure the version header
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/version.hpp.in
-    ${CMAKE_CURRENT_BINARY_DIR}/version.hpp
-    @ONLY
-)
-
-# Set the output directory for the library and header files
-set(CPP_SHARED_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/shared")
-set(CPP_STATIC_DIR "${CMAKE_SOURCE_DIR}/dist/cpp/static")
-
-if (NOT SCIKIT_BUILD)
-
-    # Install libraries (shared and static)
+if(NOT SCIKIT_BUILD)
     install(TARGETS compress_utils
-        LIBRARY DESTINATION ${CPP_SHARED_DIR}/lib
-        ARCHIVE DESTINATION ${CPP_SHARED_DIR}/lib
-        RUNTIME DESTINATION ${CPP_SHARED_DIR}/lib
+        LIBRARY DESTINATION ${CU_DIST_DIR}/lib
+        ARCHIVE DESTINATION ${CU_DIST_DIR}/lib
+        RUNTIME DESTINATION ${CU_DIST_DIR}/bin
     )
-    install(TARGETS compress_utils_static
-        LIBRARY DESTINATION ${CPP_STATIC_DIR}/lib
-        ARCHIVE DESTINATION ${CPP_STATIC_DIR}/lib
-    )
-
-    # Install the headers for the shared and static libraries
-    file(GLOB HEADERS ${CMAKE_SOURCE_DIR}/src/compress_utils.hpp
-                ${CMAKE_SOURCE_DIR}/src/compress_utils_func.hpp
-                ${CMAKE_SOURCE_DIR}/src/compress_utils_stream.hpp
-                ${CMAKE_CURRENT_BINARY_DIR}/algorithms.hpp
-                ${CMAKE_CURRENT_BINARY_DIR}/version.hpp)
-    install(FILES ${HEADERS}
-            DESTINATION ${CPP_SHARED_DIR}/include)
-    install(FILES ${HEADERS}
-            DESTINATION ${CPP_STATIC_DIR}/include)
-
-    # Install and rename the correct symbol_exports headers
-    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_shared.hpp
-            DESTINATION ${CPP_SHARED_DIR}/include
-                RENAME symbol_exports.hpp)
-    install (FILES ${CMAKE_SOURCE_DIR}/src/symbol_exports_static.hpp
-                DESTINATION ${CPP_STATIC_DIR}/include
-                    RENAME symbol_exports.hpp)
-
-    # Copy the README from bindings/cpp/README.md to the dist/cpp directory
-    install(FILES ${CMAKE_SOURCE_DIR}/bindings/cpp/README.md
-            DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp)
-
-    # Copy the dependency libraries to the static directory (not WINDOWS)
-    # TODO - remove this once we fix the `whole-archive` issue
-    if (TARGET compress_utils_static AND NOT WIN32)
-        file(GLOB TARGET_LIBS ${ALGORITHMS_LIB_DIR}/*)
-        install(FILES ${TARGET_LIBS}
-                DESTINATION ${CPP_STATIC_DIR}/lib)
-    endif()
-
+    install(FILES ${CMAKE_SOURCE_DIR}/include/compress_utils.h
+            DESTINATION ${CU_DIST_DIR}/include)
 endif()
 
 ######### TESTS #########
 
-# Add tests if the option is enabled
-if (ENABLE_TESTS)
+if(ENABLE_TESTS)
     enable_testing()
-    message(STATUS "Tests are enabled. Including the tests directory.")
     add_subdirectory(tests)
-    add_dependencies(unit_tests compress_utils)
-    add_dependencies(unit_tests_static compress_utils_static)
-else()
-    message(STATUS "Tests are disabled. Skipping the tests directory.")
 endif()
 
 ######### BINDINGS #########
 
-# C Bindings
-if (BUILD_C_BINDINGS)
-    message(STATUS "Building C binding...")
-    add_subdirectory(bindings/c)
-    add_dependencies(compress_utils_c compress_utils)
-    add_dependencies(compress_utils_c_static compress_utils_static)
-endif()
+option(BUILD_CPP_BINDINGS    "Build C++ header-only binding"        ON)
+option(BUILD_PYTHON_BINDINGS "Build Python binding (via pybind11)"  ON)
 
-# Python Bindings
-if (BUILD_PYTHON_BINDINGS)
-    message(STATUS "Building Python binding...")
+if(BUILD_CPP_BINDINGS)
+    add_subdirectory(bindings/cpp)
+endif()
+if(BUILD_PYTHON_BINDINGS)
     add_subdirectory(bindings/python)
-    add_dependencies(compress_utils_py compress_utils)
 endif()

@@ -1,221 +1,136 @@
+/*
+ * compress_utils_py.cpp — pybind11 binding for compress-utils.
+ *
+ * Thin wrapper over the header-only C++ binding (compress_utils.hpp),
+ * which in turn calls the C ABI. No state of its own.
+ *
+ * Module name: compress_utils_py. Imported by the compress_utils package's
+ * __init__.py.
+ */
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "compress_utils.hpp"
-#include "compress_utils_func.hpp"
-#include "compress_utils_stream.hpp"
 
-namespace py = pybind11;
+#include <compress_utils.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <span>
 #include <string>
+#include <vector>
 
-// Helper function to trim and convert a string to lowercase
-std::string to_lower_trim(const std::string& str) {
-    auto start = str.begin();
-    auto end = str.end();
-    while (start != end && std::isspace(*start)) ++start;
-    while (start != end && std::isspace(*(end - 1))) --end;
-    std::string result(start, end);
-    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
-    return result;
+namespace py = pybind11;
+
+/* ---- Algorithm resolution from string or enum value ---- */
+
+static std::string lower_trim(const std::string& s) {
+    auto a = s.begin();
+    auto b = s.end();
+    while (a != b && std::isspace(*a)) ++a;
+    while (a != b && std::isspace(*(b - 1))) --b;
+    std::string out(a, b);
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return out;
 }
 
-compress_utils::Algorithm parse_algorithm(const py::object& algorithm) {
-    if (py::isinstance<py::str>(algorithm)) {
-        std::string alg_str = to_lower_trim(algorithm.cast<std::string>());
-#ifdef INCLUDE_BROTLI
-        if (alg_str == "brotli") return compress_utils::Algorithm::BROTLI;
-#endif
-#ifdef INCLUDE_BZ2
-        if (alg_str == "bz2" || alg_str == "bzip2") return compress_utils::Algorithm::BZ2;
-#endif
-#ifdef INCLUDE_LZ4
-        if (alg_str == "lz4") return compress_utils::Algorithm::LZ4;
-#endif
-#ifdef INCLUDE_XZ
-        if (alg_str == "xz") return compress_utils::Algorithm::XZ;
-        if (alg_str == "lzma") return compress_utils::Algorithm::LZMA;
-#endif
-#ifdef INCLUDE_ZLIB
-        if (alg_str == "zlib") return compress_utils::Algorithm::ZLIB;
-#endif
-#ifdef INCLUDE_ZSTD
-        if (alg_str == "zstd") return compress_utils::Algorithm::ZSTD;
-#endif
-        throw std::invalid_argument("Unknown algorithm: " + alg_str);
+static cu::Algorithm parse_algorithm(const py::object& obj) {
+    if (py::isinstance<py::str>(obj)) {
+        std::string s = lower_trim(obj.cast<std::string>());
+        if (s == "zstd")                       return cu::Algorithm::Zstd;
+        if (s == "brotli")                     return cu::Algorithm::Brotli;
+        if (s == "zlib" || s == "gzip")        return cu::Algorithm::Zlib;
+        if (s == "bz2"  || s == "bzip2")       return cu::Algorithm::Bz2;
+        if (s == "lz4")                        return cu::Algorithm::Lz4;
+        if (s == "xz")                         return cu::Algorithm::Xz;
+        if (s == "lzma")                       return cu::Algorithm::Lzma;
+        throw std::invalid_argument("Unknown algorithm: " + s);
     }
-    else if (py::isinstance<py::int_>(algorithm)) {
-        return static_cast<compress_utils::Algorithm>(algorithm.cast<int>());
-    }
-    throw std::invalid_argument("Algorithm must be a string or an Algorithm enum.");
+    /* Accept the Algorithm enum and bare int. */
+    return obj.cast<cu::Algorithm>();
 }
+
+/* ---- Buffer adapters ---- */
+
+static std::span<const std::uint8_t> as_span(py::buffer data) {
+    py::buffer_info info = data.request();
+    return std::span<const std::uint8_t>(
+        static_cast<const std::uint8_t*>(info.ptr),
+        static_cast<std::size_t>(info.size * info.itemsize)
+    );
+}
+
+static py::bytes to_bytes(const std::vector<std::uint8_t>& v) {
+    return py::bytes(reinterpret_cast<const char*>(v.data()), v.size());
+}
+
+/* ---- Module ---- */
 
 PYBIND11_MODULE(compress_utils_py, m) {
-    m.doc() = "Python bindings for compress-utils library";
+    m.doc() = "Python bindings for compress-utils library (C-core).";
 
-    // Expose the Algorithm enum with pybind11
-    py::enum_<compress_utils::Algorithm> py_algorithm(m, "Algorithm");
+    /* Algorithm enum — lowercase names match the legacy Python API. */
+    py::enum_<cu::Algorithm>(m, "Algorithm")
+        .value("zstd",   cu::Algorithm::Zstd)
+        .value("brotli", cu::Algorithm::Brotli)
+        .value("zlib",   cu::Algorithm::Zlib)
+        .value("bz2",    cu::Algorithm::Bz2)
+        .value("lz4",    cu::Algorithm::Lz4)
+        .value("xz",     cu::Algorithm::Xz)
+        .value("lzma",   cu::Algorithm::Lzma)
+        .export_values();
 
-    py::dict members;
+    m.def("version",      &cu::version);
+    m.def("is_available", [](const py::object& algo) {
+        return cu::is_available(parse_algorithm(algo));
+    }, py::arg("algorithm"));
+    m.def("set_max_decompressed_size", &cu::set_max_decompressed_size,
+          py::arg("bytes"));
 
-#ifdef INCLUDE_BROTLI
-    py_algorithm.value("brotli", compress_utils::Algorithm::BROTLI);
-    members["brotli"] = compress_utils::Algorithm::BROTLI;
-#endif
-#ifdef INCLUDE_BZ2
-    py_algorithm.value("bz2", compress_utils::Algorithm::BZ2);
-    members["bz2"] = compress_utils::Algorithm::BZ2;
-#endif
-#ifdef INCLUDE_LZ4
-    py_algorithm.value("lz4", compress_utils::Algorithm::LZ4);
-    members["lz4"] = compress_utils::Algorithm::LZ4;
-#endif
-#ifdef INCLUDE_XZ
-    py_algorithm.value("lzma", compress_utils::Algorithm::LZMA);
-    py_algorithm.value("xz", compress_utils::Algorithm::XZ);
-    members["lzma"] = compress_utils::Algorithm::LZMA;
-    members["xz"] = compress_utils::Algorithm::XZ;
-#endif
-#ifdef INCLUDE_ZLIB
-    py_algorithm.value("zlib", compress_utils::Algorithm::ZLIB);
-    members["zlib"] = compress_utils::Algorithm::ZLIB;
-#endif
-#ifdef INCLUDE_ZSTD
-    py_algorithm.value("zstd", compress_utils::Algorithm::ZSTD);
-    members["zstd"] = compress_utils::Algorithm::ZSTD;
-#endif
-    py_algorithm.export_values();
-
-    // Define the __iter__ method to make the enum iterable
-    py_algorithm.def("__iter__", [](py::object self) {
-        return py::iter(self.attr("__members__").attr("values")());
-    });
-
-    // Compressor class (OOP Interface)
-    py::class_<compress_utils::Compressor>(m, "compressor")
-        .def(py::init([](const py::object& algorithm) {
-            return new compress_utils::Compressor(parse_algorithm(algorithm));
-        }), py::arg("algorithm"))
-        .def("compress", [](compress_utils::Compressor& self, py::buffer data, int level = 3) {
-            py::buffer_info info = data.request();
-            const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-            size_t data_size = info.size * info.itemsize;
-
-            std::vector<uint8_t> compressed_data = self.Compress(data_ptr, data_size, level);
-
-            return py::bytes(reinterpret_cast<const char*>(compressed_data.data()), compressed_data.size());
-        }, py::arg("data"), py::arg("level") = 3, "Compress data with optional level")
-        .def("decompress", [](compress_utils::Compressor& self, py::buffer data) {
-            py::buffer_info info = data.request();
-            const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-            size_t data_size = info.size * info.itemsize;
-
-            std::vector<uint8_t> decompressed_data = self.Decompress(data_ptr, data_size);
-
-            return py::bytes(reinterpret_cast<const char*>(decompressed_data.data()), decompressed_data.size());
-        }, py::arg("data"), "Decompress data");
-
-    // CompressStream class (Streaming Interface)
-    py::class_<compress_utils::CompressStream>(m, "CompressStream",
-        R"doc(
-        Streaming compression class for incremental data compression.
-
-        This class allows compressing data in chunks without loading the entire
-        dataset into memory. Useful for large files or streaming data.
-
-        Example:
-            stream = CompressStream('zstd', level=5)
-            while has_more_data:
-                compressed = stream.compress(chunk)
-                output.write(compressed)
-            output.write(stream.finish())
-        )doc")
-        .def(py::init([](const py::object& algorithm, int level) {
-            return new compress_utils::CompressStream(parse_algorithm(algorithm), level);
-        }), py::arg("algorithm"), py::arg("level") = 3,
-        "Create a new compression stream with the specified algorithm and level")
-        .def("compress", [](compress_utils::CompressStream& self, py::buffer data) {
-            py::buffer_info info = data.request();
-            const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-            size_t data_size = info.size * info.itemsize;
-
-            std::span<const uint8_t> span(data_ptr, data_size);
-            std::vector<uint8_t> result = self.Compress(span);
-
-            return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
-        }, py::arg("data"),
-        "Compress a chunk of data. Returns compressed output (may be empty if buffered).")
-        .def("finish", [](compress_utils::CompressStream& self) {
-            std::vector<uint8_t> result = self.Finish();
-            return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
-        },
-        "Finish compression and return any remaining compressed data.")
-        .def("is_finished", &compress_utils::CompressStream::IsFinished,
-        "Check if the stream has been finished.")
-        .def_property_readonly("algorithm", [](compress_utils::CompressStream& self) {
-            return self.algorithm();
-        }, "Get the compression algorithm being used.");
-
-    // DecompressStream class (Streaming Interface)
-    py::class_<compress_utils::DecompressStream>(m, "DecompressStream",
-        R"doc(
-        Streaming decompression class for incremental data decompression.
-
-        This class allows decompressing data in chunks without loading the entire
-        compressed dataset into memory.
-
-        Example:
-            stream = DecompressStream('zstd')
-            while has_more_data:
-                decompressed = stream.decompress(chunk)
-                output.write(decompressed)
-            stream.finish()
-        )doc")
-        .def(py::init([](const py::object& algorithm) {
-            return new compress_utils::DecompressStream(parse_algorithm(algorithm));
-        }), py::arg("algorithm"),
-        "Create a new decompression stream with the specified algorithm")
-        .def("decompress", [](compress_utils::DecompressStream& self, py::buffer data) {
-            py::buffer_info info = data.request();
-            const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-            size_t data_size = info.size * info.itemsize;
-
-            std::span<const uint8_t> span(data_ptr, data_size);
-            std::vector<uint8_t> result = self.Decompress(span);
-
-            return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
-        }, py::arg("data"),
-        "Decompress a chunk of data. Returns decompressed output.")
-        .def("finish", [](compress_utils::DecompressStream& self) {
-            std::vector<uint8_t> result = self.Finish();
-            return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
-        },
-        "Finish decompression and verify stream completeness.")
-        .def("is_finished", &compress_utils::DecompressStream::IsFinished,
-        "Check if the stream has been finished.")
-        .def_property_readonly("algorithm", [](compress_utils::DecompressStream& self) {
-            return self.algorithm();
-        }, "Get the decompression algorithm being used.");
-
-    // Functional API: Compress and Decompress
-    m.def("compress", [](py::buffer data, const py::object& algorithm, int level = 3) {
-        py::buffer_info info = data.request();
-        const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-        size_t data_size = info.size * info.itemsize;
-
-        std::vector<uint8_t> compressed_data = compress_utils::Compress(data_ptr, data_size, parse_algorithm(algorithm), level);
-
-        return py::bytes(reinterpret_cast<const char*>(compressed_data.data()), compressed_data.size());
-    }, py::arg("data"), py::arg("algorithm"), py::arg("level") = 3, "Compress data using an algorithm and optional level");
+    /* Functional API. */
+    m.def("compress", [](py::buffer data, const py::object& algorithm, int level) {
+        return to_bytes(cu::compress(parse_algorithm(algorithm), as_span(data), level));
+    }, py::arg("data"), py::arg("algorithm"), py::arg("level") = 5,
+       "Compress bytes/buffer using the given algorithm (string or Algorithm).");
 
     m.def("decompress", [](py::buffer data, const py::object& algorithm) {
-        py::buffer_info info = data.request();
-        const uint8_t* data_ptr = static_cast<const uint8_t*>(info.ptr);
-        size_t data_size = info.size * info.itemsize;
+        return to_bytes(cu::decompress(parse_algorithm(algorithm), as_span(data)));
+    }, py::arg("data"), py::arg("algorithm"),
+       "Decompress bytes/buffer using the given algorithm.");
 
-        std::vector<uint8_t> decompressed_data = compress_utils::Decompress(data_ptr, data_size, parse_algorithm(algorithm));
+    /* Streaming. */
+    py::class_<cu::CompressStream>(m, "CompressStream",
+        "Streaming compression. Feed chunks via .compress(b); flush with .finish().")
+        .def(py::init([](const py::object& algorithm, int level) {
+            return new cu::CompressStream(parse_algorithm(algorithm), level);
+        }), py::arg("algorithm"), py::arg("level") = 5)
+        .def("compress", [](cu::CompressStream& self, py::buffer data) {
+            return to_bytes(self.write(as_span(data)));
+        }, py::arg("data"))
+        .def("finish", [](cu::CompressStream& self) {
+            return to_bytes(self.finish());
+        });
 
-        return py::bytes(reinterpret_cast<const char*>(decompressed_data.data()), decompressed_data.size());
-    }, py::arg("data"), py::arg("algorithm"), "Decompress data using an algorithm");
+    py::class_<cu::DecompressStream>(m, "DecompressStream",
+        "Streaming decompression. Feed chunks via .decompress(b); flush with .finish().")
+        .def(py::init([](const py::object& algorithm) {
+            return new cu::DecompressStream(parse_algorithm(algorithm));
+        }), py::arg("algorithm"))
+        .def("decompress", [](cu::DecompressStream& self, py::buffer data) {
+            return to_bytes(self.write(as_span(data)));
+        }, py::arg("data"))
+        .def("finish", [](cu::DecompressStream& self) {
+            return to_bytes(self.finish());
+        });
+
+    /* Translate cu::Error to a Python exception. */
+    static py::exception<cu::Error> cu_error_exc(m, "CompressError");
+    py::register_exception_translator([](std::exception_ptr p) {
+        try {
+            if (p) std::rethrow_exception(p);
+        } catch (const cu::Error& e) {
+            PyErr_SetString(cu_error_exc.ptr(), e.what());
+        }
+    });
 }

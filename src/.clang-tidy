@@ -1,0 +1,27 @@
+# Override the project-root .clang-tidy. The new C core uses snake_case
+# with a `cu_` prefix throughout (matching the public ABI in
+# include/compress_utils.h and the convention of zstd/lz4/zlib/brotli/xz
+# themselves). The Google ObjC naming check and the project's CamelCase
+# rules don't apply here.
+Checks: >
+  google-*,
+  readability-identifier-naming,
+  -google-objc-function-naming,
+  -google-readability-todo
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+FormatStyle: 'file'
+CheckOptions:
+  - { key: readability-identifier-naming.FunctionCase,           value: lower_case }
+  - { key: readability-identifier-naming.GlobalFunctionCase,     value: lower_case }
+  - { key: readability-identifier-naming.TypedefCase,            value: lower_case }
+  - { key: readability-identifier-naming.TypedefSuffix,          value: _t }
+  - { key: readability-identifier-naming.EnumCase,               value: lower_case }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: UPPER_CASE }
+  - { key: readability-identifier-naming.EnumConstantPrefix,     value: CU_ }
+  - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }
+  - { key: readability-identifier-naming.StructCase,             value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }
+  - { key: readability-identifier-naming.StaticVariableCase,     value: lower_case }
+  - { key: readability-identifier-naming.GlobalVariableCase,     value: lower_case }

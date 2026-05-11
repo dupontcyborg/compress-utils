@@ -1,0 +1,30 @@
+# Override the project-root .clang-tidy for the public C ABI.
+#
+# The C ABI uses snake_case with a `cu_` prefix, which is the standard C
+# convention and matches every other compression library at this layer
+# (zstd, lz4, zlib, brotli, xz). The root config is tuned for the C++
+# core in src/ and the Google ObjC naming check fires on every C symbol
+# here — disable both and switch the identifier-naming rules to C
+# conventions.
+Checks: >
+  google-*,
+  readability-identifier-naming,
+  -google-objc-function-naming,
+  -google-readability-todo
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+FormatStyle: 'file'
+CheckOptions:
+  - { key: readability-identifier-naming.FunctionCase,           value: lower_case }
+  - { key: readability-identifier-naming.GlobalFunctionCase,     value: lower_case }
+  - { key: readability-identifier-naming.TypedefCase,            value: lower_case }
+  - { key: readability-identifier-naming.TypedefSuffix,          value: _t }
+  - { key: readability-identifier-naming.EnumCase,               value: lower_case }
+  - { key: readability-identifier-naming.EnumSuffix,             value: _t }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: UPPER_CASE }
+  - { key: readability-identifier-naming.EnumConstantPrefix,     value: CU_ }
+  - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }
+  - { key: readability-identifier-naming.StructCase,             value: lower_case }
+  - { key: readability-identifier-naming.StructSuffix,           value: _t }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }

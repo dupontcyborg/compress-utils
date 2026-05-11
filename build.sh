@@ -141,25 +141,28 @@ else
     CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON -DINCLUDE_BZ2=ON -DINCLUDE_LZ4=ON -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
 fi
 
-# Handle language bindings
+# Handle language bindings.
+#
+# Note: the C ABI is the library's core (declared in include/compress_utils.h)
+# and is always built. There is no separate "C binding" target to opt into.
+# Bindings on top of the C core: cpp (header-only RAII), python (pybind11),
+# wasm (TS over emscripten, not yet implemented).
 if [ ${#LANGUAGES[@]} -gt 0 ]; then
-    # Disable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
-    # Enable specified bindings
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
     for lang in "${LANGUAGES[@]}"; do
         case $lang in
-            js)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
-                ;;
-            ts)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_JS_TS_BINDINGS=ON"
+            cpp|c++)
+                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=ON"
                 ;;
             python)
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
                 CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
                 ;;
             c)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON"
+                : # C ABI is the core; built unconditionally.
+                ;;
+            js|ts|wasm)
+                echo "WASM/JS binding not yet implemented on the C core. See TODO.md."
                 ;;
             *)
                 echo "Unknown language binding: $lang"
@@ -168,8 +171,8 @@ if [ ${#LANGUAGES[@]} -gt 0 ]; then
         esac
     done
 else
-    # Enable all bindings by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    # Enable all bindings by default.
+    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
     CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
 fi
 
