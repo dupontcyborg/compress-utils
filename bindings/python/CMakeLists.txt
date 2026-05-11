@@ -59,11 +59,11 @@ add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
 
 if(ENABLE_TESTS)
     add_test(
-        NAME py_smoke_test
+        NAME test_compress_utils_py
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
         WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
     )
-    set_tests_properties(py_smoke_test PROPERTIES
+    set_tests_properties(test_compress_utils_py PROPERTIES
         ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}"
     )
 endif()

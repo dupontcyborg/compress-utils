@@ -151,10 +151,14 @@ if(INCLUDE_XZ)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
 endif()
 
-# Windows-specific link deps preserved from the C++ build.
+# Platform link deps.
 if(WIN32)
     find_package(Threads REQUIRED)
     list(APPEND CU_TARGET_LIBS "legacy_stdio_definitions" Threads::Threads "msvcrt")
+else()
+    # Linux glibc puts log2/pow/etc. in libm, separate from libc. macOS libSystem
+    # bundles them so this is a no-op there. Brotli/zlib/lz4/xz can pull from libm.
+    list(APPEND CU_TARGET_LIBS m)
 endif()
 
 # Library targets — both shared and static.
@@ -234,7 +238,7 @@ endif()
 ######### BINDINGS #########
 
 option(BUILD_CPP_BINDINGS    "Build C++ header-only binding"        ON)
-option(BUILD_PYTHON_BINDINGS "Build Python binding (via pybind11)"  OFF)
+option(BUILD_PYTHON_BINDINGS "Build Python binding (via pybind11)"  ON)
 
 if(BUILD_CPP_BINDINGS)
     add_subdirectory(bindings/cpp)

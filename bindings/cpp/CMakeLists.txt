@@ -13,15 +13,19 @@ if(NOT SCIKIT_BUILD)
             DESTINATION ${CMAKE_SOURCE_DIR}/dist/cpp/include)
 endif()
 
-## C++ smoke test for the binding.
+## C++ test suite for the binding.
+##
+## test_compress_utils.cpp exercises the cu:: namespace surface:
+##   - free cu::compress / cu::decompress across all algorithms
+##   - CompressStream / DecompressStream RAII, including move semantics
+##   - cu::Error translation on malformed input (verifies that the .code()
+##     accessor is plumbed through from the C status code)
 if(ENABLE_TESTS)
-    add_executable(cpp_smoke_test test/cpp_smoke_test.cpp)
-    target_link_libraries(cpp_smoke_test PRIVATE compress_utils_cpp)
-    # Static-link the algorithm libs into the test (compress_utils is shared
-    # but ships symbols, so the test only needs the C lib + sysdeps).
+    add_executable(test_compress_utils_cpp test/test_compress_utils.cpp)
+    target_link_libraries(test_compress_utils_cpp PRIVATE compress_utils_cpp)
     if(WIN32)
         find_package(Threads REQUIRED)
-        target_link_libraries(cpp_smoke_test PRIVATE Threads::Threads)
+        target_link_libraries(test_compress_utils_cpp PRIVATE Threads::Threads)
     endif()
-    add_test(NAME cpp_smoke_test COMMAND cpp_smoke_test)
+    add_test(NAME test_compress_utils_cpp COMMAND test_compress_utils_cpp)
 endif()
