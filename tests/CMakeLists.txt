@@ -18,36 +18,10 @@
 ## Fuzzing (tests/fuzz/) is gated by -DENABLE_FUZZ=ON.
 
 add_executable(test_compress_utils test_compress_utils.c)
-target_link_libraries(test_compress_utils PRIVATE compress_utils_static)
-target_include_directories(test_compress_utils PRIVATE ${CMAKE_SOURCE_DIR}/include)
-
-# Static link of the algorithm libs needs explicit link order.
-if(INCLUDE_ZSTD)
-    target_link_libraries(test_compress_utils PRIVATE zstd_library)
-endif()
-if(INCLUDE_ZLIB)
-    target_link_libraries(test_compress_utils PRIVATE zlib_library)
-endif()
-if(INCLUDE_BROTLI)
-    target_link_libraries(test_compress_utils PRIVATE brotlienc brotlidec brotlicommon)
-endif()
-if(INCLUDE_BZ2)
-    target_link_libraries(test_compress_utils PRIVATE bz2_library)
-endif()
-if(INCLUDE_LZ4)
-    target_link_libraries(test_compress_utils PRIVATE lz4_library)
-endif()
-if(INCLUDE_XZ)
-    target_link_libraries(test_compress_utils PRIVATE xz_library)
-endif()
-
-if(WIN32)
-    find_package(Threads REQUIRED)
-    target_link_libraries(test_compress_utils PRIVATE Threads::Threads)
-else()
-    # Linux libm for math symbols that the algorithm libs reach for.
-    target_link_libraries(test_compress_utils PRIVATE m)
-endif()
+# Consume the OBJECT library: pulls in the wrapper code as .o files and
+# propagates the algorithm-library link deps via INTERFACE_LINK_LIBRARIES.
+# Result: a self-contained exe — no DLL hunt at runtime.
+target_link_libraries(test_compress_utils PRIVATE compress_utils_obj)
 
 if(ENABLE_TESTS)
     add_test(NAME test_compress_utils COMMAND test_compress_utils)

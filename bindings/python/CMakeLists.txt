@@ -19,29 +19,22 @@ set(PYTHON_PACKAGE_DIR    "${PYTHON_BINDING_DIR}/compress_utils")
 set(PYTHON_MODULE_NAME    "compress_utils_py")
 
 pybind11_add_module(${PYTHON_MODULE_NAME} MODULE compress_utils_py.cpp)
-target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_cpp)
-# Static-link the C core into the Python module so the .so is self-contained.
-target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_static)
 
-# Same algorithm-lib link order as the smoke test.
-if(INCLUDE_ZSTD)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE zstd_library)
-endif()
-if(INCLUDE_ZLIB)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE zlib_library)
-endif()
-if(INCLUDE_BROTLI)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE brotlienc brotlidec brotlicommon)
-endif()
-if(INCLUDE_BZ2)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE bz2_library)
-endif()
-if(INCLUDE_LZ4)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE lz4_library)
-endif()
-if(INCLUDE_XZ)
-    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE xz_library)
-endif()
+# Self-contained wheel: consume the OBJECT library directly. This pulls
+# in the C wrapper code as .o files baked into the .pyd/.so, plus the
+# algorithm static archives via INTERFACE_LINK_LIBRARIES. No runtime
+# dependency on libcompress_utils.{dll,dylib,so} — important for
+# `pip install` portability.
+#
+# We do NOT link `compress_utils_cpp` (the INTERFACE target for the C++
+# binding) because its interface link points at the shared library,
+# which would silently make this wheel depend on the dylib being on
+# disk. Pull in the C++ header by include path instead.
+target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_obj)
+target_include_directories(${PYTHON_MODULE_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/bindings/cpp/include
+)
+target_compile_features(${PYTHON_MODULE_NAME} PRIVATE cxx_std_20)
 
 set_target_properties(${PYTHON_MODULE_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${PYTHON_PACKAGE_DIR}

@@ -169,52 +169,71 @@ else()
     list(APPEND CU_TARGET_LIBS m)
 endif()
 
-# Library targets — both shared and static.
-add_library(compress_utils        SHARED ${CU_CORE_SOURCES})
-add_library(compress_utils_static STATIC ${CU_CORE_SOURCES})
+# ---------------------------------------------------------------------------
+# Library targets.
+#
+# Layout: one OBJECT library (compress_utils_obj) compiles the source files
+# once; the public SHARED library and the internal consumers (Python
+# pybind11 module, C/fuzz tests) all consume those objects. There is no
+# public static library:
+#
+#   - End users who want a shared lib: use `compress_utils`.
+#   - End users who want a self-contained executable: build with
+#     `-DBUILD_SHARED_LIBS=OFF` (CMake-native) or consume the OBJECT lib
+#     directly from a sibling CMake project.
+#   - The previous public `compress_utils_static.a` was only ~146 KB of
+#     wrapper code — useless without manually linking 6+ algo .a files.
+#     Removed.
+#
+# The OBJECT library is compiled with CU_BUILD_SHARED so its symbols
+# carry dllexport/default visibility. They get exported by whichever
+# shared lib they end up in (compress_utils.dll or compress_utils_py.pyd).
+# ---------------------------------------------------------------------------
 
-foreach(tgt compress_utils compress_utils_static)
-    target_include_directories(${tgt}
-        PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-            $<INSTALL_INTERFACE:include>
-        PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/algorithms/dist/include
-    )
-    target_compile_definitions(${tgt} PRIVATE ${CU_TARGET_DEFINITIONS})
-    target_link_libraries(${tgt} PRIVATE ${CU_TARGET_LIBS})
-endforeach()
+add_library(compress_utils_obj OBJECT ${CU_CORE_SOURCES})
+target_include_directories(compress_utils_obj
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/algorithms/dist/include
+)
+target_compile_definitions(compress_utils_obj PRIVATE
+    ${CU_TARGET_DEFINITIONS}
+    CU_BUILD_SHARED
+)
+# INTERFACE link deps propagate to consumers (the shared lib, Python
+# module, tests) so they all pick up the algorithm static archives.
+target_link_libraries(compress_utils_obj INTERFACE ${CU_TARGET_LIBS})
 
-# Shared library export macros — define CU_BUILD_SHARED on the shared
-# target so CU_API expands to __declspec(dllexport)/visibility("default").
-target_compile_definitions(compress_utils PRIVATE CU_BUILD_SHARED)
+add_library(compress_utils SHARED $<TARGET_OBJECTS:compress_utils_obj>)
+target_include_directories(compress_utils
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(compress_utils PRIVATE ${CU_TARGET_LIBS})
 
 # Algorithm subprojects use ExternalProject_Add and need the fetch to
 # complete before our sources compile.
 if(INCLUDE_ZSTD)
-    add_dependencies(compress_utils zstd_external zstd_library)
-    add_dependencies(compress_utils_static zstd_external zstd_library)
+    add_dependencies(compress_utils_obj zstd_external zstd_library)
 endif()
 if(INCLUDE_BROTLI)
-    add_dependencies(compress_utils brotli_external brotlienc brotlidec brotlicommon)
-    add_dependencies(compress_utils_static brotli_external brotlienc brotlidec brotlicommon)
+    add_dependencies(compress_utils_obj brotli_external brotlienc brotlidec brotlicommon)
 endif()
 if(INCLUDE_ZLIB)
-    add_dependencies(compress_utils zlib_external zlib_library)
-    add_dependencies(compress_utils_static zlib_external zlib_library)
+    add_dependencies(compress_utils_obj zlib_external zlib_library)
 endif()
 if(INCLUDE_BZ2)
-    add_dependencies(compress_utils bz2_external bz2_library)
-    add_dependencies(compress_utils_static bz2_external bz2_library)
+    add_dependencies(compress_utils_obj bz2_external bz2_library)
 endif()
 if(INCLUDE_LZ4)
-    add_dependencies(compress_utils lz4_external lz4_library)
-    add_dependencies(compress_utils_static lz4_external lz4_library)
+    add_dependencies(compress_utils_obj lz4_external lz4_library)
 endif()
 if(INCLUDE_XZ)
-    add_dependencies(compress_utils xz_external xz_library)
-    add_dependencies(compress_utils_static xz_external xz_library)
+    add_dependencies(compress_utils_obj xz_external xz_library)
 endif()
 
 ######### INSTALL #########
@@ -228,9 +247,6 @@ if(NOT SCIKIT_BUILD)
         LIBRARY DESTINATION ${CU_DIST_DIR}/lib
         ARCHIVE DESTINATION ${CU_DIST_DIR}/lib
         RUNTIME DESTINATION ${CU_DIST_DIR}/bin
-    )
-    install(TARGETS compress_utils_static
-        ARCHIVE DESTINATION ${CU_DIST_DIR}/lib
     )
     install(FILES ${CMAKE_SOURCE_DIR}/include/compress_utils.h
             DESTINATION ${CU_DIST_DIR}/include)

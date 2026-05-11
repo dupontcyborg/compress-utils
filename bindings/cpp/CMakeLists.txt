@@ -26,6 +26,14 @@ if(ENABLE_TESTS)
     if(WIN32)
         find_package(Threads REQUIRED)
         target_link_libraries(test_compress_utils_cpp PRIVATE Threads::Threads)
+        # On Windows the test exe and compress_utils.dll land in different
+        # multi-config output directories; copy the DLL next to the exe so
+        # the dynamic loader can find it at startup.
+        add_custom_command(TARGET test_compress_utils_cpp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:compress_utils>
+                $<TARGET_FILE_DIR:test_compress_utils_cpp>
+        )
     endif()
     add_test(NAME test_compress_utils_cpp COMMAND test_compress_utils_cpp)
 endif()
