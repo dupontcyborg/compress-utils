@@ -35,6 +35,14 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
+# Build everything position-independent. The static archive
+# (compress_utils_static) gets linked into the Python pybind11 module —
+# itself a shared library — and on Linux the linker rejects TLS access
+# patterns (R_X86_64_TPOFF32 against g_last_error) from non-PIC code
+# embedded into a shared object. macOS Mach-O is permissive here, which
+# is why this only surfaces on Linux CI.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Generate compile_commands.json for clangd / IDEs / fuzzers.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
