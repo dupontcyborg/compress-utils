@@ -230,9 +230,14 @@ if(ENABLE_TESTS)
     add_subdirectory(tests)
 endif()
 
-######### BINDINGS (deferred to Phase 4) #########
+######### BINDINGS #########
 
-# The C++ binding (bindings/cpp/), Python binding (bindings/python/), and
-# WASM binding (bindings/wasm/) will be retargeted to consume the C ABI
-# directly in Phase 4. Until then they are not built — they reference
-# headers that no longer exist in the new layout.
+option(BUILD_CPP_BINDINGS    "Build C++ header-only binding"        ON)
+option(BUILD_PYTHON_BINDINGS "Build Python binding (via pybind11)"  OFF)
+
+if(BUILD_CPP_BINDINGS)
+    add_subdirectory(bindings/cpp)
+endif()
+if(BUILD_PYTHON_BINDINGS)
+    add_subdirectory(bindings/python)
+endif()

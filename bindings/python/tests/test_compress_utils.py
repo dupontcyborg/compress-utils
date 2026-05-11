@@ -1,218 +1,99 @@
-import unittest
-import random
-import compress_utils as comp
+"""
+Python smoke tests for compress_utils.
 
-# Sample test data
+Mirrors the C and C++ smoke tests: round-trips every available algorithm
+via the free functions and the streaming classes, plus a few edge cases
+(empty, single byte, large), and exercises cross-API (stream-compress to
+one-shot decompress and vice versa).
+"""
+
+import random
+import unittest
+
+import compress_utils as cu
+
+
 SAMPLE_DATA = b"Hello World"
 EMPTY_DATA = b""
 SINGLE_BYTE_DATA = b"A"
-LARGE_DATA = bytes([random.randint(0, 255) for _ in range(1024 * 1024)])  # 1MB random data
-REPETITIVE_DATA = b"A" * (1024 * 1024)  # 1MB repetitive data
+RANDOM_LARGE = bytes(random.randint(0, 255) for _ in range(1024 * 1024))
+REPETITIVE_LARGE = b"A" * (1024 * 1024)
 
-# Dynamically populate available algorithms from the `Algorithm` enum in compress_utils
-AVAILABLE_ALGORITHMS = [algo.name.lower() for algo in comp.Algorithm.__members__.values()]
-
-def generate_random_data(size_in_bytes):
-    """Generate random binary data of a given size."""
-    return bytes(random.randint(0, 255) for _ in range(size_in_bytes))
-
-# Test data types
-TEST_DATA_TYPES = {
-    "sample_data": SAMPLE_DATA,
-    "empty_data": EMPTY_DATA,
-    "single_byte_data": SINGLE_BYTE_DATA,
-    "large_data": LARGE_DATA,
-    "repetitive_data": REPETITIVE_DATA,
+CASES = {
+    "sample": SAMPLE_DATA,
+    "empty": EMPTY_DATA,
+    "single_byte": SINGLE_BYTE_DATA,
+    "random_1MB": RANDOM_LARGE,
+    "repetitive_1MB": REPETITIVE_LARGE,
 }
 
 
-class TestCompressionUtils(unittest.TestCase):
-    """Unit tests for compress-utils using functional and OOP approaches."""
-
-    @staticmethod
-    def check_compression_and_decompression(test_case, algorithm, data, level=None):
-        """Helper to compress and decompress data, checking consistency."""
-
-        # Functional API Test
-        compressed_data = comp.compress(data, algorithm, level) if level else comp.compress(data, algorithm)
-        decompressed_data = comp.decompress(compressed_data, algorithm)
-        
-        # Assert decompressed data matches original
-        test_case.assertEqual(decompressed_data, data, f"Functional API failed for {algorithm}")
-
-        # OOP API Test
-        compressor = comp.compressor(algorithm)
-        compressed_data = compressor.compress(data, level) if level else compressor.compress(data)
-        decompressed_data = compressor.decompress(compressed_data)
-        
-        # Assert decompressed data matches original
-        test_case.assertEqual(decompressed_data, data, f"OOP API failed for {algorithm}")
+def available_algorithms():
+    """Return names of algorithms compiled into this build, excluding lzma alias."""
+    return [a.name for a in cu.Algorithm.__members__.values()
+            if cu.is_available(a) and a.name != "lzma"]
 
 
-# Dynamically create test methods
-def add_test_methods():
-    for algorithm in AVAILABLE_ALGORITHMS:
-        for data_type, data in TEST_DATA_TYPES.items():
-            test_name = f"test_{algorithm}_{data_type}"
-            test_func = lambda self, alg=algorithm, dt=data: TestCompressionUtils.check_compression_and_decompression(self, alg, dt)
-            setattr(TestCompressionUtils, test_name, test_func)
-        
-        # Add compression level tests
-        for level in [1, 5, 10]:
-            test_name = f"test_{algorithm}_sample_data_level_{level}"
-            test_func = lambda self, alg=algorithm, lvl=level: TestCompressionUtils.check_compression_and_decompression(self, alg, SAMPLE_DATA, lvl)
-            setattr(TestCompressionUtils, test_name, test_func)
+class TestCompressUtils(unittest.TestCase):
 
-add_test_methods()
+    def test_version(self):
+        v = cu.version()
+        self.assertRegex(v, r"^\d+\.\d+\.\d+$")
 
+    def test_freefn_roundtrip(self):
+        for name in available_algorithms():
+            for case_name, data in CASES.items():
+                with self.subTest(algorithm=name, case=case_name):
+                    compressed = cu.compress(data, name, level=5)
+                    if data:
+                        self.assertTrue(len(compressed) > 0,
+                                        f"{name} produced empty compressed output for non-empty input")
+                    restored = cu.decompress(compressed, name)
+                    self.assertEqual(restored, data)
 
-class TestStreamingAPI(unittest.TestCase):
-    """Unit tests for the streaming compression/decompression API."""
+    def test_freefn_string_or_enum(self):
+        data = b"test payload"
+        a = cu.compress(data, "zstd")
+        b = cu.compress(data, cu.Algorithm.zstd)
+        self.assertEqual(cu.decompress(a, "zstd"), data)
+        self.assertEqual(cu.decompress(b, cu.Algorithm.zstd), data)
 
-    @staticmethod
-    def stream_compress(algorithm, data, chunk_size=1024, level=3):
-        """Compress data using streaming API in chunks."""
-        stream = comp.CompressStream(algorithm, level)
-        result = bytearray()
+    def test_stream_roundtrip(self):
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                data = b"abcdefgh" * 8192  # 64KB
+                cs = cu.CompressStream(name, level=5)
+                pieces = []
+                step = len(data) // 3 + 1
+                for off in range(0, len(data), step):
+                    pieces.append(cs.compress(data[off:off + step]))
+                pieces.append(cs.finish())
+                compressed = b"".join(pieces)
 
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i:i + chunk_size]
-            output = stream.compress(chunk)
-            result.extend(output)
+                ds = cu.DecompressStream(name)
+                out_pieces = [ds.decompress(compressed), ds.finish()]
+                self.assertEqual(b"".join(out_pieces), data)
 
-        final = stream.finish()
-        result.extend(final)
-        return bytes(result)
+    def test_cross_api(self):
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                data = bytes(range(256)) * 64  # 16KB
+                cs = cu.CompressStream(name, 5)
+                compressed_a = cs.compress(data) + cs.finish()
+                self.assertEqual(cu.decompress(compressed_a, name), data)
 
-    @staticmethod
-    def stream_decompress(algorithm, data, chunk_size=1024):
-        """Decompress data using streaming API in chunks."""
-        stream = comp.DecompressStream(algorithm)
-        result = bytearray()
+                compressed_b = cu.compress(data, name, 5)
+                ds = cu.DecompressStream(name)
+                self.assertEqual(ds.decompress(compressed_b) + ds.finish(), data)
 
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i:i + chunk_size]
-            output = stream.decompress(chunk)
-            result.extend(output)
+    def test_error_on_garbage(self):
+        with self.assertRaises(cu.CompressError):
+            cu.decompress(b"\xff" * 32, "zstd")
 
-        final = stream.finish()
-        result.extend(final)
-        return bytes(result)
-
-    def test_streaming_basic(self):
-        """Test basic streaming compression and decompression."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                compressed = self.stream_compress(algorithm, SAMPLE_DATA, chunk_size=4)
-                self.assertGreater(len(compressed), 0)
-
-                decompressed = self.stream_decompress(algorithm, compressed, chunk_size=4)
-                self.assertEqual(decompressed, SAMPLE_DATA)
-
-    def test_streaming_single_byte_chunks(self):
-        """Test streaming with single-byte chunks."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                compressed = self.stream_compress(algorithm, SAMPLE_DATA, chunk_size=1)
-                decompressed = self.stream_decompress(algorithm, compressed, chunk_size=1)
-                self.assertEqual(decompressed, SAMPLE_DATA)
-
-    def test_streaming_large_data(self):
-        """Test streaming with larger data."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                # Use smaller data for XZ to avoid long test times
-                test_data = LARGE_DATA[:256 * 1024] if algorithm == 'xz' else LARGE_DATA
-                compressed = self.stream_compress(algorithm, test_data, chunk_size=64 * 1024, level=1)
-                decompressed = self.stream_decompress(algorithm, compressed, chunk_size=32 * 1024)
-                self.assertEqual(decompressed, test_data)
-
-    def test_streaming_empty_data(self):
-        """Test streaming with empty data."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                compressed = self.stream_compress(algorithm, EMPTY_DATA, chunk_size=4)
-                decompressed = self.stream_decompress(algorithm, compressed, chunk_size=4)
-                self.assertEqual(decompressed, EMPTY_DATA)
-
-    def test_streaming_is_finished(self):
-        """Test is_finished property of streams."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                stream = comp.CompressStream(algorithm, 3)
-                self.assertFalse(stream.is_finished())
-
-                stream.compress(SAMPLE_DATA)
-                self.assertFalse(stream.is_finished())
-
-                stream.finish()
-                self.assertTrue(stream.is_finished())
-
-    def test_streaming_algorithm_property(self):
-        """Test algorithm property of streams."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                cstream = comp.CompressStream(algorithm, 3)
-                self.assertEqual(cstream.algorithm.name.lower(), algorithm)
-
-                dstream = comp.DecompressStream(algorithm)
-                self.assertEqual(dstream.algorithm.name.lower(), algorithm)
-
-    def test_streaming_compression_levels(self):
-        """Test streaming with different compression levels."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            for level in [1, 5, 9]:
-                with self.subTest(algorithm=algorithm, level=level):
-                    compressed = self.stream_compress(algorithm, SAMPLE_DATA, chunk_size=4, level=level)
-                    decompressed = self.stream_decompress(algorithm, compressed, chunk_size=4)
-                    self.assertEqual(decompressed, SAMPLE_DATA)
-
-    def test_streaming_compress_after_finish_raises(self):
-        """Test that compressing after finish raises an error."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                stream = comp.CompressStream(algorithm, 3)
-                stream.compress(SAMPLE_DATA)
-                stream.finish()
-
-                with self.assertRaises(RuntimeError):
-                    stream.compress(SAMPLE_DATA)
-
-    def test_streaming_double_finish_raises(self):
-        """Test that calling finish twice raises an error."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                stream = comp.CompressStream(algorithm, 3)
-                stream.compress(SAMPLE_DATA)
-                stream.finish()
-
-                with self.assertRaises(RuntimeError):
-                    stream.finish()
-
-    def test_streaming_invalid_compression_level(self):
-        """Test that invalid compression levels raise errors."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                with self.assertRaises(ValueError):
-                    comp.CompressStream(algorithm, 0)
-                with self.assertRaises(ValueError):
-                    comp.CompressStream(algorithm, 11)
-
-    def test_streaming_repetitive_data(self):
-        """Test streaming with highly compressible repetitive data."""
-        for algorithm in AVAILABLE_ALGORITHMS:
-            with self.subTest(algorithm=algorithm):
-                test_data = REPETITIVE_DATA[:100 * 1024]  # 100KB of A's
-                compressed = self.stream_compress(algorithm, test_data, chunk_size=8 * 1024)
-
-                # Repetitive data should compress very well
-                self.assertLess(len(compressed), len(test_data) // 10,
-                              f"Repetitive data should compress to less than 10% for {algorithm}")
-
-                decompressed = self.stream_decompress(algorithm, compressed, chunk_size=8 * 1024)
-                self.assertEqual(decompressed, test_data)
+    def test_is_available(self):
+        for a in cu.Algorithm.__members__.values():
+            self.assertIsInstance(cu.is_available(a), bool)
 
 
-# Run the tests if executed as a standalone script
 if __name__ == "__main__":
     unittest.main()

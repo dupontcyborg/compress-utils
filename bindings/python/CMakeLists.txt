@@ -1,111 +1,69 @@
-## CMake for Python language bindings
+## Python binding — pybind11 wrapper over the header-only C++ binding.
 
-######### BINDING SETUP #########
-
-# Locate Python and pybind11
 find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG QUIET)
 
-# If pybind11 is not found, fetch it
-if (NOT pybind11_FOUND)
-    message(STATUS "pybind11 not found. Fetching pybind11 from GitHub...")
+if(NOT pybind11_FOUND)
+    message(STATUS "pybind11 not found via find_package; fetching from GitHub")
     include(FetchContent)
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG v2.12.1
+        GIT_TAG v2.13.6
     )
     FetchContent_MakeAvailable(pybind11)
 endif()
 
-# Python binding directories
-set(PYTHON_BINDING_DIR "${CMAKE_SOURCE_DIR}/bindings/python")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PYTHON_BINDING_DIR}/compress_utils")
+set(PYTHON_BINDING_DIR    "${CMAKE_CURRENT_SOURCE_DIR}")
+set(PYTHON_PACKAGE_DIR    "${PYTHON_BINDING_DIR}/compress_utils")
+set(PYTHON_MODULE_NAME    "compress_utils_py")
 
-# Define the Python module name
-set(PYTHON_MODULE_NAME "compress_utils_py")
-
-# Create the Python module target
 pybind11_add_module(${PYTHON_MODULE_NAME} MODULE compress_utils_py.cpp)
+target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_cpp)
+# Static-link the C core into the Python module so the .so is self-contained.
+target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_static)
 
-# Define the package directory
-set(PYTHON_PACKAGE_DIR "${PYTHON_BINDING_DIR}/compress_utils")
+# Same algorithm-lib link order as the smoke test.
+if(INCLUDE_ZSTD)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE zstd_library)
+endif()
+if(INCLUDE_ZLIB)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE zlib_library)
+endif()
+if(INCLUDE_BROTLI)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE brotlienc brotlidec brotlicommon)
+endif()
+if(INCLUDE_BZ2)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE bz2_library)
+endif()
+if(INCLUDE_LZ4)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE lz4_library)
+endif()
+if(INCLUDE_XZ)
+    target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE xz_library)
+endif()
 
-# Ensure the package directory exists
-file(MAKE_DIRECTORY ${PYTHON_PACKAGE_DIR})
-
-# Set the output directory for the module to the package directory
 set_target_properties(${PYTHON_MODULE_NAME} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${PYTHON_PACKAGE_DIR}
     RUNTIME_OUTPUT_DIRECTORY ${PYTHON_PACKAGE_DIR}
 )
 
-# Include directories for the Python module and link to core static lib
-target_include_directories(${PYTHON_MODULE_NAME} PRIVATE ${PYTHON_BINDING_DIR} ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(${PYTHON_MODULE_NAME} PRIVATE compress_utils_static)
-target_compile_definitions(${PYTHON_MODULE_NAME} PRIVATE COMPRESS_UTILS_EXPORT_STATIC)
-
-# Ensure that the Python bindings are built after the core library
-add_dependencies(${PYTHON_MODULE_NAME} compress_utils_static)
-
-######### INSTALL #########
-
-if (NOT SCIKIT_BUILD)
-    set(PYTHON_DIST_DIR "${CMAKE_SOURCE_DIR}/dist/python")
-    set(PYTHON_MODULE_DIST_DIR "${PYTHON_DIST_DIR}/compress_utils")
-    message(STATUS "Python distribution directory: ${PYTHON_DIST_DIR}")
-
-    # Install the Python module (compiled .so file) to the distribution directory
-    install(TARGETS ${PYTHON_MODULE_NAME}
-        LIBRARY DESTINATION ${PYTHON_MODULE_DIST_DIR}
-        ARCHIVE DESTINATION ${PYTHON_MODULE_DIST_DIR}
-        RUNTIME DESTINATION ${PYTHON_MODULE_DIST_DIR}
-    )
-
-    # Install additional files to the distribution directory
-    foreach(file ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml ${CMAKE_SOURCE_DIR}/LICENSE)
-        install(FILES ${file}
-            DESTINATION ${PYTHON_DIST_DIR}
-        )
-    endforeach()
-
-    # Install the package directory to the distribution directory
-    install(FILES ${PYTHON_PACKAGE_DIR}/__init__.py
-        DESTINATION ${PYTHON_MODULE_DIST_DIR}
-    )
-else()
-    # Fake install README.md and pyproject.toml for scikit-build
-    install(FILES ${PYTHON_BINDING_DIR}/README.md ${PYTHON_BINDING_DIR}/pyproject.toml
-        DESTINATION ${CMAKE_INSTALL_PREFIX}
-    )
-endif()
-
-# Move the built Python module to the package directory
+# Make sure the compiled module ends up alongside __init__.py.
 add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    $<TARGET_FILE:${PYTHON_MODULE_NAME}>
-    ${PYTHON_PACKAGE_DIR}
-    COMMENT "Copying Python module to package directory"
+        $<TARGET_FILE:${PYTHON_MODULE_NAME}>
+        ${PYTHON_PACKAGE_DIR}
 )
 
 ######### TESTS #########
 
 if(ENABLE_TESTS)
-    # Add the test with the library path set
     add_test(
-        NAME unit_tests_py
+        NAME py_smoke_test
         COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_compress_utils.py
         WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
     )
-    
-    # Set the PYTHONPATH differently based on platform
-    if(WIN32)
-        # Windows uses semicolons as path separators
-        set_tests_properties(unit_tests_py PROPERTIES
-            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR};${CMAKE_BINARY_DIR};${PYTHON_DIST_DIR}")
-    else()
-        # Unix-like systems use colons as path separators
-        set_tests_properties(unit_tests_py PROPERTIES 
-            ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}:${PYTHON_DIST_DIR}")
-    endif()
+    set_tests_properties(py_smoke_test PROPERTIES
+        ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}"
+    )
 endif()

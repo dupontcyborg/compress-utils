@@ -137,21 +137,28 @@ The underlying algorithm libraries (zstd, brotli, zlib, bz2, lz4, xz) are all C.
 - [ ] **Audit existing `bindings/c/compress_utils.h`** to catalog what's worth preserving (error codes, names) vs. what changes (allocation model, Compressor removal).
 - [ ] **Add `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`** to `CMakeLists.txt` so clangd/IDEs/fuzzers can find symbols.
 
-#### Phase 1 — Convert algorithm implementations to C
+#### Phase 1 — Convert algorithm implementations to C ✅
 
-Do one algorithm at a time. Keep the C++ entry points working during the transition by having `src/compress_utils_func.cpp` call into the new C functions. Order: zstd first (most-used, simplest), then zlib, brotli, bz2, lz4, xz.
+Completed 2026-05-10. All six algorithms (zstd, zlib, brotli, bz2, lz4, xz) ported to C as `src/algorithms/<algo>/<algo>.c`, each exporting a `cu_<algo>_vtbl` of type `cu_algorithm_vtbl_t`. Smoke test (`tests/smoke_test.c`) exercises one-shot round-trip, size-hint probe, BUF_TOO_SMALL behavior, and streaming round-trip through a 256-byte buffer for every available algorithm.
 
-- [ ] For each `src/algorithms/<algo>/`:
-  - [ ] Convert `<algo>.cpp` → `<algo>.c`. Remove `std::vector`, `std::span`, `std::string`, `throw`. Use caller-allocated buffers + error codes.
-  - [ ] Convert `<algo>.hpp` → `<algo>.h`. Drop namespaces; prefix functions with `cu_<algo>_`.
-  - [ ] Update tests in `tests/` to call through the new C interface (or keep them on the C++ wrapper temporarily — see Phase 4).
-  - [ ] CI matrix must stay green after each algorithm migrates.
+Bugs fixed in the process:
+- LZ4 wire-format unified to LZ4 frame format (both one-shot and streaming) — old C++ used incompatible raw-block one-shot vs LZ4F streaming.
+- Streaming "buffer fills mid-write" data-loss bug fixed across all six algorithms via the BUF_TOO_SMALL + drain protocol.
+- ZSTD `pledgedSrcSize` now set on compression so the size-hint probe works on this library's own output.
+- LZ4 streaming uses internal in/out buffers to compose with arbitrary caller buffer sizes (LZ4F's `compressBound` is pessimistic).
 
-#### Phase 2 — Unify dispatch behind a C `IAlgorithm`
+Known limitations (deferred):
+- XZ `cu_decompress_size_hint` returns `CU_ERR_SIZE_UNKNOWN`; proper implementation needs footer/index parsing. Tracked here.
 
-This is the shape change from the code review, now landing in C where it belongs.
+#### Phase 2 — Unify dispatch behind a C `IAlgorithm` ✅
 
-- [ ] Define `cu_algorithm_t` in `src/utils/algorithms.h`:
+Landed alongside Phase 1: `src/algorithm_registry.h` defines `cu_algorithm_vtbl_t`, `src/registry.c` provides `cu_registry_lookup` with `#ifdef INCLUDE_<ALGO>`-gated cases, and `src/compress_utils.c` dispatches all public-ABI calls via the vtable. The old `algorithms_router.hpp` header-defined-function landmine and the 934-line streaming mega-switch in `compress_utils_stream.cpp` are dead code now (deletion happens in Phase 4 cleanup).
+
+Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_<algo>_vtbl`, add a `case CU_ALGO_X` to `registry.c`, add to CMakeLists. Three places, mechanical.
+
+(Original detailed spec retained below for reference.)
+
+- [ ] ~~Define `cu_algorithm_t` in `src/utils/algorithms.h`~~ — done as `cu_algorithm_vtbl_t` in `src/algorithm_registry.h`.
   ```c
   typedef struct {
       const char* name;

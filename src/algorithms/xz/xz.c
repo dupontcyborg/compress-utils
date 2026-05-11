@@ -81,7 +81,7 @@ static cu_status_t xz_decompress(
         return CU_ERR_TRUNCATED;
     }
     lzma_stream strm = LZMA_STREAM_INIT;
-    if (lzma_auto_decoder(&strm, UINT64_MAX, LZMA_CONCATENATED) != LZMA_OK) {
+    if (lzma_auto_decoder(&strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit; tunable later */, LZMA_CONCATENATED) != LZMA_OK) {
         cu_set_last_error("xz: lzma_auto_decoder init failed");
         return CU_ERR_OOM;
     }
@@ -260,7 +260,7 @@ static cu_status_t xz_dstream_create(void** out_state) {
     if (!st) { cu_set_last_error("xz: oom"); return CU_ERR_OOM; }
     lzma_stream init = LZMA_STREAM_INIT;
     st->strm = init;
-    lzma_ret r = lzma_auto_decoder(&st->strm, UINT64_MAX, LZMA_CONCATENATED);
+    lzma_ret r = lzma_auto_decoder(&st->strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit; tunable later */, LZMA_CONCATENATED);
     if (r != LZMA_OK) {
         cu_status_t s = map_lzma_error(r, CU_ERR_DECOMPRESSION);
         free(st);
