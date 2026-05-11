@@ -26,6 +26,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/levels.h"
 
 #include "zstd/zstd.h"
 
@@ -34,16 +35,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ============================================================================
- * Level mapping (shared by one-shot and streaming).
- * ============================================================================ */
-
+/* ZSTD: user 1..10 → ZSTD native 1..22. */
 static int zstd_native_level(int user_level) {
-    /* User 1..10 -> ZSTD 1..22. Same mapping the original C++ used. */
-    int n = (user_level * 22) / 10;
-    if (n < 1) n = 1;
-    if (n > 22) n = 22;
-    return n;
+    return cu_scale_level(user_level, 22);
 }
 
 static cu_status_t map_zstd_error(size_t code, cu_status_t fallback) {

@@ -12,6 +12,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/levels.h"
 
 #include "bz2/bzlib.h"
 
@@ -20,11 +21,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* bzip2: user 1..10 → bz2 native 1..9 (clamp). */
 static int bz2_native_level(int user_level) {
-    /* bzip2 supports 1..9. User 1..10 -> map to 1..9 (clamp 10 to 9). */
-    if (user_level > 9) return 9;
-    if (user_level < 1) return 1;
-    return user_level;
+    return cu_clamp_level(user_level, 1, 9);
 }
 
 static const char* bz2_errstr(int code) {

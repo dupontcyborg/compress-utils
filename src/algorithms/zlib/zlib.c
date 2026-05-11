@@ -13,6 +13,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/levels.h"
 
 #include "zlib/zlib.h"
 
@@ -21,15 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ============================================================================
- * Level mapping
- * ============================================================================ */
-
+/* zlib: user 1..10 → zlib native 1..9 (clamp). */
 static int zlib_native_level(int user_level) {
-    /* zlib supports 1..9. User 1..10 -> clamp 10 to 9. */
-    if (user_level > 9) return 9;
-    if (user_level < 1) return 1;
-    return user_level;
+    return cu_clamp_level(user_level, 1, 9);
 }
 
 static cu_status_t map_zlib_error(int code, cu_status_t fallback) {

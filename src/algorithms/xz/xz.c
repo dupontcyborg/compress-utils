@@ -14,6 +14,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/levels.h"
 
 #include "xz/lzma.h"
 
@@ -22,11 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* XZ: user 1..10 → XZ preset 0..9 (zero-based). */
 static uint32_t xz_native_level(int user_level) {
-    /* XZ preset 0..9. User 1..10 -> 0..9. */
-    if (user_level < 1) return 0;
-    if (user_level > 10) return 9;
-    return (uint32_t)(user_level - 1);
+    return (uint32_t)cu_clamp_level(user_level - 1, 0, 9);
 }
 
 static cu_status_t map_lzma_error(lzma_ret r, cu_status_t fallback) {
