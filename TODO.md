@@ -187,10 +187,10 @@ Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_
 
 #### Phase 4 — Reshape bindings
 
-- [ ] **C++ binding** (`bindings/cpp/`): currently a stub README. Implement as a header-only RAII wrapper (~150 lines) over the C API. `Compressor` class, `CompressStream`/`DecompressStream` with pImpl over `cu_stream_t*`, `std::vector` return convenience. **Deletes** `src/compress_utils.{cpp,hpp}`, `src/compress_utils_func.{cpp,hpp}`, `src/compress_utils_stream.{cpp,hpp}` from the core.
-- [ ] **C binding** (`bindings/c/`): now redundant — it *is* the core. Collapse the `bindings/c/` shim into the core public headers. Move `compress_utils_c.cpp` (which currently re-wraps C++ exceptions into error codes) into the algorithm implementations directly.
-- [ ] **Python binding**: retarget pybind11 to call the C ABI directly. Should shrink. Verify cibuildwheel still works on the matrix.
-- [ ] **WASM binding**: discard the `claude/wasm-support-tree-shakeable` branch's per-algorithm C++ reimplementations. New WASM binding is a thin TS wrapper over the C ABI, with one shared dispatch — not six copy-pasted ones. Tree-shake by separate `.wasm` artifacts per algorithm, all built from the same C source.
+- [x] **C++ binding** (`bindings/cpp/`): header-only INTERFACE library at `bindings/cpp/include/compress_utils.hpp`. Free `cu::compress`/`cu::decompress`, RAII `CompressStream`/`DecompressStream`, `cu::Algorithm` enum, `cu::Error` exception with `.code()`. ~250 lines. Old C++ core (`src/compress_utils.{cpp,hpp}`, `src/compress_utils_func.{cpp,hpp}`, `src/compress_utils_stream.{cpp,hpp}`, all `.cpp/.hpp` under `src/algorithms/*/`, `src/utils/*.hpp`, `src/algorithms.hpp{,.in}`, `src/version.hpp.in`, `src/symbol_exports*.hpp`) deleted.
+- [x] **C binding** (`bindings/c/`): deleted — the new `include/compress_utils.h` IS the C ABI; there's no separate shim layer.
+- [x] **Python binding**: retargeted. `bindings/python/compress_utils_py.cpp` is a thin pybind11 wrapper over the C++ binding (which is itself a wrapper over the C ABI). `compressor()` factory dropped (it was a smell). `version()`, `is_available()`, `set_max_decompressed_size()` added. `CompressError` exception exported. Tests rewritten as a unittest module covering free fn / streaming / cross-API / garbage-rejection / introspection.
+- [ ] **WASM binding**: discard the `claude/wasm-support-tree-shakeable` branch's per-algorithm C++ reimplementations. New WASM binding is a thin TS wrapper over the C ABI, with one shared dispatch — not six copy-pasted ones. Tree-shake by separate `.wasm` artifacts per algorithm, all built from the same C source. **Deferred — out of scope for this session.**
 
 #### Phase 5 — Build & distribution
 

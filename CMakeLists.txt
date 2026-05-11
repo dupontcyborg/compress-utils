@@ -76,6 +76,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 ######### OPTIONS #########
 
 option(ENABLE_TESTS "Enable building tests" ON)
+option(ENABLE_FUZZ  "Enable libFuzzer harnesses (clang only)" OFF)
 
 # Per-algorithm inclusion. All six have been migrated to the C core in
 # Phase 1; default to ON. Disable individually for slimmer builds.

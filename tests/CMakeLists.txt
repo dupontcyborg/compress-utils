@@ -37,3 +37,5 @@ endif()
 if(ENABLE_TESTS)
     add_test(NAME smoke_test COMMAND smoke_test)
 endif()
+
+add_subdirectory(fuzz)
