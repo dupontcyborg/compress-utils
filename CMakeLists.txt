@@ -77,14 +77,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 option(ENABLE_TESTS "Enable building tests" ON)
 
-# Per-algorithm inclusion. As of Phase 1, only ZSTD has been migrated to
-# the C core. The others remain default-OFF until their ports land.
+# Per-algorithm inclusion. All six have been migrated to the C core in
+# Phase 1; default to ON. Disable individually for slimmer builds.
 option(INCLUDE_ZSTD   "Include Zstd compression algorithm"   ON)
-option(INCLUDE_BROTLI "Include Brotli compression algorithm" OFF)
-option(INCLUDE_ZLIB   "Include zlib compression algorithm"   OFF)
-option(INCLUDE_BZ2    "Include bzip2 compression algorithm"  OFF)
-option(INCLUDE_LZ4    "Include LZ4 compression algorithm"    OFF)
-option(INCLUDE_XZ     "Include XZ/LZMA compression algorithm" OFF)
+option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
+option(INCLUDE_ZLIB   "Include zlib compression algorithm"   ON)
+option(INCLUDE_BZ2    "Include bzip2 compression algorithm"  ON)
+option(INCLUDE_LZ4    "Include LZ4 compression algorithm"    ON)
+option(INCLUDE_XZ     "Include XZ/LZMA compression algorithm" ON)
 
 if(NOT INCLUDE_ZSTD AND NOT INCLUDE_BROTLI AND NOT INCLUDE_ZLIB
         AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ)

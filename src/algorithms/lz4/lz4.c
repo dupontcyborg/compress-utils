@@ -183,33 +183,44 @@ static cu_status_t lz4_decompress_size_hint(
  * Streaming compression
  * ============================================================================ */
 
+/*
+ * LZ4 streaming compression uses two internal buffers because LZ4F's
+ * incremental API doesn't compose with small caller-provided output
+ * buffers (LZ4F_compressBound is pessimistic — assumes a flush of a
+ * full 64 KB block could happen on any call). Design:
+ *
+ *   - in_buf:  uncompressed bytes the caller has handed us, waiting to
+ *              be fed to LZ4F_compressUpdate in BLOCK_SIZE chunks.
+ *   - out_buf: compressed bytes produced by the codec, waiting to be
+ *              given to the caller's `out` in BUF_TOO_SMALL slices.
+ *
+ * On each write/finish call:
+ *   1. Drain out_buf into caller's `out`.
+ *   2. If out_buf is empty, append `in` to in_buf, then feed one block
+ *      from in_buf into LZ4F_compressUpdate (which fills out_buf).
+ *   3. Drain again, repeat.
+ */
+
+#define LZ4_BLOCK_SIZE (64 * 1024)
+
 typedef struct {
     LZ4F_cctx* cctx;
     LZ4F_preferences_t prefs;
-    uint8_t* pending;
-    size_t   pending_len;
-    size_t   pending_cap;
-    int      finishing;
+
+    uint8_t* in_buf;
+    size_t   in_head;
+    size_t   in_tail;
+    size_t   in_cap;
+
+    uint8_t* out_buf;
+    size_t   out_head;
+    size_t   out_tail;
+    size_t   out_cap;
+
     int      header_written;
+    int      finishing;
     int      finished;
 } lz4_cstream_state_t;
-
-static cu_status_t pending_append(uint8_t** pending, size_t* pending_len, size_t* pending_cap,
-                                  const uint8_t* src, size_t n) {
-    if (n == 0) return CU_OK;
-    size_t need = *pending_len + n;
-    if (need > *pending_cap) {
-        size_t new_cap = *pending_cap ? *pending_cap * 2 : 16 * 1024;
-        while (new_cap < need) new_cap *= 2;
-        uint8_t* p = realloc(*pending, new_cap);
-        if (!p) { cu_set_last_error("lz4: oom"); return CU_ERR_OOM; }
-        *pending = p;
-        *pending_cap = new_cap;
-    }
-    memcpy(*pending + *pending_len, src, n);
-    *pending_len += n;
-    return CU_OK;
-}
 
 static cu_status_t lz4_cstream_create(int level, void** out_state) {
     lz4_cstream_state_t* st = calloc(1, sizeof(*st));
@@ -220,27 +231,79 @@ static cu_status_t lz4_cstream_create(int level, void** out_state) {
         free(st);
         return s;
     }
-    /* Streaming: we don't know total content size, so omit contentSize
-     * flag (size_hint will report SIZE_UNKNOWN for streamed frames). */
     memset(&st->prefs, 0, sizeof(st->prefs));
     st->prefs.compressionLevel = lz4_native_level(level);
     st->prefs.frameInfo.contentChecksumFlag = LZ4F_contentChecksumEnabled;
+
+    st->out_cap = LZ4F_compressBound(LZ4_BLOCK_SIZE, &st->prefs) + 128;
+    st->out_buf = malloc(st->out_cap);
+    if (!st->out_buf) {
+        LZ4F_freeCompressionContext(st->cctx);
+        free(st);
+        cu_set_last_error("lz4: oom");
+        return CU_ERR_OOM;
+    }
     *out_state = st;
     return CU_OK;
 }
 
-/* Helper: write begin header into out if not yet written. Returns CU_OK
- * or BUF_TOO_SMALL; on success, advances *written. */
-static cu_status_t cstream_emit_begin(lz4_cstream_state_t* st,
-                                      uint8_t* out, size_t cap, size_t* written) {
-    if (st->header_written) return CU_OK;
-    size_t avail = cap - *written;
-    size_t need = LZ4F_HEADER_SIZE_MAX;
-    if (avail < need) return CU_ERR_BUF_TOO_SMALL;
-    size_t r = LZ4F_compressBegin(st->cctx, out + *written, avail, &st->prefs);
+static cu_status_t in_buf_append(lz4_cstream_state_t* st, const uint8_t* src, size_t n) {
+    if (n == 0) return CU_OK;
+    /* Compact: shift head bytes to start if room would be created. */
+    if (st->in_head > 0 && st->in_tail - st->in_head + n > st->in_cap - st->in_head) {
+        memmove(st->in_buf, st->in_buf + st->in_head, st->in_tail - st->in_head);
+        st->in_tail -= st->in_head;
+        st->in_head = 0;
+    }
+    if (st->in_tail + n > st->in_cap) {
+        size_t new_cap = st->in_cap ? st->in_cap * 2 : LZ4_BLOCK_SIZE;
+        while (new_cap < st->in_tail + n) new_cap *= 2;
+        uint8_t* p = realloc(st->in_buf, new_cap);
+        if (!p) { cu_set_last_error("lz4: oom"); return CU_ERR_OOM; }
+        st->in_buf = p;
+        st->in_cap = new_cap;
+    }
+    memcpy(st->in_buf + st->in_tail, src, n);
+    st->in_tail += n;
+    return CU_OK;
+}
+
+/* Drain out_buf into caller. Returns 1 if out_buf still has data. */
+static int out_drain(lz4_cstream_state_t* st,
+                     uint8_t* out, size_t cap, size_t* written) {
+    size_t available = st->out_tail - st->out_head;
+    size_t avail_out = cap - *written;
+    size_t n = available < avail_out ? available : avail_out;
+    if (n > 0) {
+        memcpy(out + *written, st->out_buf + st->out_head, n);
+        *written += n;
+        st->out_head += n;
+    }
+    if (st->out_head == st->out_tail) {
+        st->out_head = 0;
+        st->out_tail = 0;
+        return 0;
+    }
+    return 1;
+}
+
+/* Feed one block from in_buf to the codec, filling out_buf. Requires
+ * out_buf to be empty. Returns CU_OK or a codec error. Sets a flag if
+ * in_buf is exhausted. */
+static cu_status_t cstream_feed_one_block(lz4_cstream_state_t* st) {
+    size_t in_avail = st->in_tail - st->in_head;
+    if (in_avail == 0) return CU_OK;
+    size_t chunk = in_avail < LZ4_BLOCK_SIZE ? in_avail : LZ4_BLOCK_SIZE;
+    size_t r = LZ4F_compressUpdate(st->cctx,
+                                   st->out_buf, st->out_cap,
+                                   st->in_buf + st->in_head, chunk, NULL);
     if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
-    *written += r;
-    st->header_written = 1;
+    st->out_tail = r;
+    st->in_head += chunk;
+    if (st->in_head == st->in_tail) {
+        st->in_head = 0;
+        st->in_tail = 0;
+    }
     return CU_OK;
 }
 
@@ -253,42 +316,30 @@ static cu_status_t lz4_cstream_write(
         cu_set_last_error("lz4: write after finish");
         return CU_ERR_STREAM_STATE;
     }
-    cu_status_t s = pending_append(&st->pending, &st->pending_len, &st->pending_cap, in, in_len);
-    if (s != CU_OK) return s;
-
     size_t cap = *out_len;
     size_t written = 0;
 
-    s = cstream_emit_begin(st, out, cap, &written);
-    if (s != CU_OK) { *out_len = written; return s; }
+    /* Append new input first. */
+    cu_status_t s = in_buf_append(st, in, in_len);
+    if (s != CU_OK) return s;
 
-    /* Compress pending in chunks that fit the remaining output. */
-    while (st->pending_len > 0) {
-        size_t avail = cap - written;
-        /* Worst case for `chunk` bytes is LZ4F_compressBound(chunk). Pick
-         * the largest chunk that fits. */
-        if (avail < LZ4F_compressBound(1, &st->prefs)) {
-            *out_len = written;
-            return CU_ERR_BUF_TOO_SMALL;
-        }
-        /* Binary-search the largest chunk that fits is overkill; just
-         * pick min(pending_len, max_chunk_for_avail). The bound is
-         * roughly avail - 16 for header per block. */
-        size_t chunk = st->pending_len;
-        while (chunk > 0 && LZ4F_compressBound(chunk, &st->prefs) > avail) {
-            chunk /= 2;
-        }
-        if (chunk == 0) {
-            *out_len = written;
-            return CU_ERR_BUF_TOO_SMALL;
-        }
-        size_t r = LZ4F_compressUpdate(st->cctx,
-                                       out + written, avail,
-                                       st->pending, chunk, NULL);
+    /* Drain anything leftover in out_buf. */
+    if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
+
+    /* Emit header if needed. */
+    if (!st->header_written) {
+        size_t r = LZ4F_compressBegin(st->cctx, st->out_buf, st->out_cap, &st->prefs);
         if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
-        written += r;
-        memmove(st->pending, st->pending + chunk, st->pending_len - chunk);
-        st->pending_len -= chunk;
+        st->out_tail = r;
+        st->header_written = 1;
+        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
+    }
+
+    /* Consume in_buf one block at a time. */
+    while (st->in_tail - st->in_head > 0) {
+        s = cstream_feed_one_block(st);
+        if (s != CU_OK) return s;
+        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
     }
 
     *out_len = written;
@@ -300,54 +351,46 @@ static cu_status_t lz4_cstream_finish(
 ) {
     lz4_cstream_state_t* st = (lz4_cstream_state_t*)state;
     st->finishing = 1;
-    if (st->finished) { *out_len = 0; return CU_OK; }
-
     size_t cap = *out_len;
     size_t written = 0;
 
-    cu_status_t s = cstream_emit_begin(st, out, cap, &written);
-    if (s != CU_OK) { *out_len = written; return s; }
+    if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
 
-    /* Drain pending. */
-    while (st->pending_len > 0) {
-        size_t avail = cap - written;
-        size_t chunk = st->pending_len;
-        while (chunk > 0 && LZ4F_compressBound(chunk, &st->prefs) > avail) {
-            chunk /= 2;
-        }
-        if (chunk == 0) {
-            *out_len = written;
-            return CU_ERR_BUF_TOO_SMALL;
-        }
-        size_t r = LZ4F_compressUpdate(st->cctx,
-                                       out + written, avail,
-                                       st->pending, chunk, NULL);
+    if (st->finished) { *out_len = written; return CU_OK; }
+
+    /* Header (for zero-input finish). */
+    if (!st->header_written) {
+        size_t r = LZ4F_compressBegin(st->cctx, st->out_buf, st->out_cap, &st->prefs);
         if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
-        written += r;
-        memmove(st->pending, st->pending + chunk, st->pending_len - chunk);
-        st->pending_len -= chunk;
+        st->out_tail = r;
+        st->header_written = 1;
+        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
+    }
+
+    /* Drain pending input. */
+    while (st->in_tail - st->in_head > 0) {
+        cu_status_t s = cstream_feed_one_block(st);
+        if (s != CU_OK) return s;
+        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
     }
 
     /* End frame. */
-    size_t avail = cap - written;
-    size_t end_bound = LZ4F_compressBound(0, &st->prefs);
-    if (avail < end_bound) {
-        *out_len = written;
-        return CU_ERR_BUF_TOO_SMALL;
-    }
-    size_t r = LZ4F_compressEnd(st->cctx, out + written, avail, NULL);
+    size_t r = LZ4F_compressEnd(st->cctx, st->out_buf, st->out_cap, NULL);
     if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
-    written += r;
+    st->out_tail = r;
     st->finished = 1;
+
+    int more = out_drain(st, out, cap, &written);
     *out_len = written;
-    return CU_OK;
+    return more ? CU_ERR_BUF_TOO_SMALL : CU_OK;
 }
 
 static void lz4_cstream_destroy(void* state) {
     lz4_cstream_state_t* st = (lz4_cstream_state_t*)state;
     if (!st) return;
     if (st->cctx) LZ4F_freeCompressionContext(st->cctx);
-    free(st->pending);
+    free(st->in_buf);
+    free(st->out_buf);
     free(st);
 }
 
@@ -414,6 +457,23 @@ static cu_status_t dstream_pump(lz4_dstream_state_t* st,
     return CU_OK;
 }
 
+static cu_status_t dstream_pending_append(lz4_dstream_state_t* st,
+                                          const uint8_t* src, size_t n) {
+    if (n == 0) return CU_OK;
+    size_t need = st->pending_len + n;
+    if (need > st->pending_cap) {
+        size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
+        while (new_cap < need) new_cap *= 2;
+        uint8_t* p = realloc(st->pending, new_cap);
+        if (!p) { cu_set_last_error("lz4: oom"); return CU_ERR_OOM; }
+        st->pending = p;
+        st->pending_cap = new_cap;
+    }
+    memcpy(st->pending + st->pending_len, src, n);
+    st->pending_len += n;
+    return CU_OK;
+}
+
 static cu_status_t lz4_dstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -423,7 +483,7 @@ static cu_status_t lz4_dstream_write(
         cu_set_last_error("lz4: data after end of frame");
         return CU_ERR_DECOMPRESSION;
     }
-    cu_status_t s = pending_append(&st->pending, &st->pending_len, &st->pending_cap, in, in_len);
+    cu_status_t s = dstream_pending_append(st, in, in_len);
     if (s != CU_OK) return s;
     return dstream_pump(st, out, out_len);
 }
