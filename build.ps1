@@ -152,21 +152,25 @@ if ($ALGORITHMS_LIST.Count -gt 0) {
     $CMAKE_OPTIONS += "-DINCLUDE_ZLIB=ON"
 }
 
-# Handle language bindings
+# Handle language bindings.
+#
+# Note: the C ABI is the library's core (declared in include/compress_utils.h)
+# and is always built. There is no separate "C binding" target to opt into.
+# Bindings on top of the C core: cpp (header-only RAII), python (pybind11),
+# wasm (TS over emscripten, not yet implemented).
 if ($LANGUAGES_LIST.Count -gt 0) {
-    # Disable all bindings by default
-    $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=OFF"
-    $CMAKE_OPTIONS += "-DBUILD_JS_TS_BINDINGS=OFF"
+    $CMAKE_OPTIONS += "-DBUILD_CPP_BINDINGS=OFF"
     $CMAKE_OPTIONS += "-DBUILD_PYTHON_BINDINGS=OFF"
 
-    # Enable specified bindings
     foreach ($lang in $LANGUAGES_LIST) {
         switch ($lang.Trim().ToLower()) {
-            "js"     { $CMAKE_OPTIONS += "-DBUILD_JS_TS_BINDINGS=ON" }
-            "ts"     { $CMAKE_OPTIONS += "-DBUILD_JS_TS_BINDINGS=ON" }
+            "cpp"    { $CMAKE_OPTIONS += "-DBUILD_CPP_BINDINGS=ON" }
+            "c++"    { $CMAKE_OPTIONS += "-DBUILD_CPP_BINDINGS=ON" }
             "python" { $CMAKE_OPTIONS += "-DBUILD_PYTHON_BINDINGS=ON" }
-            "c"      { $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=ON" }
-            "none"   { $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=OFF" }
+            "c"      { } # C ABI is the core; built unconditionally.
+            "js"     { Write-Host "WASM/JS binding not yet implemented; see TODO.md" }
+            "ts"     { Write-Host "WASM/JS binding not yet implemented; see TODO.md" }
+            "wasm"   { Write-Host "WASM/JS binding not yet implemented; see TODO.md" }
             default  {
                 Write-Error "Unknown language binding: $lang"
                 Show-Usage
@@ -174,8 +178,7 @@ if ($LANGUAGES_LIST.Count -gt 0) {
         }
     }
 } else {
-    # Enable all bindings by default
-    $CMAKE_OPTIONS += "-DBUILD_C_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
+    $CMAKE_OPTIONS += "-DBUILD_CPP_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
 }
 
 # Move into the build directory
