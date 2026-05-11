@@ -32,6 +32,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Symbol visibility. Define CU_BUILD_SHARED when building this library as
+ * a shared lib, and CU_USE_SHARED when consuming it as a shared lib. The
+ * static-library and "build static, consume directly" cases need no
+ * defines.
+ */
+#if defined(_WIN32) || defined(_WIN64)
+#  if defined(CU_BUILD_SHARED)
+#    define CU_API __declspec(dllexport)
+#  elif defined(CU_USE_SHARED)
+#    define CU_API __declspec(dllimport)
+#  else
+#    define CU_API
+#  endif
+#else
+#  if defined(CU_BUILD_SHARED)
+#    define CU_API __attribute__((visibility("default")))
+#  else
+#    define CU_API
+#  endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -45,7 +67,7 @@ extern "C" {
 #define CU_VERSION_PATCH 0
 
 /* Returns a static string of the form "MAJOR.MINOR.PATCH". */
-const char* cu_version(void);
+CU_API const char* cu_version(void);
 
 /* ============================================================================
  * Algorithms
@@ -65,14 +87,14 @@ typedef enum {
  * Returns the lowercase canonical name ("zstd", "brotli", ...) for an
  * algorithm, or NULL for an unknown value. Static lifetime.
  */
-const char* cu_algorithm_name(cu_algorithm_t algo);
+CU_API const char* cu_algorithm_name(cu_algorithm_t algo);
 
 /*
  * Returns 1 if the algorithm was included in this build (per the
  * INCLUDE_<ALGO> CMake options), 0 otherwise. Useful for bindings that
  * want to expose only the algorithms actually compiled in.
  */
-int cu_algorithm_available(cu_algorithm_t algo);
+CU_API int cu_algorithm_available(cu_algorithm_t algo);
 
 /* ============================================================================
  * Status codes
@@ -107,17 +129,17 @@ typedef enum {
  * Returns a static human-readable string for a status code. Returns
  * "unknown error" for unrecognized values. Never NULL.
  */
-const char* cu_strerror(cu_status_t code);
+CU_API const char* cu_strerror(cu_status_t code);
 
 /*
  * Returns the human-readable message for the most recent error on the
  * calling thread, or "" if no error has occurred. The returned pointer is
  * valid until the next cu_* call on this thread that produces an error.
  */
-const char* cu_last_error(void);
+CU_API const char* cu_last_error(void);
 
 /* Clears the calling thread's last-error state. */
-void cu_clear_last_error(void);
+CU_API void cu_clear_last_error(void);
 
 /* ============================================================================
  * One-shot compression
@@ -141,9 +163,9 @@ void cu_clear_last_error(void);
  * returns 0 unless the input is too large for the codec (in which case
  * the algorithm's hard limit applies).
  */
-size_t cu_compress_bound(size_t in_len, cu_algorithm_t algo);
+CU_API size_t cu_compress_bound(size_t in_len, cu_algorithm_t algo);
 
-cu_status_t cu_compress(
+CU_API cu_status_t cu_compress(
     cu_algorithm_t algo,
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len,
@@ -194,7 +216,7 @@ cu_status_t cu_compress(
  *   CU_ERR_DECOMPRESSION  — input is corrupted or invalid
  *   CU_ERR_TRUNCATED      — input ended before the codec was done
  */
-cu_status_t cu_decompress(
+CU_API cu_status_t cu_decompress(
     cu_algorithm_t algo,
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -219,7 +241,7 @@ cu_status_t cu_decompress(
  *   - For XZ, parses the stream footer; requires `in` to contain the
  *     complete stream (i.e. `in_len` reaches the end-of-stream marker).
  */
-cu_status_t cu_decompress_size_hint(
+CU_API cu_status_t cu_decompress_size_hint(
     cu_algorithm_t algo,
     const uint8_t* in, size_t in_len,
     size_t* out_size
@@ -234,7 +256,7 @@ cu_status_t cu_decompress_size_hint(
  *
  * Thread-safe; takes effect for subsequent calls.
  */
-void cu_set_max_decompressed_size(size_t bytes);
+CU_API void cu_set_max_decompressed_size(size_t bytes);
 
 /* ============================================================================
  * Streaming compression
@@ -263,7 +285,7 @@ void cu_set_max_decompressed_size(size_t bytes);
 
 typedef struct cu_compress_stream cu_compress_stream_t;
 
-cu_status_t cu_compress_stream_create(
+CU_API cu_status_t cu_compress_stream_create(
     cu_algorithm_t algo,
     int level,
     cu_compress_stream_t** out_stream
@@ -277,7 +299,7 @@ cu_status_t cu_compress_stream_create(
  * portion of `in` internally, so on the retry the caller passes
  * (in=NULL, in_len=0) to drain).
  */
-cu_status_t cu_compress_stream_write(
+CU_API cu_status_t cu_compress_stream_write(
     cu_compress_stream_t* stream,
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -288,12 +310,12 @@ cu_status_t cu_compress_stream_write(
  * trailing data has been written. Returns CU_ERR_BUF_TOO_SMALL if more
  * output remains; caller drains with a fresh buffer.
  */
-cu_status_t cu_compress_stream_finish(
+CU_API cu_status_t cu_compress_stream_finish(
     cu_compress_stream_t* stream,
     uint8_t* out, size_t* out_len
 );
 
-void cu_compress_stream_destroy(cu_compress_stream_t* stream);
+CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
 
 /* ============================================================================
  * Streaming decompression
@@ -306,23 +328,23 @@ void cu_compress_stream_destroy(cu_compress_stream_t* stream);
 
 typedef struct cu_decompress_stream cu_decompress_stream_t;
 
-cu_status_t cu_decompress_stream_create(
+CU_API cu_status_t cu_decompress_stream_create(
     cu_algorithm_t algo,
     cu_decompress_stream_t** out_stream
 );
 
-cu_status_t cu_decompress_stream_write(
+CU_API cu_status_t cu_decompress_stream_write(
     cu_decompress_stream_t* stream,
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
 );
 
-cu_status_t cu_decompress_stream_finish(
+CU_API cu_status_t cu_decompress_stream_finish(
     cu_decompress_stream_t* stream,
     uint8_t* out, size_t* out_len
 );
 
-void cu_decompress_stream_destroy(cu_decompress_stream_t* stream);
+CU_API void cu_decompress_stream_destroy(cu_decompress_stream_t* stream);
 
 #ifdef __cplusplus
 }  /* extern "C" */
