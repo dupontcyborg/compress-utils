@@ -33,6 +33,7 @@
 
 # Output files
 build/
+build-*/
 dist/
 algorithms/dist/
 algorithms/*/src/
