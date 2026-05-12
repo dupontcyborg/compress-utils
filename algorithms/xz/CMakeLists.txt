@@ -37,8 +37,13 @@ include(ExternalProject)
 
 # Conditional compiler flags for Windows
 if (MSVC)
-    set(XZ_C_FLAGS "/wd5105")
-    set(XZ_CXX_FLAGS "/wd5105")
+    # Leading space matters — these get appended onto ${CMAKE_C_FLAGS}
+    # in the ExternalProject_Add below without a separator. Without the
+    # space, MSVC sees `/D_WINDOWS/wd5105` as one bogus macro token
+    # (warning C5102: invalid command-line macro definition) and the
+    # `/wd5105` suppression goes unapplied.
+    set(XZ_C_FLAGS " /wd5105")
+    set(XZ_CXX_FLAGS " /wd5105")
 else()
     set(XZ_C_FLAGS "")
     set(XZ_CXX_FLAGS "")
