@@ -1,0 +1,204 @@
+name: Build, Test and Package WASM
+
+# Triggers:
+#   - PRs that touch wasm-relevant paths get validation only (no publish).
+#   - main pushes get full validation, no publish.
+#   - v* tags get full validation + npm publish.
+#
+# Path filter on PR is a small deviation from build_and_test_python.yml
+# (which doesn't run on PR). Justified by the wasm pipeline being the
+# most cross-cutting one we have — zig toolchain, 6 codecs, 5 runtimes,
+# 3 browsers — and the cheapest pipeline to catch regressions in on PR.
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "bindings/wasm/**"
+      - "src/**"
+      - "algorithms/**"
+      - "include/compress_utils.h"
+      - "cmake/toolchains/zig-wasm.cmake"
+      - ".github/workflows/build_and_test_wasm.yml"
+
+jobs:
+  build:
+    name: Build .wasm artifacts (Linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: "0.16.0"
+
+      - name: Install wabt + binaryen (wasm-strip / wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y wabt binaryen
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-wasm \
+            -DBUILD_WASM_BINDINGS=ON \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_CPP_BINDINGS=OFF \
+            -DENABLE_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build all six .wasm
+        run: cmake --build build-wasm --target compress_utils_wasm -j
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: bindings/wasm/dist/algorithms/
+          retention-days: 7
+
+  test-runtime-matrix:
+    name: Test on ${{ matrix.runtime }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node-20, node-22, bun, deno]
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: bindings/wasm/dist/algorithms/
+
+      - name: Setup Node 20
+        if: matrix.runtime == 'node-20'
+        uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Setup Node 22
+        if: matrix.runtime == 'node-22'
+        uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Setup Bun
+        if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v1
+      - name: Setup Deno
+        if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v1
+        with: { deno-version: "v2.x" }
+
+      - name: Install deps + build TS
+        if: startsWith(matrix.runtime, 'node-') || matrix.runtime == 'bun'
+        run: |
+          npm install
+          npm run build:ts
+
+      - name: Run vitest on Node
+        if: startsWith(matrix.runtime, 'node-')
+        run: npm test
+
+      - name: Run vitest on Bun
+        if: matrix.runtime == 'bun'
+        run: bun test --bun tests/
+
+      - name: Smoke test on Deno
+        if: matrix.runtime == 'deno'
+        run: deno run --allow-read --allow-env tests-runtime/deno-smoke.ts
+
+  test-browsers:
+    name: Playwright (${{ matrix.browser }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: bindings/wasm/dist/algorithms/
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - run: npm install
+      - run: npm run build:ts
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run browser smoke test
+        run: npx playwright test --project=${{ matrix.browser }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace-${{ matrix.browser }}
+          path: bindings/wasm/test-results/
+          retention-days: 7
+
+  publish_to_npm:
+    name: Publish to npm
+    needs: [build, test-runtime-matrix, test-browsers]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # OIDC for `npm publish --provenance` (publicly verifiable
+      # build-attestation; landed in npm 10 / 2024).
+      id-token: write
+      # softprops/action-gh-release needs contents:write to attach
+      # the bundle to the GitHub Release.
+      contents: write
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: bindings/wasm/dist/algorithms/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          # registry-url wires NODE_AUTH_TOKEN into ~/.npmrc.
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm install
+      - run: npm run build:ts
+
+      - name: Set package version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Publish (provenance-signed)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Bundle artifacts for GitHub Release
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          tar -czf compress-utils-wasm-${VERSION}.tar.gz dist/
+          echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bindings/wasm/compress-utils-wasm-${{ env.RELEASE_VERSION }}.tar.gz
+          fail_on_unmatched_files: true
+          draft: false
+          tag_name: ${{ github.ref_name }}
