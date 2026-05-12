@@ -5,14 +5,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/compress-utils.svg)](https://pypi.org/project/compress-utils/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A unified, high-performance interface for multiple compression algorithms across programming languages.
-
-## Features
-
-- **Multiple Algorithms**: Integrated support for Brotli, bzip2, lz4, LZMA, XZ, zlib, and Zstandard
-- **Consistent API**: Same interface across all supported algorithms
-- **Cross-Language**: Core C++ library with language bindings for Python (and more to come)
-- **Performance Focused**: Built to minimize overhead over native compression libraries
+Unified Python interface for six compression algorithms — Brotli, bzip2, LZ4, XZ/LZMA, zlib, and Zstandard — backed by a single high-performance C library. Same API for every algorithm.
 
 ## Installation
 
@@ -20,85 +13,102 @@ A unified, high-performance interface for multiple compression algorithms across
 pip install compress-utils
 ```
 
-## Quick Start
+The wheel is self-contained: no system codec libraries required at runtime. Type stubs (`.pyi`) and a `py.typed` marker ship with the wheel, so `mypy`, `pyright`, and IDE autocomplete work out of the box.
 
-### Object-Oriented API
+## Quick start
+
+### Functional API (most common)
 
 ```python
-from compress_utils import compressor, Algorithm
+import compress_utils as cu
 
-# Create a compressor with your algorithm of choice
-comp = compressor("zstd")  # or 'brotli', 'xz', etc.
+data = b"the quick brown fox jumps over the lazy dog" * 100
 
-# Compress data with optional compression level (1-10)
-compressed = comp.compress(b"Hello, world!", level=3)
-
-# Decompress data
-original = comp.decompress(compressed)
+compressed = cu.compress(data, "zstd", level=5)
+restored   = cu.decompress(compressed, "zstd")
+assert restored == data
 ```
 
-### Functional API
+Algorithm names accept both lowercase strings (`"zstd"`, `"brotli"`, …) and the typed enum:
 
 ```python
-from compress_utils import compress, decompress
-
-# Compress and decompress directly
-compressed = compress(b"Hello, world!", "zstd", level=3)
-original = decompress(compressed, "zstd")
+cu.compress(data, cu.Algorithm.zstd, level=5)
 ```
 
 ### Streaming API
 
-For processing large data in chunks or when data arrives incrementally (e.g., from a network stream), use the streaming API:
+For inputs that don't fit in memory or arrive incrementally:
 
 ```python
 from compress_utils import CompressStream, DecompressStream
 
-# Compression streaming
-stream = CompressStream("zstd", level=3)
-compressed_chunks = []
+cs = CompressStream("zstd", level=5)
+chunks = [cs.compress(chunk) for chunk in iter_chunks(some_file)]
+chunks.append(cs.finish())
+compressed = b"".join(chunks)
 
-# Process data in chunks
-for chunk in data_chunks:
-    compressed_chunks.append(stream.compress(chunk))
-
-# Finalize compression (important!)
-compressed_chunks.append(stream.finish())
-
-# Decompression streaming
-decompress_stream = DecompressStream("zstd")
-decompressed_chunks = []
-
-for chunk in compressed_chunks:
-    decompressed_chunks.append(decompress_stream.decompress(chunk))
-
-# Finalize decompression
-decompressed_chunks.append(decompress_stream.finish())
+ds = DecompressStream("zstd")
+restored = ds.decompress(compressed) + ds.finish()
 ```
 
-The streaming API is ideal for:
-- Processing files that don't fit in memory
-- Network data that arrives in chunks
-- Real-time compression/decompression
-- Pipeline processing where data flows through multiple stages
+## Supported algorithms
 
-## Available Algorithms
+| Algorithm | Spelling                | Notes                                          |
+|-----------|-------------------------|------------------------------------------------|
+| Zstandard | `"zstd"`                | Wire format: ZSTD frame with content size.     |
+| Brotli    | `"brotli"`              | Wire format: raw Brotli stream.                |
+| zlib      | `"zlib"` (also `"gzip"`) | Wire format: zlib wrapper (RFC 1950).         |
+| bzip2     | `"bz2"` (also `"bzip2"`) | bzip2 stream.                                  |
+| LZ4       | `"lz4"`                 | LZ4 **frame** format (compatible with `lz4` CLI / `.lz4` files). |
+| XZ/LZMA   | `"xz"` (also `"lzma"`)  | XZ stream with CRC64.                          |
 
-The following algorithms are supported (availability depends on build configuration):
+`cu.is_available(name_or_enum)` returns `True` for algorithms compiled into the installed wheel.
 
-- **Brotli** - Google's compression algorithm optimized for the web
-- **LZMA/XZ** - High compression ratio algorithms
-- **zlib** - Widely used general-purpose compression
-- **Zstandard** - Fast compression algorithm with high ratios
+## Other helpful APIs
 
-## Documentation
+```python
+cu.version()                                  # "0.1.0"
+cu.set_max_decompressed_size(256 * 1024**2)   # bound one-shot decompression
+                                              # (default: 1 GiB; 0 = unbounded)
 
-For detailed API documentation and advanced usage, see the [full documentation](https://github.com/dupontcyborg/compress-utils/blob/main/bindings/python/API.md).
+try:
+    cu.decompress(garbage, "zstd")
+except cu.CompressError as e:
+    print(e)
+```
 
-## Contributing
+## Compression levels
 
-Contributions are welcome! Check out the [issues page](https://github.com/dupontcyborg/compress-utils/issues) for open tasks or submit your own ideas.
+Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The Python binding maps this to each algorithm's native range automatically — you don't need to know that ZSTD goes 1–22 or zlib goes 1–9. Defaults to `5` if omitted.
+
+## Type checking
+
+The package ships PEP 561 type information:
+
+```python
+import compress_utils as cu
+reveal_type(cu.compress)           # → (data: Buffer, algorithm: object, level: int = 5) -> bytes
+reveal_type(cu.Algorithm.zstd)     # → Algorithm
+```
+
+Stubs are regenerated from the compiled module at build time (via `pybind11-stubgen`), so they cannot drift from the binding signatures.
+
+## Performance notes
+
+The Python binding is a thin pybind11 wrapper over the C library. Streaming uses chunked buffers with an internal drain protocol — output is yielded in 64 KB pages, so streaming a multi-GB file does not hold the whole compressed result in memory.
+
+For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload — internal codec state is short-lived and reused.
+
+## Project layout
+
+This is one of three official bindings to the [compress-utils](https://github.com/dupontcyborg/compress-utils) C library:
+
+- **C** — the canonical ABI in `include/compress_utils.h`.
+- **C++** — header-only `cu::` namespace, `bindings/cpp/`.
+- **Python** — this package.
+
+WASM/JS, Go, Rust, Swift, and Java bindings are tracked in [TODO.md](https://github.com/dupontcyborg/compress-utils/blob/main/TODO.md).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).

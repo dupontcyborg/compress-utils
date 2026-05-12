@@ -6,193 +6,116 @@
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml" alt="GitHub Actions Workflow Status"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/pr_build_and_test.yml" alt="GitHub Actions Workflow Status"/>
   <img src="https://img.shields.io/github/v/release/dupontcyborg/compress-utils" alt="GitHub Release"/>
   <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils" alt="Code Size"/>
 </p>
 
-`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+A unified, high-performance interface for six compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA** — exposed identically across multiple languages.
 
-## Features
-
-- [6 built-in data compression algorithms](#built-in-compression-algorithms)
-- [3 languages supported](#supported-languages)
-- [Standardized API](#usage) across all algorithms & languages
-- Portable & cross-platform (Linux, macOS, Windows)
-- Prebuilt binaries available on [major package managers](#supported-languages) or can be [built from source](#build-from-source)
-- Native [compression & decompression performance](#benchmarks)
-- Lightweight binary (30 kB with single algorithm, 4 MB with all)
-
-## Built-in Compression Algorithms
-
-| Algorithm | Description | Benchmarks |
-|:---:|---|:---:|
-| [brotli](https://github.com/google/brotli.git) | General-purpose with high-to-very-high compression rates | [Benchmarks](#benchmarks) |
-| [bzip2](https://sourceware.org/bzip2) | Very-high compression ratio algorithm | [Benchmarks](#benchmarks) |
-| [lz4](https://github.com/lz4/lz4) | Very-high speed compression algorithm | [Benchmarks](#benchmarks) |
-| [zlib](https://github.com/madler/zlib) | General-purpose, widely-used (compatible with `gzip`) | [Benchmarks](#benchmarks) |
-| [zstd](https://github.com/facebook/zstd) | High-speed, high-ratio compression algorithm | [Benchmarks](#benchmarks) |
-| [xz/lzma](https://github.com/tukaani-project/xz.git) | Very-high compression ratio algorithm | [Benchmarks](#benchmarks) |
-
-## Supported Languages
-
-| Language | Package | Code Examples & Docs |
-|:---:|:---:|:---:|
-| C++ | _TBD_ | [C++ API](bindings/cpp/README.md) |
-| C | _TBD_ | [C API](bindings/c/README.md)
-| Python | [compress-utils](https://pypi.org/project/compress-utils) | [Python API](bindings/python/README.md) |
-
-## Usage
-
-This project aims to bring a unified interface across all algorithms & all languages (within reason). To make this possible across all targeted languages, the `compress-utils` API is made available in three flavors:
-
-- **Object-Oriented (OOP)** - For one-shot compression/decompression
-- **Functional** - For one-shot compression/decompression
-- **Streaming** - For processing data in chunks (large files, network streams, etc.)
-
-### One-Shot Compression
-
-Both of these APIs are made dead simple. Here's an OOP example in Python:
-
-```py
-from compress_utils import compressor
-
-# Create a 'zstd' compressor object
-comp = compressor('zstd')
-
-# Compress data
-compressed_data = comp.compress(data)
-
-# Compress data with a compression level (1-10)
-compressed_data = comp.compress(data, 5)
-
-# Decompress data
-decompressed_data = comp.decompress(compressed_data)
+```
+                      ┌─────────────────────────────┐
+   Your application → │  Binding (C / C++ / Python) │
+                      └──────────────┬──────────────┘
+                                     │
+                      ┌──────────────▼──────────────┐
+                      │   compress-utils C ABI      │
+                      │  (one library, six algos)   │
+                      └──────────────┬──────────────┘
+                                     │
+                ┌───────┬───────┬────┴────┬───────┬──────┐
+              zstd   brotli   zlib     bz2     lz4    xz
 ```
 
-Functional usage is similarly simple:
+The C library is the canonical surface. Every other binding is a thin shim — same allocation model, same error codes, same streaming protocol. Add a binding for any language that speaks C ABI; the work is mostly making the language's idioms (strings, exceptions, generators) feel natural on top of a uniform substrate.
 
-```py
-from compress_utils import compress, decompress
+## Pick your language
 
-# Compress data using `zstd`
-compressed_data = compress(data, 'zstd')
+| Language | Install                                              | Docs                                          |
+|----------|------------------------------------------------------|-----------------------------------------------|
+| **C**    | Build from source ([instructions below](#building)) | [`include/compress_utils.h`](include/compress_utils.h) — the canonical ABI |
+| **C++**  | Header-only; built alongside C                       | [bindings/cpp/README.md](bindings/cpp/README.md) |
+| **Python** | `pip install compress-utils` *(coming soon to PyPI)* | [bindings/python/README.md](bindings/python/README.md) |
+| WASM / JS  | _Planned — see [TODO.md](TODO.md#wasm-binding-plan-decided-2026-05-11)_ |  |
+| Go, Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
 
-# Compress data with a compression level (1-10)
-compressed_data = compress(data, 'zstd', 5)
+For now each binding's README has its own installation + quickstart. A cross-cutting `docs/` is planned for architecture, allocation model, and per-algorithm notes — tracked in [TODO.md](TODO.md#documentation-plan-planned-2026-05-11).
 
-# Decompress data
-decompressed_data = decompress(compressed_data, 'zstd')
-```
+## Supported algorithms
 
-### Streaming API
+| Algorithm                                          | Strength               | Wire format produced            |
+|----------------------------------------------------|------------------------|---------------------------------|
+| [Zstandard](https://github.com/facebook/zstd)      | High speed, high ratio | ZSTD frame with content size    |
+| [Brotli](https://github.com/google/brotli)         | Web-optimized          | Raw Brotli stream               |
+| [zlib](https://github.com/madler/zlib)             | Ubiquitous (gzip-compatible) | zlib wrapper (RFC 1950)   |
+| [bzip2](https://sourceware.org/bzip2)              | High ratio             | bzip2 stream                    |
+| [LZ4](https://github.com/lz4/lz4)                  | Highest speed          | LZ4 frame (interoperable with `lz4` CLI / `.lz4` files) |
+| [XZ / LZMA](https://github.com/tukaani-project/xz) | Highest ratio          | XZ stream with CRC64            |
 
-For processing large data in chunks or when data arrives incrementally (e.g., from network streams, large files, or real-time data), use the streaming API:
+All algorithms expose the same API surface and the same level scale (`1` fastest → `10` smallest). The library maps each user level to the algorithm's native range so you don't need to remember that ZSTD goes 1–22 and zlib goes 1–9.
 
-```py
-from compress_utils import CompressStream, DecompressStream
+## Building
 
-# Create a compression stream
-stream = CompressStream('zstd', level=3)
+### Prerequisites
 
-# Process data in chunks
-compressed_chunks = []
-for chunk in data_chunks:
-    compressed_chunks.append(stream.compress(chunk))
+- CMake 3.17+
+- A C11 compiler (Clang, GCC, MSVC)
+- A C++20 compiler (only for the C++ binding and the pybind11 module)
+- Python 3.10+ and `pybind11-stubgen` (only for the Python binding)
 
-# Finalize compression (important!)
-compressed_chunks.append(stream.finish())
-
-# Decompression works similarly
-decompress_stream = DecompressStream('zstd')
-decompressed_chunks = []
-for chunk in compressed_chunks:
-    decompressed_chunks.append(decompress_stream.decompress(chunk))
-decompressed_chunks.append(decompress_stream.finish())
-```
-
-**Benefits of streaming:**
-- Process files that don't fit in memory
-- Handle network data that arrives in chunks
-- Real-time compression/decompression
-- Reduced memory footprint for large datasets
-
-## Language-Specific Examples
-
-You can find language-specific code examples below:
-
-- [C++ API Docs >](bindings/cpp/README.md)
-- [C API Docs >](bindings/c/README.md)
-- [Python API Docs >](bindings/python/README.md)
-
-## Setup
-
-### Install From Package Manager
-
-#### Python
-
-```sh
-pip install compress-utils
-```
-
-### Build From Source
-
-1. Install pre-requisites
-
-- CMake
-- Conda (if building Python binding)
-
-2. Clone repo
+### Build
 
 ```sh
 git clone https://github.com/dupontcyborg/compress-utils.git
 cd compress-utils
+./build.sh                  # Linux / macOS
+# or:
+powershell -File build.ps1  # Windows
 ```
 
-3. Activate Conda environment (if building Python binding)
+The default build produces:
+
+- `dist/c/lib/libcompress_utils.{dylib,so,dll}` — the shared C library, self-contained (all six algorithms baked in).
+- `dist/c/include/compress_utils.h` — the public C header.
+- `dist/cpp/include/compress_utils.hpp` — the header-only C++ binding.
+- `bindings/python/compress_utils/` — the importable Python package, including auto-generated `.pyi` type stubs.
+
+Useful flags:
+
+- `--algorithms=zstd,zlib` — limit which compressors are included (smaller binary).
+- `--languages=cpp,python` — limit which bindings are built (C is always built; it's the core).
+- `--release` — Release build (LTO, `-O3` / `/O2`).
+- `--clean` — force a clean rebuild.
+- `--skip-tests` — don't build/run the test suite.
+
+For raw CMake usage (without `build.sh`):
 
 ```sh
-# If using Conda
-conda env create -f environment.yml
-conda activate compress-utils
-
-# If using Mamba
-mamba env create -f environment.yml
-mamba activate compress-utils
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build
 ```
 
-4. Run build script
+## Testing
 
-For Linux/macOS:
+Each binding has its own test suite, all wired through ctest:
 
-```sh
-build.sh
-```
+| Target | What it covers |
+|--------|----------------|
+| `test_compress_utils` (C) | One-shot, streaming with tight buffers, cross-API round-trip, error codes, edge cases |
+| `test_compress_utils_cpp` (C++) | `cu::` namespace surface, RAII semantics, exception translation |
+| `test_compress_utils_py` (Python) | Same surface via pybind11, plus 1MB random/repetitive cases, string-vs-enum spellings |
 
-For Windows:
+Plus a libFuzzer harness (`-DENABLE_FUZZ=ON`, clang only) at `tests/fuzz/fuzz_decompress.c`.
 
-```cmd
-powershell.exe -file build.ps1
-```
+## Project status
 
-The built library/libraries will be in `dist/<language>`
-
-A number of configuration parameters are available for `build.sh`:
-
-- `--clean` - performs a clean rebuild of `compress-utils`
-- `--algorithms=` - set which algorithms to include in the build, if not all (e.g., `build.sh --algorithms=brotli,zlib,zstd`)
-- `--languages=` - set which language bindings to build, if not all (e.g., `build.sh --languages=python,js`)
-- `--release` - build release version (higher optimization level)
-- `--skip-tests` - skip building & running unit tests
-
-## Benchmarks
-
-_To be added_
+Pre-1.0. The C ABI is the source of truth for cross-language behavior — see [`include/compress_utils.h`](include/compress_utils.h) for the contract. Open work (additional language bindings, doc site, CMake package config, fuzz corpora, interop tests against canonical compressors per language) is tracked in [TODO.md](TODO.md).
 
 ## License
 
-This project is distributed under the MIT License. [Read more >](LICENSE)
+MIT — see [LICENSE](LICENSE).
 
-## Third-Party Code
+## Acknowledgments
 
-This project utilizes several open-source compression algorithms. [Read more >](ACKNOWLEDGMENTS.md)
+This project wraps six battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).

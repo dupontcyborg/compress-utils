@@ -2,6 +2,7 @@
 requires = [
     "scikit-build-core>=0.8",
     "pybind11>=2.11",
+    "pybind11-stubgen>=2.5",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -40,13 +41,17 @@ Repository = "https://github.com/dupontcyborg/compress-utils"
 [tool.scikit-build]
 cmake.args = [
     "-DBUILD_PYTHON_BINDINGS=ON",
-    "-DBUILD_C_BINDINGS=OFF",
+    "-DBUILD_CPP_BINDINGS=OFF",
     "-DSCIKIT_BUILD=ON",
     "-DENABLE_TESTS=OFF",
 ]
 cmake.build-type = "Release"
 wheel.packages = ["bindings/python/compress_utils"]
 wheel.install-dir = "compress_utils"
+
+# Ship the auto-generated type stubs and the PEP 561 marker so tools
+# like mypy/pyright/pyre and editor IDEs pick up the type information.
+wheel.exclude = []
 sdist.include = [
     "src/**",
     "algorithms/**",
@@ -84,7 +89,7 @@ test-command = "pytest {project}/bindings/python/tests -v"
 archs = ["x86_64", "aarch64"]
 
 [tool.cibuildwheel.macos]
-archs = ["arm64"]  # TODO: Change to universal2 when ready
+archs = ["arm64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]  # TODO: Add ARM64 when ready

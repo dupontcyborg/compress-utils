@@ -1,203 +1,102 @@
-from typing import Union, Iterator, ByteString
-
+"""
+Python bindings for compress-utils library (C-core).
+"""
+from __future__ import annotations
+import typing
+import typing_extensions
+__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'is_available', 'lz4', 'lzma', 'set_max_decompressed_size', 'version', 'xz', 'zlib', 'zstd']
 class Algorithm:
-    """Enum representing the available compression algorithms."""
-
-    # Algorithm values (these will only exist if the algorithm is compiled in)
-    brotli: 'Algorithm'
-    lzma: 'Algorithm'
-    xz: 'Algorithm'
-    zlib: 'Algorithm'
-    zstd: 'Algorithm'
-
-    # Make the enum iterable
-    @staticmethod
-    def __iter__() -> Iterator['Algorithm']: ...
-
-class compressor:
-    """Class-based interface for compression/decompression."""
-
-    def __init__(self, algorithm: Union[Algorithm, str]) -> None:
-        """
-        Initialize a compressor with the specified algorithm.
-
-        Parameters:
-            algorithm: The compression algorithm to use (Algorithm enum or string)
-        """
+    """
+    Members:
+    
+      zstd
+    
+      brotli
+    
+      zlib
+    
+      bz2
+    
+      lz4
+    
+      xz
+    
+      lzma
+    """
+    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>}
+    brotli: typing.ClassVar[Algorithm]  # value = <Algorithm.brotli: 1>
+    bz2: typing.ClassVar[Algorithm]  # value = <Algorithm.bz2: 3>
+    lz4: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4: 4>
+    lzma: typing.ClassVar[Algorithm]  # value = <Algorithm.lzma: 6>
+    xz: typing.ClassVar[Algorithm]  # value = <Algorithm.xz: 5>
+    zlib: typing.ClassVar[Algorithm]  # value = <Algorithm.zlib: 2>
+    zstd: typing.ClassVar[Algorithm]  # value = <Algorithm.zstd: 0>
+    def __eq__(self, other: typing.Any) -> bool:
         ...
-
-    def compress(self, data: ByteString, level: int = 3) -> bytes:
-        """
-        Compress data with optional compression level.
-
-        Parameters:
-            data: Binary data to compress
-            level: Compression level (1=fastest, 10=best compression)
-
-        Returns:
-            Compressed data as bytes
-        """
+    def __getstate__(self) -> int:
         ...
-
-    def decompress(self, data: ByteString) -> bytes:
-        """
-        Decompress data.
-
-        Parameters:
-            data: Compressed binary data
-
-        Returns:
-            Decompressed data as bytes
-        """
+    def __hash__(self) -> int:
         ...
-
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: int) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: int) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class CompressError(Exception):
+    pass
 class CompressStream:
     """
-    Streaming compression class for incremental data compression.
-
-    This class allows compressing data in chunks without loading the entire
-    dataset into memory. Useful for large files or streaming data.
-
-    Example:
-        stream = CompressStream('zstd', level=5)
-        while has_more_data:
-            compressed = stream.compress(chunk)
-            output.write(compressed)
-        output.write(stream.finish())
+    Streaming compression. Feed chunks via .compress(b); flush with .finish().
     """
-
-    def __init__(self, algorithm: Union[Algorithm, str], level: int = 3) -> None:
-        """
-        Create a new compression stream.
-
-        Parameters:
-            algorithm: The compression algorithm to use (Algorithm enum or string)
-            level: Compression level (1=fastest, 10=best compression)
-        """
+    def __init__(self, algorithm: typing.Any, level: int = 5) -> None:
         ...
-
-    def compress(self, data: ByteString) -> bytes:
-        """
-        Compress a chunk of data.
-
-        Parameters:
-            data: Binary data chunk to compress
-
-        Returns:
-            Compressed output (may be empty if data is being buffered)
-        """
+    def compress(self, data: typing_extensions.Buffer) -> bytes:
         ...
-
     def finish(self) -> bytes:
-        """
-        Finish compression and flush any remaining data.
-
-        Must be called after all input has been fed to get the final compressed output.
-        After calling finish(), the stream cannot be used again.
-
-        Returns:
-            Final compressed output
-        """
         ...
-
-    def is_finished(self) -> bool:
-        """
-        Check if the stream has been finished.
-
-        Returns:
-            True if finish() has been called
-        """
-        ...
-
-    @property
-    def algorithm(self) -> Algorithm:
-        """Get the compression algorithm being used."""
-        ...
-
 class DecompressStream:
     """
-    Streaming decompression class for incremental data decompression.
-
-    This class allows decompressing data in chunks without loading the entire
-    compressed dataset into memory.
-
-    Example:
-        stream = DecompressStream('zstd')
-        while has_more_data:
-            decompressed = stream.decompress(chunk)
-            output.write(decompressed)
-        stream.finish()
+    Streaming decompression. Feed chunks via .decompress(b); flush with .finish().
     """
-
-    def __init__(self, algorithm: Union[Algorithm, str]) -> None:
-        """
-        Create a new decompression stream.
-
-        Parameters:
-            algorithm: The decompression algorithm to use (Algorithm enum or string)
-        """
+    def __init__(self, algorithm: typing.Any) -> None:
         ...
-
-    def decompress(self, data: ByteString) -> bytes:
-        """
-        Decompress a chunk of compressed data.
-
-        Parameters:
-            data: Compressed data chunk to decompress
-
-        Returns:
-            Decompressed output
-        """
+    def decompress(self, data: typing_extensions.Buffer) -> bytes:
         ...
-
     def finish(self) -> bytes:
-        """
-        Finish decompression and verify stream completeness.
-
-        Must be called after all compressed input has been fed.
-
-        Returns:
-            Any remaining decompressed output
-        """
         ...
-
-    def is_finished(self) -> bool:
-        """
-        Check if the stream has been finished.
-
-        Returns:
-            True if finish() has been called
-        """
-        ...
-
-    @property
-    def algorithm(self) -> Algorithm:
-        """Get the decompression algorithm being used."""
-        ...
-
-def compress(data: ByteString, algorithm: Union[Algorithm, str], level: int = 3) -> bytes:
+def compress(data: typing_extensions.Buffer, algorithm: typing.Any, level: int = 5) -> bytes:
     """
-    Compress data using an algorithm and optional level.
-
-    Parameters:
-        data: Binary data to compress
-        algorithm: The compression algorithm to use (Algorithm enum or string)
-        level: Compression level (1=fastest, 10=best compression)
-
-    Returns:
-        Compressed data as bytes
+    Compress bytes/buffer using the given algorithm (string or Algorithm).
     """
+def decompress(data: typing_extensions.Buffer, algorithm: typing.Any) -> bytes:
+    """
+    Decompress bytes/buffer using the given algorithm.
+    """
+def is_available(algorithm: typing.Any) -> bool:
     ...
-
-def decompress(data: ByteString, algorithm: Union[Algorithm, str]) -> bytes:
-    """
-    Decompress data using an algorithm.
-
-    Parameters:
-        data: Compressed binary data
-        algorithm: The compression algorithm to use (Algorithm enum or string)
-
-    Returns:
-        Decompressed data as bytes
-    """
+def set_max_decompressed_size(bytes: int) -> None:
     ...
+def version() -> str:
+    ...
+brotli: Algorithm  # value = <Algorithm.brotli: 1>
+bz2: Algorithm  # value = <Algorithm.bz2: 3>
+lz4: Algorithm  # value = <Algorithm.lz4: 4>
+lzma: Algorithm  # value = <Algorithm.lzma: 6>
+xz: Algorithm  # value = <Algorithm.xz: 5>
+zlib: Algorithm  # value = <Algorithm.zlib: 2>
+zstd: Algorithm  # value = <Algorithm.zstd: 0>
