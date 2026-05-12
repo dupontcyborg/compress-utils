@@ -48,6 +48,37 @@ add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
         ${PYTHON_PACKAGE_DIR}
 )
 
+# Auto-generate the .pyi stub file by introspecting the compiled module.
+# Skipped silently if pybind11-stubgen is not installed (the build still
+# works; consumers just get less IDE help).
+#
+# Hand-writing .pyi for a pybind11 module is a recipe for stale stubs —
+# we tried it in March 2025 and the file diverged from the binding
+# within a single release. Auto-gen on every build is the right answer.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import pybind11_stubgen"
+    RESULT_VARIABLE _stubgen_check
+    OUTPUT_QUIET ERROR_QUIET
+)
+if(_stubgen_check EQUAL 0)
+    add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PYTHONPATH=${PYTHON_BINDING_DIR}"
+            ${Python3_EXECUTABLE} -m pybind11_stubgen
+                compress_utils.compress_utils_py
+                -o ${CMAKE_CURRENT_BINARY_DIR}/stubgen_out
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_BINARY_DIR}/stubgen_out/compress_utils/compress_utils_py.pyi
+            ${PYTHON_PACKAGE_DIR}/compress_utils_py.pyi
+        COMMENT "Generating compress_utils_py.pyi via pybind11-stubgen"
+        VERBATIM
+    )
+else()
+    message(STATUS "pybind11-stubgen not installed; skipping .pyi generation. "
+                   "Install with: pip install pybind11-stubgen")
+endif()
+
 ######### TESTS #########
 
 if(ENABLE_TESTS)

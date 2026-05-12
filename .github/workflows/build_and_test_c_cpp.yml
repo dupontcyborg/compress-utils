@@ -2,8 +2,8 @@ name: Build, Test and Package C/C++
 
 on:
   push:
-    branches: [ "main" ]
-    tags: 
+    branches: ["main"]
+    tags:
       - "v*"
 
 jobs:
@@ -12,213 +12,94 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+      fail-fast: false
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        clean: true
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
 
-    - name: Configure CMake for C/C++ Language Bindings & All Compressors
-      run: |
-        mkdir build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF
+      - name: Configure CMake (C + C++ bindings, Python off)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF
 
-    - name: Build All Languages
-      run: cmake --build build --config Release -j 4
+      - name: Build
+        run: cmake --build build --config Release -j 4
 
-    - name: Install Bindings
-      run: cmake --install build
+      - name: Install (populates dist/c and dist/cpp)
+        run: cmake --install build --config Release
 
-    - name: Test All Bindings & Compressors
-      run: |
-        cd build
-        ctest --output-on-failure -C Release
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
 
-    - name: Zip C Bindings
-      run: |
-        cd dist
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          powershell -Command "Compress-Archive -Path c -DestinationPath c-bindings-${{ matrix.os }}.zip"
-        else
-          zip -r c-bindings-${{ matrix.os }}.zip c
-        fi
-      shell: bash
+      - name: Determine archive name
+        id: archive
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   OS_TAG=linux ;;
+            macOS)   OS_TAG=macos ;;
+            Windows) OS_TAG=windows ;;
+          esac
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION=${GITHUB_REF_NAME#v}
+            NAME="compress-utils-${OS_TAG}-${VERSION}"
+          else
+            NAME="compress-utils-${OS_TAG}"
+          fi
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "os_tag=${OS_TAG}" >> "$GITHUB_OUTPUT"
 
-    - name: Zip C++ Bindings
-      run: |
-        cd dist
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          powershell -Command "Compress-Archive -Path cpp -DestinationPath cpp-bindings-${{ matrix.os }}.zip"
-        else
-          zip -r cpp-bindings-${{ matrix.os }}.zip cpp
-        fi
-      shell: bash
+      - name: Package C + C++ bindings
+        shell: bash
+        run: |
+          cd dist
+          # Stage `c/` and `cpp/` under a versioned top-level dir so the
+          # tarball extracts cleanly without polluting the user's cwd.
+          STAGE="${{ steps.archive.outputs.name }}"
+          mkdir -p "${STAGE}"
+          cp -R c "${STAGE}/"
+          cp -R cpp "${STAGE}/"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -Command "Compress-Archive -Path '${STAGE}' -DestinationPath '${STAGE}.zip'"
+          else
+            tar -czf "${STAGE}.tar.gz" "${STAGE}"
+          fi
 
-    - name: Upload C Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: c-bindings-${{ matrix.os }}
-        path: dist/c-bindings-${{ matrix.os }}.zip
-        retention-days: 1  # These artifacts are only used for the `combine` step
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.archive.outputs.name }}
+          path: |
+            dist/${{ steps.archive.outputs.name }}.tar.gz
+            dist/${{ steps.archive.outputs.name }}.zip
+          if-no-files-found: error
 
-    - name: Upload C++ Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: cpp-bindings-${{ matrix.os }}
-        path: dist/cpp-bindings-${{ matrix.os }}.zip
-        retention-days: 1  # These artifacts are only used for the `combine` step
-
-  combine:
+  release:
     needs: build
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: write
 
     steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-   ##### C Artifacts #####
+      - name: Stage release files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          ls -la release/
 
-    - name: Create C Artifact Directories
-      run: mkdir -p compress-utils-c/macos compress-utils-c/linux compress-utils-c/windows
-
-    - name: Download C Artifacts from macOS
-      uses: actions/download-artifact@v4
-      with:
-        name: c-bindings-macos-latest
-        path: compress-utils-c/macos
-
-    - name: Download C Artifacts from Ubuntu
-      uses: actions/download-artifact@v4
-      with:
-        name: c-bindings-ubuntu-latest
-        path: compress-utils-c/linux
-
-    - name: Download C Artifacts from Windows
-      uses: actions/download-artifact@v4
-      with:
-        name: c-bindings-windows-latest
-        path: compress-utils-c/windows
-
-    - name: Unzip C Artifacts from macOS
-      run: |
-        unzip -o compress-utils-c/macos/c-bindings-macos-latest.zip -d compress-utils-c/macos
-        mv compress-utils-c/macos/c/* compress-utils-c/macos/
-        rm -r compress-utils-c/macos/c
-        rm compress-utils-c/macos/c-bindings-macos-latest.zip
-
-    - name: Unzip C Artifacts from Ubuntu
-      run: |
-        unzip -o compress-utils-c/linux/c-bindings-ubuntu-latest.zip -d compress-utils-c/linux
-        mv compress-utils-c/linux/c/* compress-utils-c/linux/
-        rm -r compress-utils-c/linux/c
-        rm compress-utils-c/linux/c-bindings-ubuntu-latest.zip
-      
-    - name: Unzip C Artifacts from Windows
-      run: |
-        set +e
-        unzip -o compress-utils-c/windows/c-bindings-windows-latest.zip -d compress-utils-c/windows
-        unzip_exit_code=$?
-        set -e
-        if [ $unzip_exit_code -gt 1 ]; then exit $unzip_exit_code; fi
-        chmod -R u+rwX,go+rwX compress-utils-c/windows/c
-        mv compress-utils-c/windows/c/* compress-utils-c/windows/
-        rm -r compress-utils-c/windows/c
-        rm compress-utils-c/windows/c-bindings-windows-latest.zip
-
-    ##### C++ Artifacts #####
-
-    - name: Create C++ Artifact Directories
-      run: mkdir -p compress-utils-cpp/macos compress-utils-cpp/linux compress-utils-cpp/windows
-
-    - name: Download C++ Artifacts from macOS
-      uses: actions/download-artifact@v4
-      with:
-        name: cpp-bindings-macos-latest
-        path: compress-utils-cpp/macos
-
-    - name: Download C++ Artifacts from Ubuntu
-      uses: actions/download-artifact@v4
-      with:
-        name: cpp-bindings-ubuntu-latest
-        path: compress-utils-cpp/linux
-
-    - name: Download C++ Artifacts from Windows
-      uses: actions/download-artifact@v4
-      with:
-        name: cpp-bindings-windows-latest
-        path: compress-utils-cpp/windows
-
-    - name: Unzip C++ Artifacts from macOS
-      run: |
-        unzip -o compress-utils-cpp/macos/cpp-bindings-macos-latest.zip -d compress-utils-cpp/macos
-        mv compress-utils-cpp/macos/cpp/* compress-utils-cpp/macos/
-        rm -r compress-utils-cpp/macos/cpp
-        rm compress-utils-cpp/macos/cpp-bindings-macos-latest.zip
-
-    - name: Unzip C++ Artifacts from Ubuntu
-      run: |
-        unzip -o compress-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip -d compress-utils-cpp/linux
-        mv compress-utils-cpp/linux/cpp/* compress-utils-cpp/linux/
-        rm -r compress-utils-cpp/linux/cpp
-        rm compress-utils-cpp/linux/cpp-bindings-ubuntu-latest.zip
-      
-    - name: Unzip C++ Artifacts from Windows
-      run: |
-        set +e
-        unzip -o compress-utils-cpp/windows/cpp-bindings-windows-latest.zip -d compress-utils-cpp/windows
-        unzip_exit_code=$?
-        set -e
-        if [ $unzip_exit_code -gt 1 ]; then exit $unzip_exit_code; fi
-        chmod -R u+rwX,go+rwX compress-utils-cpp/windows/cpp
-        mv compress-utils-cpp/windows/cpp/* compress-utils-cpp/windows/
-        rm -r compress-utils-cpp/windows/cpp
-        rm compress-utils-cpp/windows/cpp-bindings-windows-latest.zip
-
-    ##### Merge All Artifacts #####
-
-    - name: Zip All C Artifacts Together
-      run: zip -r compress-utils-c.zip compress-utils-c
-
-    - name: Zip All C++ Artifacts Together
-      run: zip -r compress-utils-cpp.zip compress-utils-cpp
-
-    ##### Upload Artifacts #####
-
-    - name: Upload Unified C Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: compress-utils-c
-        path: compress-utils-c.zip
-
-    - name: Upload Unified C++ Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: compress-utils-cpp
-        path: compress-utils-cpp.zip
-
-    ##### Attach Artifacts to Release (if Tag) #####
-
-    - name: Extract Version from Tag
-      if: github.ref_type == 'tag'
-      run: |
-        VERSION=${GITHUB_REF_NAME#v}  # Strip the 'v' prefix if present
-        echo "Creating archive for version $VERSION"
-        mv compress-utils-c.zip compress-utils-c-${VERSION}.zip
-        mv compress-utils-cpp.zip compress-utils-cpp-${VERSION}.zip
-        echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
-
-    - name: Publish to GitHub Release
-      if: github.ref_type == 'tag'
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          compress-utils-c-${{ env.RELEASE_VERSION }}.zip
-          compress-utils-cpp-${{ env.RELEASE_VERSION }}.zip
-        generate_release_notes: false
-        fail_on_unmatched_files: false
-        draft: false
-        tag_name: ${{ github.ref_name }}
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          draft: false
+          tag_name: ${{ github.ref_name }}

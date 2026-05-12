@@ -26,10 +26,10 @@
   - [X] `zlib.cpp:61` - `10` retry count → `internal::MAX_DECOMP_RETRIES`
   - [X] Algorithm max levels (ZSTD_MAX_LEVEL, BROTLI_MAX_LEVEL, etc.)
   - [X] Helper functions MapLevel() and MapLevelZeroBased()
-- [ ] **Deduplicate buffer resizing logic** - Each algorithm implements its own buffer-doubling loop; extract to shared utility
-- [X] **Remove `using namespace` from compress_utils_py.cpp:7** - Fixed during streaming bindings implementation
-- [ ] **Add allocation failure checks in C tests** - `test_compress_utils.c` doesn't check malloc return values
-- [ ] **Replace hardcoded test values with named constants** - `1024 * 1024`, `1024 * 1024 * 32`, etc.
+- [x] **Deduplicate buffer resizing logic** — every algorithm's streaming impl now shares the same `pending_append` / drain pattern, and the C++/Python bindings have a single drain loop in their stream classes.
+- [X] **Remove `using namespace` from compress_utils_py.cpp** — file rewritten in Phase 4; no `using namespace` anywhere.
+- [x] ~~Add allocation failure checks in C tests~~ — N/A; C tests rewritten in `tests/smoke_test.c` using `CHECK()` macros and use the library API not raw malloc.
+- [ ] **Replace hardcoded test values with named constants** — minor cleanup in `tests/smoke_test.c`.
 
 ## Build System Fixes
 
@@ -41,10 +41,8 @@
   - [X] Build `unit-tests-c` and `unit-tests-c-static`
   - [X] Build `xz`
 - [X] Rename `compress-utils` to `compress-utils`
-- [ ] Merge all static lib dependencies into `compress-utils-static*` libraries
-  - [ ] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED`
-  - [ ] Set up `whole-archive` for all platforms
-- [ ] Re-enable macOS Universal2 builds (CMakeLists.txt:19-22)
+- [x] ~~Merge all static lib dependencies into `compress-utils-static*` libraries~~ — superseded. The public `compress_utils_static` target was removed (2026-05-11); the shared library and Python wheel are the supported deliverables and both are self-contained. Internal consumers (C test, fuzz, Python module) link an OBJECT library. Decided against shipping a bundled pure-static `.a` via `whole-archive` (2026-05-11) — not enough demand to justify.
+  - [ ] (deferred) Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED` to slim the shared library
 - [ ] Add CMake package config for `find_package(compress_utils)` support
 
 ## Optimizations
@@ -52,7 +50,7 @@
 - [X] Support iterative builds in `cibuildwheel` (via separated Python binding project & shared core lib project)
 - [X] Add source wheel distribution for unsupported Python wheel configurations
 - [X] Split CI/CD pipelines hierarchically
-- [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows, `x86/universal2` on macOS)
+- [ ] Add missing architectures to CI/CD pipelines (`aarch64` on Linux & Windows; macOS already arm64-native)
 
 ## Documentation
 
@@ -98,8 +96,8 @@
 ## Algorithms
 
 - [X] `brotli`
-- [ ] `bzip2`
-- [ ] `lz4` (high priority - fast compression option)
+- [X] `bzip2`
+- [X] `lz4`
 - [X] `xz/lzma`
 - [X] `zlib`
 - [X] `zstd`
@@ -133,9 +131,9 @@ The underlying algorithm libraries (zstd, brotli, zlib, bz2, lz4, xz) are all C.
 
 **Deliverables:**
 
-- [ ] **Draft `include/compress_utils.h`** as the canonical core header. This is the spec — Phase 1 code conforms to it. Get sign-off on signatures before writing any implementation code.
-- [ ] **Audit existing `bindings/c/compress_utils.h`** to catalog what's worth preserving (error codes, names) vs. what changes (allocation model, Compressor removal).
-- [ ] **Add `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`** to `CMakeLists.txt` so clangd/IDEs/fuzzers can find symbols.
+- [x] **Draft `include/compress_utils.h`** as the canonical core header. ✅
+- [x] **Audit existing `bindings/c/compress_utils.h`**. ✅ (bz2/lz4 missing from the stale enum confirmed; deleted whole-cloth in Phase 4.)
+- [x] **Add `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`** to `CMakeLists.txt`. ✅
 
 #### Phase 1 — Convert algorithm implementations to C ✅
 
@@ -156,54 +154,39 @@ Landed alongside Phase 1: `src/algorithm_registry.h` defines `cu_algorithm_vtbl_
 
 Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_<algo>_vtbl`, add a `case CU_ALGO_X` to `registry.c`, add to CMakeLists. Three places, mechanical.
 
-(Original detailed spec retained below for reference.)
 
-- [ ] ~~Define `cu_algorithm_t` in `src/utils/algorithms.h`~~ — done as `cu_algorithm_vtbl_t` in `src/algorithm_registry.h`.
-  ```c
-  typedef struct {
-      const char* name;
-      int (*compress)(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len, int level);
-      int (*decompress)(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len);
-      cu_stream_t* (*create_compress_stream)(int level);
-      cu_stream_t* (*create_decompress_stream)(void);
-      int (*stream_write)(cu_stream_t* s, const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len);
-      int (*stream_finish)(cu_stream_t* s, uint8_t* out, size_t* out_len);
-      void (*stream_destroy)(cu_stream_t* s);
-  } cu_algorithm_t;
-  ```
-- [ ] One `cu_algorithm_t` instance per algorithm, registered via `#ifdef INCLUDE_<ALGO>` in a single registry array.
-- [ ] **Delete `src/utils/algorithms_router.hpp`** (the header-defined non-inline function landmine) and the 934-line streaming mega-switch in `src/compress_utils_stream.cpp`. Replaced by registry lookup.
-- [ ] Adding a new algorithm becomes: one new `src/algorithms/<algo>/` directory, one registry entry. That's it.
+#### Phase 3 — Fix wire-format and level-mapping bugs in C ✅
 
-#### Phase 3 — Fix wire-format and level-mapping bugs in C
-
-(Moved here from the "Pre-WASM Polish" section below — natural to fix during the rewrite.)
-
-- [ ] **LZ4 wire format**: standardize on LZ4 frame format (`LZ4F_*`) for both one-shot and streaming. Drop the homegrown `[4-byte size][raw block]` format. **This is a breaking change for any existing one-shot LZ4 consumer.** Bump major version, document in CHANGELOG.
-- [ ] **ZSTD streaming-aware decompress**: one-shot `cu_zstd_decompress` falls back to `ZSTD_decompressStream` with a grow-loop when frame content size is unknown. Removes the spurious throw on streaming-produced ZSTD frames.
-- [ ] **Centralized level mapping**: `cu_map_level(user_level, algo_max)` and `cu_map_level_zero_based` in `src/utils/levels.h`. Every algorithm calls the helpers — no hand-rolled formulas anywhere.
-- [ ] **Decompression size caps**: configurable `cu_set_max_decompressed_size(bytes)` (default 1 GB) applied uniformly. Closes the ZSTD/bz2/xz allocation-bomb gap.
-- [ ] **Add cross-API round-trip tests**: for every algorithm, `compress → stream_decompress` and `stream_compress+finish → decompress` must both round-trip.
+- [x] **LZ4 wire format**: unified to LZ4 frame format (`LZ4F_*`) for both one-shot and streaming.
+- [x] **ZSTD streaming-aware decompress**: falls back to `ZSTD_decompressStream` with grow-loop when content size is unknown.
+- [x] **Decompression size caps**: `cu_set_max_decompressed_size(bytes)` (default 1 GiB) applied across zstd/zlib/brotli/bz2/lz4/xz one-shot paths.
+- [x] **Cross-API round-trip tests**: `tests/smoke_test.c::test_cross_api` exercises stream→one-shot and one-shot→stream for every available algorithm.
+- [x] **libFuzzer harness** added (`tests/fuzz/fuzz_decompress.c`, `-DENABLE_FUZZ=ON`). Found and fixed an XZ OOM on first run.
+- [ ] **Centralized level mapping**: `cu_map_level(user_level, algo_max)` helper. Each algorithm currently has its own `<algo>_native_level()` — they're per-algorithm by necessity (different ranges), but the shared cases (clamp to [1,N]) could live in `src/utils/levels.h`. Marginal win; deferred.
 
 #### Phase 4 — Reshape bindings
 
 - [x] **C++ binding** (`bindings/cpp/`): header-only INTERFACE library at `bindings/cpp/include/compress_utils.hpp`. Free `cu::compress`/`cu::decompress`, RAII `CompressStream`/`DecompressStream`, `cu::Algorithm` enum, `cu::Error` exception with `.code()`. ~250 lines. Old C++ core (`src/compress_utils.{cpp,hpp}`, `src/compress_utils_func.{cpp,hpp}`, `src/compress_utils_stream.{cpp,hpp}`, all `.cpp/.hpp` under `src/algorithms/*/`, `src/utils/*.hpp`, `src/algorithms.hpp{,.in}`, `src/version.hpp.in`, `src/symbol_exports*.hpp`) deleted.
 - [x] **C binding** (`bindings/c/`): deleted — the new `include/compress_utils.h` IS the C ABI; there's no separate shim layer.
 - [x] **Python binding**: retargeted. `bindings/python/compress_utils_py.cpp` is a thin pybind11 wrapper over the C++ binding (which is itself a wrapper over the C ABI). `compressor()` factory dropped (it was a smell). `version()`, `is_available()`, `set_max_decompressed_size()` added. `CompressError` exception exported. Tests rewritten as a unittest module covering free fn / streaming / cross-API / garbage-rejection / introspection.
-- [ ] **WASM binding**: discard the `claude/wasm-support-tree-shakeable` branch's per-algorithm C++ reimplementations. New WASM binding is a thin TS wrapper over the C ABI, with one shared dispatch — not six copy-pasted ones. Tree-shake by separate `.wasm` artifacts per algorithm, all built from the same C source. **Deferred — out of scope for this session.**
+- [ ] **WASM binding**: build on top of the C ABI, not a C++ reimplementation per algorithm.
+  - **Keep** the old branch's per-algorithm `.wasm` artifacts and subpath exports (`compress-utils/zstd`, `compress-utils/brotli`, …) — that's correct for tree-shaking. Combined `.wasm` would be 1.5–2 MB; per-algo is 50–250 KB each.
+  - **Drop** the per-algorithm TypeScript duplication (the old branch had `compress.ts`/`stream.ts`/`module.ts` copy-pasted six times, ~2000 LOC). All algorithms now share the exact same C ABI (one drain protocol, one error model, one size-hint shape), so the TS dispatcher is generic.
+  - **Shape**: `src/core/dispatch.ts` (shared, ~150 lines) + `src/algorithms/<algo>/index.ts` (~15 lines, binds the dispatcher to its `.wasm` factory) + `src/algorithms/<algo>/wasm.generated.js` (emscripten output, per-algo).
+  - **Toolchain**: Emscripten first (lowest-friction; reuses existing CMake integration). Zig→WASM is a fallback if Emscripten output is too big.
+  - **CI**: build the `.wasm` artifacts once on Linux, test the JS package on all OS runners. **Deferred — out of scope for this session.**
 
 #### Phase 5 — Build & distribution
 
-- [ ] **Update CMakeLists.txt** for C-as-primary: drop `set(CMAKE_CXX_STANDARD 20)` from the core (C++ standard now only needed for the C++ binding and tests). Set `CMAKE_C_STANDARD 11`.
+- [x] **Update CMakeLists.txt** for C-as-primary: `CMAKE_C_STANDARD 11`, hidden visibility default, `CMAKE_EXPORT_COMPILE_COMMANDS ON`. (C++20 retained for the C++ binding tests and pybind11.)
 - [ ] **Add `zig cc` toolchain file** at `cmake/toolchains/zig-cc.cmake` for cross-builds. Document usage in `README.md`.
-- [ ] **CI: add aarch64-linux, universal2-macOS** to the matrix via `zig cc`. Closes the existing "missing architectures" TODO.
+- [ ] **CI: add aarch64-linux** to the matrix via `zig cc`. (macOS runners are arm64-native; no Universal2 needed in 2026.) Closes the existing "missing architectures" TODO.
 - [ ] **CI: build WASM once on Linux**, test on all OS runners. Closes the WASM-matrix-waste item.
-- [ ] **Single static library**: collapse all algorithm static libs + their static deps into one `libcompress_utils.a` via `whole-archive`. (Already on the existing TODO — easier post-migration.)
 - [ ] **CMake package config**: add `compress_utils-config.cmake` for `find_package(compress_utils)` support. (Already on the existing TODO.)
 
 #### Phase 6 — Post-migration (unlocks the binding roadmap)
 
-- [ ] **Fuzz harnesses** per algorithm, libFuzzer + sanitizers, integrated into CI. Trivial to wire up over a C ABI.
+- [x] **Fuzz harness** added (`tests/fuzz/fuzz_decompress.c`, `-DENABLE_FUZZ=ON`, libFuzzer + ASan + UBSan). Found and fixed an XZ memlimit OOM on first run. Per-algorithm corpora + CI integration still TODO.
 - [ ] **Go binding** via cgo. Direct consumer of the C ABI.
 - [ ] **Rust binding** via `bindgen` over the C header.
 - [ ] **Swift, Java, Zig** bindings — all consume the same C ABI.
@@ -217,65 +200,259 @@ Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_
 
 ---
 
-## Pre-WASM Polish (2026-05 code review)
+## Documentation Plan (planned 2026-05-11)
 
-### Shape change (do first — unblocks everything else)
+Pre-v1.0 with no users, the highest-ROI docs are the ones that **survive API churn**: architecture, allocation model, drain protocol, per-algorithm wire-format notes. Hand-written API reference goes stale on the same commit that ships a change — defer to auto-generated Doxygen/Sphinx output at v1.0.
 
-- [ ] **Unify one-shot and streaming dispatch behind a single `IAlgorithm` interface**
-  - Today: `src/utils/algorithms_router.hpp` holds a function-pointer vtable for one-shot; `src/compress_utils_stream.cpp` holds a 6-arm `#ifdef`-gated mega-switch repeated across ctor/Compress/Finish for both CompressStream and DecompressStream (~12 sites).
-  - Target: one interface per algorithm exposing `Compress(span, level)`, `Decompress(span)`, `MakeCompressStream(level)`, `MakeDecompressStream()`. Register once. Adding a new algorithm = one new `src/algorithms/<algo>/` directory.
-  - Forces a single answer to wire-format and level-mapping questions per algorithm (fixes several bugs below "for free").
+### Proposed structure
 
-### Correctness bugs (wire-format compatibility)
+```
+docs/
+  README.md             Index, points to everything else.
+  architecture.md       Why C-core. Layout: include/ + src/ + bindings/.
+                        One diagram: C ABI is the substrate, every binding
+                        is a thin shim. ~100 lines.
+  c-abi.md              Narrative contract: cu_status_t codes, caller-
+                        allocates allocation model + cu_*_bound,
+                        BUF_TOO_SMALL drain protocol, when to use
+                        cu_decompress_size_hint, thread safety. ~250 lines.
+                        Targets new binding authors and serious C consumers.
+  algorithms.md         Per-algorithm table: wire format produced,
+                        size-hint capability, level mapping, known
+                        limitations (XZ size_hint TODO, brotli quality
+                        special-case at user level 10, etc.). ~150 lines.
+  changelog.md          CHANGELOG starting with the 2026-05 C-core
+                        migration.
 
-- [ ] **LZ4 one-shot and streaming produce incompatible wire formats**
-  - `src/algorithms/lz4/lz4.cpp:57-61` writes `[4-byte LE original_size][raw LZ4 block]`.
-  - `src/compress_utils_stream.cpp:316+` uses `LZ4F_*` (standard LZ4 frame format).
-  - Decision needed: standardize on LZ4 frame format everywhere (recommended — interoperable with `lz4` CLI and other libs). Breaking change for any existing one-shot LZ4 consumers.
-- [ ] **ZSTD streaming output cannot be decompressed via the one-shot API**
-  - `compress_utils_stream.cpp:145` calls `ZSTD_initCStream` without `pledgedSrcSize`, so frames carry `ZSTD_CONTENTSIZE_UNKNOWN`.
-  - `src/algorithms/zstd/zstd.cpp:54-56` throws on `ZSTD_CONTENTSIZE_UNKNOWN`.
-  - Fix: one-shot `Decompress` should fall back to `ZSTD_decompressStream` with a grow-loop when content size is unknown. (Also fixes external ZSTD producers that don't embed content size.)
-- [ ] **Add cross-API round-trip tests**: for every algorithm, `Compress → DecompressStream` and `CompressStream+Finish → Decompress` must both round-trip. Currently only stream↔stream and one-shot↔one-shot are tested (`tests/test_compress_utils_stream.cpp`).
+bindings/cpp/README.md  Install + small example + link to docs/c-abi.md.
+bindings/python/README.md  pip install + example + link.
+README.md (root)        Project overview, "pick your language" table,
+                        pointer at docs/ and per-binding READMEs.
+                        REWRITE — current root README still references
+                        the old C++ core.
+```
 
-### Correctness bugs (level mapping)
+### Explicit non-goals (defer to v1.0 doc pass)
 
-- [ ] **Streaming and one-shot use different LZ4 HC level mappings**
-  - One-shot (`lz4.cpp:39`): `MapLevel(level-3, 12)` → for user level 10, HC level 9.
-  - Streaming (`compress_utils_stream.cpp:312`): `(level-3)*12/7` → for user level 10, HC level 12.
-  - Fix: single mapping function in `src/utils/constants.hpp`, called from both paths.
-- [ ] **Streaming bz2/zlib/xz reimplement level math by hand** instead of calling `internal::MapLevel`. Same formula by coincidence; centralize via the helper. (`compress_utils_stream.cpp:171, 198, 211`.)
+- Hand-written API reference per function. Doxygen for C/C++, Sphinx autodoc for Python will do better and stay current automatically.
+- Tutorials. Treats users as the audience, of which we have zero.
+- A static doc site (ReadTheDocs / Sphinx output / mkdocs). GitHub-rendered Markdown is sufficient until there's traffic.
 
-### Security / robustness
+### Tier-1 priorities (do first)
 
-- [ ] **No upper bound on ZSTD decompressed allocation**
-  - `src/algorithms/zstd/zstd.cpp:59` allocates a buffer sized to the frame's claimed content size with no cap. A crafted frame can request multi-GB. LZ4 has a 512 MB cap (`lz4.cpp:105`) — apply equivalent caps to ZSTD/bz2/xz, configurable via a build option or an API parameter.
-- [ ] **Add a fuzz harness** for `Decompress(bytes, algorithm)` per algorithm. A compression library that parses untrusted input ships with zero fuzzing today. libFuzzer or AFL++ integrated into CI catches things sanitizers won't.
+- [ ] **Rewrite root `README.md`.** The current one likely still describes the C++ core. This is the highest-bounce-rate doc — fix first.
+- [ ] **Write `docs/architecture.md`.** C-core rationale, project layout, one ASCII diagram of how bindings stack on the C ABI.
+- [ ] **Write `docs/algorithms.md`.** Per-algorithm table covering wire format, size-hint behavior, level mapping (user 1–10 → native), known caveats, decompression-size-cap default. Should make "should I pick zstd or brotli for X?" a 60-second question.
 
-### Code quality
+### Tier-2 (do when an external binding author or serious C user shows up)
 
-- [ ] **`GetCompressionFunctions` is a non-inline function defined in a header** (`src/utils/algorithms_router.hpp:34`). Currently saved by exactly one TU including it; a second includer will multi-define. Fix when refactoring for the `IAlgorithm` change above, or mark `inline` in the meantime.
-- [ ] **Misleading closing comment** at `src/compress_utils_func.cpp:42` — `}  // namespace compress_utils` actually closes a function body, not the namespace.
-- [ ] **`ValidateLevel` runs after `Impl` allocation** in `compress_utils_stream.cpp:134`. Move to first line so invalid input doesn't allocate a 64KB buffer.
-- [ ] **Deduplicate per-algorithm grow-loops** (already on the TODO above) — easier after `IAlgorithm` lands since the buffer-resizing utility has one obvious home.
+- [ ] **Write `docs/c-abi.md`.** Narrative companion to the contract in `include/compress_utils.h`. Worked examples for the drain protocol, size-hint probe pattern, thread-local last-error semantics.
+- [ ] **Trim per-binding READMEs** to install + 10-line example + link to docs/.
+- [ ] **Stub `docs/changelog.md`** with the 2026-05 migration as v0.1.0 entry.
 
-### Build / CI
+### Tier-3 (v1.0 or later)
 
-- [ ] **`fetch-depth: 0` on all CI checkouts** so `cmake/GitVersion.cmake` doesn't silently fall back to `0.1.0`. Verify Python/C workflows match the WASM workflow on this.
-- [ ] **WASM matrix waste**: the WASM build is platform-independent; CI rebuilds it on Linux/macOS/Windows. Build once on Linux, test the JS package on all three. (Applies to the WASM branch when merged.)
+- [ ] Doxygen config for C + C++ headers; generate `dist/docs/c/` and `dist/docs/cpp/` at install time.
+- [ ] Sphinx config for the Python binding; `autodoc` against the pybind11 module.
+- [ ] CI step that builds the docs and uploads to GitHub Pages on tag pushes.
 
-### WASM direction (gating for the next branch)
+### Two design decisions baked in
 
-- [ ] **Build WASM on top of the C ABI in `bindings/c/`**, not the C++ core. The C surface is already stable and includes streaming (per TODO above). Whether Emscripten or Zig→WASM, the WASM layer should be a thin shim — not a reimplementation of the streaming layer per algorithm (see what the `claude/wasm-support-tree-shakeable` branch did wrong).
-- [ ] **Decide Emscripten vs Zig→WASM**:
-  - Emscripten: lower-friction (libc, malloc, exception ABI handled), reuses existing toolchain.
-  - Zig→WASM: smaller output, no Emscripten runtime, but requires building C deps under Zig's clang. Worth it if you also want a Zig binding for non-WASM consumers; otherwise overkill.
-- [ ] **Tree-shake budget as a test**, not just a smaller-than-multi assertion. Cap per-algorithm bundle size in CI so regressions actually fail.
+1. **`include/compress_utils.h` stays the canonical contract.** Header-local comments are what IDE tooltips show. `docs/c-abi.md` is the narrative — worked examples, diagrams, "why" — and references back to the header for the exact spec. Two sources of truth is OK when one is "what" and the other is "why."
+2. **Install instructions in binding READMEs reflect reality.** Until we publish to PyPI / Conan / Maven / etc., the README says "build from source via cmake" with the exact command. Avoid writing aspirational `pip install compress-utils` instructions before the package exists.
+
+---
+
+## Canonical-Compressor Interop Tests (planned 2026-05-11)
+
+The existing test suites (`test_compress_utils.c`, `test_compress_utils_cpp.cpp`, `test_compress_utils.py`) prove self-consistency: our compress output decodes with our decompress, and across our one-shot ↔ streaming APIs. But they do **not** prove that our output is a valid `.zst` / `.gz` / `.lz4` / etc. file in *anyone else's* tools, nor that we can decompress what other tools produce.
+
+This is the gap that let the legacy LZ4 wire-format bug live for so long: it round-tripped fine against itself, but no test ever fed its output to the canonical `lz4` CLI or `python -m lz4` to confirm it was a real LZ4 frame. We should add this validation for every algorithm in every language binding.
+
+### What "canonical" means per algorithm
+
+The reference implementation we round-trip against:
+
+| Algorithm | Canonical reference                         | Format we produce |
+|-----------|---------------------------------------------|-------------------|
+| zstd      | `python -m zstandard` (libzstd binding)     | ZSTD frame with content size |
+| brotli    | `python -m brotli` / `npm:brotli`           | raw Brotli stream |
+| zlib      | Python `zlib` (stdlib)                      | zlib wrapper (RFC 1950) |
+| bz2       | Python `bz2` (stdlib)                       | bzip2 stream |
+| lz4       | `python -m lz4.frame` / `lz4` CLI           | LZ4 frame (`.lz4`) with content checksum |
+| xz / lzma | Python `lzma` (stdlib)                      | XZ stream with CRC64 |
+
+The CLI binaries (`zstd`, `xz`, `lz4`, `brotli`, `gzip`, `bzip2`) provide a second independent validation channel — useful as a backstop and easy to run in CI.
+
+### Test matrix per language
+
+For each `(language, algorithm)` pair, run:
+
+1. **Outbound interop**: `cu_compress(input) → canonical.decompress() == input`
+2. **Inbound interop**: `canonical.compress(input) → cu_decompress() == input`
+
+Both directions matter. Outbound proves we produce valid output; inbound proves we accept inputs we didn't make. (Inbound is where bugs like "ZSTD frame without `pledgedSrcSize` is rejected" show up.)
+
+### Per-binding implementation
+
+- **Python** (`bindings/python/tests/test_interop.py`):
+  - Use stdlib `zlib` / `bz2` / `lzma` for those three (no extra deps).
+  - Add `zstandard`, `brotli`, `lz4` to test extras in `pyproject.toml`.
+  - One parameterized `unittest` / `pytest` test per algorithm, both directions.
+
+- **C++** (`bindings/cpp/test/test_interop.cpp`):
+  - Already links against the underlying codec libraries (zstd, brotli, etc.) via `compress_utils_static`. Call those C APIs *directly* in the test alongside `cu::compress` and compare.
+  - This is essentially "do we wrap the codec correctly?" which is a more rigorous check than the Python version (no second binding layer in the middle).
+
+- **C** (`tests/test_interop.c`):
+  - Same approach as C++ — call the underlying codec libraries' C APIs directly. Lives alongside `test_compress_utils.c`. Most thorough check because there's no language indirection.
+
+- **WASM/JS** (when that binding lands):
+  - Browser `DecompressionStream` for gzip/deflate (built-in, no deps).
+  - `fflate`, `@bokuweb/zstd-wasm`, `lz4js` npm packages for the others. Pick the most-downloaded canonical per algo.
+
+### CLI cross-check (separate from per-binding tests)
+
+A standalone shell test that:
+1. Compresses a fixture file with our library (via the C smoke test or a CLI we'll eventually ship).
+2. Decompresses with the system CLI binary (`zstd -d`, `xz -d`, etc.).
+3. Diffs against the original.
+4. Reverse direction: system CLI compresses, our library decompresses.
+
+Gated on the CLI binaries being available in the runner; skipped on systems missing them.
+
+### CI implications
+
+- Python interop deps go into a `test` extra in `pyproject.toml` — only installed when running tests, not for production wheels.
+- The PR workflow installs system codec binaries on Ubuntu (`apt install zstd xz-utils lz4 brotli` — all present in `ubuntu-latest` already). macOS via Homebrew. Windows via chocolatey or vcpkg.
+- Expect this to add 10–30s to CI per binding. Worth it.
+
+### What this catches that current tests don't
+
+- Wire-format divergence (the LZ4 class of bug — different headers, different magic numbers, different optional flags).
+- Off-by-one in size fields, endianness mistakes in length prefixes.
+- Checksum mismatches (zstd content checksum, lz4 frame content checksum, xz CRC64).
+- "We accept input only from ourselves" bugs (e.g., ZSTD without `pledgedSrcSize` once worked one direction but not the other in the legacy code).
+- Compatibility with future versions of the underlying codecs (when an upstream lib updates, this catches our wrapper falling out of sync).
+
+### Open question
+
+Should the interop tests be **mandatory in PR CI** or **a separate nightly job**? Mandatory makes them a release gate; nightly keeps PR latency low. I'd lean mandatory — they're fast — but worth deciding when the work lands.
+
+- [ ] **Implement interop test suites per binding** (C, C++, Python now; WASM when it exists).
+- [ ] **Add the CLI cross-check** as a separate workflow step or shell script.
+- [ ] **Decide PR-gate vs. nightly** placement.
+
+---
+
+## WASM Binding Plan (decided 2026-05-11)
+
+The earlier `claude/wasm-support-tree-shakeable` branch got *one thing right and one thing wrong*. This section captures the corrected approach so the next person picking up WASM work doesn't relitigate the design.
+
+### What to keep from the prior branch
+
+- **Per-algorithm `.wasm` artifacts and subpath exports.** Combined `.wasm` is 1.5–2 MB; per-algo is 50–250 KB each. A page importing only zstd should download only zstd.
+- **Package layout with subpath exports**:
+  ```jsonc
+  "exports": {
+    "./zstd":   { "import": "./dist/algorithms/zstd/index.js"   },
+    "./brotli": { "import": "./dist/algorithms/brotli/index.js" },
+    "./zlib":   { "import": "./dist/algorithms/zlib/index.js"   },
+    "./bz2":    { "import": "./dist/algorithms/bz2/index.js"    },
+    "./lz4":    { "import": "./dist/algorithms/lz4/index.js"    },
+    "./xz":     { "import": "./dist/algorithms/xz/index.js"     }
+  }
+  ```
+- **`"sideEffects": false`** + ESM-only so bundlers can tree-shake aggressively.
+
+### What to drop from the prior branch
+
+- **Per-algorithm TypeScript reimplementations.** The old branch had `compress.ts`, `stream.ts`, `module.ts` copy-pasted six times (~2000 LOC of mechanical search-replace). The C ABI now provides a single uniform contract — one drain protocol, one error model, one size-hint shape — so the TS layer has nothing algorithm-specific to do.
+- **Per-algorithm C++ binding code.** The prior branch reimplemented streaming, level mapping, and error translation in C++ *inside the WASM build*, divergent from the main C++ core. That's exactly the duplication the C migration was supposed to kill. The WASM `.wasm` files are now compiled directly from `src/algorithms/<algo>/<algo>.c` — same source as native builds.
+- **Homegrown LZ4 wire format.** The prior branch's LZ4 WASM module shipped raw blocks; the new C core uses LZ4 frame format. No special-casing needed.
+
+### Target directory shape
+
+```
+bindings/wasm/
+  src/
+    core/
+      dispatch.ts            shared ~150 LOC. Wraps the cu_* ABI:
+                             one-shot compress/decompress, stream classes,
+                             drain loop, BUF_TOO_SMALL handling, error
+                             translation to JS exceptions.
+      types.ts               CompressOptions, CompressError, etc.
+      loader.ts              Module factory cache; preload helper.
+    algorithms/
+      zstd/
+        index.ts             ~15 LOC. Imports dispatch + the algo's wasm
+                             factory; exports compress/decompress/streams
+                             bound to that .wasm module.
+        wasm.generated.js    emscripten output for zstd only.
+      brotli/  …same shape, different .wasm…
+      zlib/    …
+      bz2/     …
+      lz4/     …
+      xz/      …
+  scripts/
+    build-wasm.sh            invokes emcc 6 times, one per algorithm,
+                             linking only that algorithm's vtable + the
+                             core dispatcher.
+  tests/
+    integration.test.ts      round-trip per algorithm
+    treeshake.test.ts        bundle-size budget per subpath
+  CMakeLists.txt             (or build.zig if we switch toolchains)
+  package.json
+```
+
+### Build
+
+Each algorithm's `.wasm` links:
+- `src/compress_utils.c`           (dispatcher — needed for `cu_*` entry points)
+- `src/registry.c`                 (with only one `INCLUDE_<ALGO>` defined)
+- `src/algorithms/<algo>/<algo>.c` (that algorithm's vtable)
+- the upstream algorithm library (zstd, brotli, etc.)
+
+Six emcc invocations, each producing a self-contained `.wasm` for one algorithm.
+
+### Toolchain
+
+- **Emscripten first.** Lowest friction: existing CMake integration via `emcmake`, well-trodden path, handles libc/malloc/exception ABI for free.
+- **Zig→WASM as a fallback** only if Emscripten output is too big. Re-evaluate after measuring first cut. Switching is cheap because the C source doesn't change.
+
+### Tree-shaking story
+
+- Subpath imports + `sideEffects: false` + per-algo `.wasm` = bundlers ship only what the consumer imports.
+- The shared `dispatch.ts` is small (~150 LOC). It gets bundled exactly once per imported algorithm, but since it's the same module, smart bundlers dedupe across imports anyway.
+- **Bundle size budget as a test.** Add a `treeshake.test.ts` that asserts per-algo bundles stay under specified KB caps (e.g., zstd subpath ≤ 280 KB including `.wasm`). Regressions fail CI, not just produce a warning.
+
+### CI
+
+- Build the six `.wasm` files **once on Linux** (they're platform-independent).
+- Test the JS package on all OS runners (Node + Playwright for browsers).
+- This closes the "WASM matrix waste" item — the prior branch rebuilt WASM on every OS for no reason.
+
+### What this unlocks
+
+Once shipped, the React/Vue/server-side-JS use cases all work:
+- `import { compress } from 'compress-utils/zstd'` in any modern bundler
+- Cloudflare Workers / Deno / Bun all use the same package
+- A future Rust→WASM consumer could even reuse the same `.wasm` artifacts via WASI
+
+---
+
+## Pre-WASM Polish (2026-05 code review) — superseded by Phases 1–4 above
+
+All the wire-format, level-mapping, dispatch-shape, and security items from the original code review were resolved as part of the C-migration (Phases 1–4). Surviving items that *aren't* already covered above:
+
+- [x] **`fetch-depth: 0` on all CI checkouts** — verified: `pr_build_and_test.yml`, `build_and_test_c_cpp.yml`, `build_and_test_python.yml` all set it.
+- [x] **Rewrite release CI workflows for the new layout** (2026-05-11). `build_and_test_c_cpp.yml` now produces a single per-OS `compress-utils-${OS}[-${VERSION}].tar.gz` (zip on Windows) containing both `dist/c/` and `dist/cpp/`, with a separate `release` job that downloads all OS artifacts and attaches them to the GitHub Release on tag. The `combine` cross-OS merge step is gone. `build_and_test_python.yml` was already aligned with the current layout — left as-is.
+- [ ] **Decide Emscripten vs Zig→WASM** when picking up the WASM binding (Phase 4 leftover).
 
 ## Package Managers
 
-- [ ] `c` -> `conan`
-- [ ] `c++` -> `conan`
+- [ ] `c` -> `conan` (low priority — publish the C library to Conan Center for C consumers; requires writing a `conanfile.py` recipe + registering with conan-center-index)
+- [ ] `c++` -> `conan` (low priority — same as above for the C++ header-only binding; shares most of the recipe with the C package, just adds the `compress_utils_cpp` INTERFACE target export)
 - [ ] `go` -> `pkg.go`
 - [ ] `java` -> `maven`
 - [ ] `js/ts` -> `npm`
