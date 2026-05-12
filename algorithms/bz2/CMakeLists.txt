@@ -46,8 +46,8 @@ include(ExternalProject)
 ExternalProject_Add(
     bz2_external
     PREFIX ${BZ2_BUILD_DIR}
-    GIT_REPOSITORY https://gitlab.com/bzip2/bzip2.git
-    GIT_TAG master
+    GIT_REPOSITORY ${BZ2_URL}
+    GIT_TAG ${BZ2_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}

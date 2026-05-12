@@ -1,207 +1,234 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# build.sh — top-level driver that quarterbacks the right build system
+# for each language binding.
+#
+#   C / C++ / Python / WASM → CMake (cmake/CMakeLists.txt + bindings/wasm)
+#   Zig                     → `zig build` in bindings/zig (when present)
+#
+# Single source of truth for upstream codec versions lives in
+# codec-versions.json. This script runs tools/sync-codecs.py at the
+# start so any drift between the manifest and bindings/zig/build.zig.zon
+# is repaired (or reported) before either build system runs.
 
-# build.sh - A script to build the `compress-utils` library on Unix-like systems.
+set -euo pipefail
 
-# Initialize variables
 BUILD_DIR="build"
 CLEAN_BUILD=false
 SKIP_TESTS=false
+SKIP_SYNC=false
 BUILD_MODE="Release"
 CORES=1
 ALGORITHMS=()
 LANGUAGES=()
 
-# Function to display usage instructions
 usage() {
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  --clean                    Clean the build directory before building."
-    echo "  --skip-tests               Skip building and running tests."
-    echo "  --debug                    Build the project in debug mode."
-    echo "  --algorithms=LIST          Comma-separated list of algorithms to include. Default: all"
-    echo "                             Available algorithms: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)"
-    echo "  --languages=LIST           Comma-separated list of language bindings to build. Default: all"
-    echo "                             Available languages: c, js, python"
-    echo "  --cores=N                  Number of cores to use for building. Default: 1"
-    echo "  -h, --help                 Show this help message and exit."
-    echo ""
-    echo "Examples:"
-    echo "  $0 --clean --algorithms=zstd,zlib --languages=js"
-    echo "  $0 --algorithms=zlib"
-    exit 1
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  --clean                    Clean every build directory + dist/ before building.
+  --skip-tests               Skip ctest / language-binding test suites.
+  --skip-sync                Skip the codec-version sync step (use with care).
+  --debug                    Build in Debug instead of Release.
+  --algorithms=LIST          Comma-separated list. Default: all.
+                             Available: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)
+  --languages=LIST           Comma-separated list. Default: c, cpp, python.
+                             Available: c, cpp (c++), python, wasm, zig
+  --cores=N                  Parallel build cores. Default: 1.
+  -h, --help                 Show this help.
+
+Examples:
+  $0 --clean --algorithms=zstd,zlib --languages=python
+  $0 --languages=wasm
+  $0 --languages=zig
+  $0 --languages=c,cpp,python,wasm,zig    # the works
+EOF
+    exit "${1:-1}"
 }
 
-# Parse command-line options
+# ---------- parse args ---------------------------------------------------------
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --clean)
-            CLEAN_BUILD=true
-            ;;
-        --skip-tests)
-            SKIP_TESTS=true
-            ;;
-        --debug)
-            BUILD_MODE="Debug"
-            ;;
-        --algorithms=*)
-            IFS=',' read -ra ALGORITHMS <<< "${1#*=}"
-            ;;
-        --languages=*)
-            IFS=',' read -ra LANGUAGES <<< "${1#*=}"
-            ;;
-        --cores=*)
-            CORES="${1#*=}"
-            ;;
-        -h|--help)
-            usage
-            ;;
-        *)
-            echo "Unknown option: $1"
-            usage
-            ;;
+        --clean)        CLEAN_BUILD=true ;;
+        --skip-tests)   SKIP_TESTS=true ;;
+        --skip-sync)    SKIP_SYNC=true ;;
+        --debug)        BUILD_MODE="Debug" ;;
+        --algorithms=*) IFS=',' read -ra ALGORITHMS <<< "${1#*=}" ;;
+        --languages=*)  IFS=',' read -ra LANGUAGES  <<< "${1#*=}" ;;
+        --cores=*)      CORES="${1#*=}" ;;
+        -h|--help)      usage 0 ;;
+        *)              echo "Unknown option: $1" >&2; usage 1 ;;
     esac
     shift
 done
 
-# Check if CMake is installed
-if ! command -v cmake &> /dev/null; then
-    echo "CMake is required to build the project."
-    exit 1
+# Default language set if user didn't specify one.
+if [[ ${#LANGUAGES[@]} -eq 0 ]]; then
+    LANGUAGES=(c cpp python)
 fi
 
-# Clean the build directory if requested
-if [ "$CLEAN_BUILD" = true ]; then
-    echo "Cleaning build directory..."
-    rm -rf "$BUILD_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
-    # Remove the build directories under `algorithms/`
+# ---------- categorize requested languages -------------------------------------
+
+WANT_C=false
+WANT_CPP=false
+WANT_PYTHON=false
+WANT_WASM=false
+WANT_ZIG=false
+
+for lang in "${LANGUAGES[@]}"; do
+    case "$lang" in
+        c)              WANT_C=true ;;
+        cpp|c++)        WANT_CPP=true ;;
+        python|py)      WANT_PYTHON=true ;;
+        wasm|js|ts)     WANT_WASM=true ;;
+        zig)            WANT_ZIG=true ;;
+        *)              echo "Unknown language: $lang" >&2; usage 1 ;;
+    esac
+done
+
+# C ABI is always built (it's the library's core). Any other binding pulls it in
+# transitively. C++/Python/WASM are CMake-built; Zig has its own build.zig.
+NEEDS_CMAKE=false
+if $WANT_C || $WANT_CPP || $WANT_PYTHON || $WANT_WASM; then
+    NEEDS_CMAKE=true
+fi
+
+# ---------- pre-flight: codec sync --------------------------------------------
+
+if ! $SKIP_SYNC; then
+    if [[ -f tools/sync-codecs.py ]] && command -v python3 >/dev/null 2>&1; then
+        # If the Zig binding isn't there yet, the script no-ops. Otherwise it
+        # regenerates build.zig.zon. Always cheap.
+        echo ">>> Syncing codec versions from codec-versions.json"
+        python3 tools/sync-codecs.py
+    else
+        echo "note: skipping codec sync (tools/sync-codecs.py or python3 missing)" >&2
+    fi
+fi
+
+# ---------- clean -------------------------------------------------------------
+
+if $CLEAN_BUILD; then
+    echo ">>> Cleaning build directories"
+    rm -rf "$BUILD_DIR" dist algorithms/dist
     rm -rf algorithms/*/build
-
-    # Remove the build directories under `bindings/`
-    rm -rf bindings/*/build
-
-    # Remove the `dist/` directory
-    rm -rf dist
-
-    # Remove the `algorithms/dist` directory
-    rm -rf algorithms/dist
+    rm -rf bindings/*/build bindings/*/dist
+    # Zig's local caches (only present if Zig binding has been built).
+    rm -rf bindings/zig/zig-cache bindings/zig/.zig-cache
 fi
 
-# Create the build directory if it doesn't exist
-mkdir -p "$BUILD_DIR"
+# ---------- CMake path: C / C++ / Python / WASM -------------------------------
 
-# Prepare CMake options
-CMAKE_OPTIONS=""
+if $NEEDS_CMAKE; then
+    echo ""
+    echo ">>> CMake build path (C / C++ / Python / WASM)"
 
-# Set the build mode
-CMAKE_OPTIONS="$CMAKE_OPTIONS -DCMAKE_BUILD_TYPE=$BUILD_MODE"
+    if ! command -v cmake >/dev/null 2>&1; then
+        echo "error: cmake required for the C / C++ / Python / WASM bindings" >&2
+        exit 1
+    fi
 
-# Skip building and running tests if requested
-if [ "$SKIP_TESTS" = true ]; then
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DENABLE_TESTS=OFF"
+    CMAKE_OPTS=( -DCMAKE_BUILD_TYPE="$BUILD_MODE" )
+
+    # Algorithm gating.
+    if [[ ${#ALGORITHMS[@]} -gt 0 ]]; then
+        # Start with everything off, enable per request.
+        CMAKE_OPTS+=( -DINCLUDE_BROTLI=OFF -DINCLUDE_BZ2=OFF -DINCLUDE_LZ4=OFF
+                      -DINCLUDE_XZ=OFF    -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF )
+        for algo in "${ALGORITHMS[@]}"; do
+            case "$algo" in
+                brotli)     CMAKE_OPTS+=( -DINCLUDE_BROTLI=ON ) ;;
+                bz2|bzip2)  CMAKE_OPTS+=( -DINCLUDE_BZ2=ON ) ;;
+                lz4)        CMAKE_OPTS+=( -DINCLUDE_LZ4=ON ) ;;
+                xz|lzma)    CMAKE_OPTS+=( -DINCLUDE_XZ=ON ) ;;
+                zstd)       CMAKE_OPTS+=( -DINCLUDE_ZSTD=ON ) ;;
+                zlib)       CMAKE_OPTS+=( -DINCLUDE_ZLIB=ON ) ;;
+                *)          echo "Unknown algorithm: $algo" >&2; usage 1 ;;
+            esac
+        done
+    fi
+    # Default is all-on per the CMakeLists, no flag needed.
+
+    # Binding selection.
+    CMAKE_OPTS+=(
+        -DBUILD_CPP_BINDINGS=$( $WANT_CPP && echo ON || echo OFF )
+        -DBUILD_PYTHON_BINDINGS=$( $WANT_PYTHON && echo ON || echo OFF )
+        -DBUILD_WASM_BINDINGS=$( $WANT_WASM && echo ON || echo OFF )
+    )
+    if $WANT_PYTHON; then
+        CMAKE_OPTS+=( -DPython3_EXECUTABLE="$(command -v python3)" )
+    fi
+    if $SKIP_TESTS; then
+        CMAKE_OPTS+=( -DENABLE_TESTS=OFF )
+    fi
+
+    mkdir -p "$BUILD_DIR"
+    echo "    cmake $(printf '%q ' "${CMAKE_OPTS[@]}")"
+    cmake -S . -B "$BUILD_DIR" "${CMAKE_OPTS[@]}"
+    cmake --build "$BUILD_DIR" -j "$CORES"
+
+    # WASM is its own target — only build it when requested. (Default
+    # `cmake --build` doesn't include compress_utils_wasm because the
+    # ExternalProject for each algo is opt-in via the root target.)
+    if $WANT_WASM; then
+        cmake --build "$BUILD_DIR" --target compress_utils_wasm -j "$CORES"
+    fi
+
+    cmake --install "$BUILD_DIR"
+
+    if ! $SKIP_TESTS; then
+        echo ">>> Running ctest"
+        ctest --test-dir "$BUILD_DIR" --output-on-failure -C "$BUILD_MODE"
+    fi
 fi
 
-# Handle algorithms
-if [ ${#ALGORITHMS[@]} -gt 0 ]; then
-    # Disable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=OFF -DINCLUDE_BZ2=OFF -DINCLUDE_LZ4=OFF -DINCLUDE_XZ=OFF -DINCLUDE_ZSTD=OFF -DINCLUDE_ZLIB=OFF"
-    # Enable specified algorithms
-    for algo in "${ALGORITHMS[@]}"; do
-        case $algo in
-            brotli)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON"
-                ;;
-            bz2|bzip2)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BZ2=ON"
-                ;;
-            lz4)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_LZ4=ON"
-                ;;
-            lzma)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
-                ;;
-            xz)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_XZ=ON"
-                ;;
-            zstd)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZSTD=ON"
-                ;;
-            zlib)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_ZLIB=ON"
-                ;;
-            *)
-                echo "Unknown algorithm: $algo"
-                usage
-                ;;
-        esac
-    done
-else
-    # Enable all algorithms by default
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DINCLUDE_BROTLI=ON -DINCLUDE_BZ2=ON -DINCLUDE_LZ4=ON -DINCLUDE_XZ=ON -DINCLUDE_ZSTD=ON -DINCLUDE_ZLIB=ON"
+# ---------- Zig path ----------------------------------------------------------
+
+if $WANT_ZIG; then
+    echo ""
+    echo ">>> Zig build path"
+
+    if ! command -v zig >/dev/null 2>&1; then
+        echo "error: 'zig' not found on PATH (need >= 0.13 for the Zig binding)" >&2
+        exit 1
+    fi
+
+    if [[ ! -f bindings/zig/build.zig ]]; then
+        cat >&2 <<EOF
+error: bindings/zig/build.zig does not exist yet.
+
+The Zig binding hasn't been written. The codec-versions.json manifest +
+tools/sync-codecs.py + build.sh quarterbacking are all wired up to support
+it, but the binding source itself is TODO. See TODO.md under "Bindings".
+EOF
+        exit 1
+    fi
+
+    ZIG_OPTIMIZE="ReleaseFast"
+    if [[ "$BUILD_MODE" == "Debug" ]]; then
+        ZIG_OPTIMIZE="Debug"
+    fi
+
+    pushd bindings/zig >/dev/null
+    zig build -Doptimize="$ZIG_OPTIMIZE" -j"$CORES"
+    if ! $SKIP_TESTS; then
+        zig build test -Doptimize="$ZIG_OPTIMIZE"
+    fi
+    popd >/dev/null
 fi
 
-# Handle language bindings.
-#
-# Note: the C ABI is the library's core (declared in include/compress_utils.h)
-# and is always built. There is no separate "C binding" target to opt into.
-# Bindings on top of the C core: cpp (header-only RAII), python (pybind11),
-# wasm (TS over emscripten, not yet implemented).
-if [ ${#LANGUAGES[@]} -gt 0 ]; then
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=OFF -DBUILD_PYTHON_BINDINGS=OFF"
-    for lang in "${LANGUAGES[@]}"; do
-        case $lang in
-            cpp|c++)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=ON"
-                ;;
-            python)
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_PYTHON_BINDINGS=ON"
-                CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
-                ;;
-            c)
-                : # C ABI is the core; built unconditionally.
-                ;;
-            js|ts|wasm)
-                echo "WASM/JS binding not yet implemented on the C core. See TODO.md."
-                ;;
-            *)
-                echo "Unknown language binding: $lang"
-                usage
-                ;;
-        esac
-    done
-else
-    # Enable all bindings by default.
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DBUILD_CPP_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=ON"
-    CMAKE_OPTIONS="$CMAKE_OPTIONS -DPython3_EXECUTABLE=$(which python)"
+# ---------- size summary ------------------------------------------------------
+
+if $NEEDS_CMAKE && [[ -d dist ]]; then
+    echo ""
+    echo "Sizes of built libraries:"
+    echo "-------------------------"
+    find dist -type f \( -name "*compress_utils*" -o -name "*.wasm" \) \
+        -exec du -sh {} + 2>/dev/null \
+        | awk '{print $2 ": " $1}'
 fi
-
-# Move into the build directory
-cd "$BUILD_DIR"
-
-# Run CMake configuration
-echo "Running CMake with options: $CMAKE_OPTIONS"
-cmake .. $CMAKE_OPTIONS
-
-# Build the project with the specified number of cores
-echo "Building the project with $CORES cores..."
-cmake --build . -j"$CORES"
-
-# Install the project (this will trigger the CMake install() commands)
-echo "Installing the project..."
-cmake --install .
-
-# Run tests if not skipped
-if [ "$SKIP_TESTS" = false ]; then
-    echo "Running tests..."
-    ctest --output-on-failure
-fi
-
-# Return to the original directory
-cd ..
-
-# Print the sizes of the built libraries
-echo ""
-echo "Sizes of the built libraries:"
-echo "-----------------------------"
-find dist/** -type f -name "*compress_utils*" -exec du -sh {} + | awk '{print $2 ": " $1}'

@@ -40,6 +40,12 @@ string(TOUPPER ${CU_WASM_ALGO} _CU_ALGO_UPPER)
 
 set(CU_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+# Load the codec-versions.json manifest. The wasm child CMake project
+# isn't a subdir of the root, so we have to include this explicitly —
+# otherwise ${<ALGO>_URL} / ${<ALGO>_TAG} expand to empty in the algo
+# subprojects we add_subdirectory below.
+include(${CU_REPO_ROOT}/cmake/CodecVersions.cmake)
+
 # Match the root build's optimization shape.
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

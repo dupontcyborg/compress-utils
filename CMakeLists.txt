@@ -17,6 +17,11 @@ set(DEFAULT_VERSION "0.1.0")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitVersion.cmake)
 get_version_from_git(PROJECT_VERSION_FROM_GIT ${DEFAULT_VERSION})
 
+# Load codec-versions.json. Exposes <ALGO>_URL / <ALGO>_TAG variables for
+# the per-algorithm ExternalProject_Add calls. Single source of truth
+# shared with tools/sync-codecs.py (which feeds bindings/zig/build.zig.zon).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CodecVersions.cmake)
+
 project(compress-utils
     VERSION ${PROJECT_VERSION_FROM_GIT}
     LANGUAGES C CXX

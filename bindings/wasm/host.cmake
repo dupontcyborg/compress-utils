@@ -15,7 +15,22 @@
 include(ExternalProject)
 
 set(CU_WASM_ALGOS_ALL zstd brotli zlib bz2 lz4 xz)
-set(CU_WASM_ALGOS "${CU_WASM_ALGOS_ALL}" CACHE STRING
+
+# Default the WASM algo set to whatever the parent CMake configure has
+# enabled via INCLUDE_<ALGO>. Users can still pin a smaller subset
+# explicitly via -DCU_WASM_ALGOS="zstd;brotli". Without this default,
+# --algorithms=zstd --languages=wasm would try to fanout to all 6.
+set(_CU_WASM_DEFAULT "")
+foreach(_a IN LISTS CU_WASM_ALGOS_ALL)
+    string(TOUPPER ${_a} _a_upper)
+    if(INCLUDE_${_a_upper})
+        list(APPEND _CU_WASM_DEFAULT ${_a})
+    endif()
+endforeach()
+if(NOT _CU_WASM_DEFAULT)
+    set(_CU_WASM_DEFAULT "${CU_WASM_ALGOS_ALL}")
+endif()
+set(CU_WASM_ALGOS "${_CU_WASM_DEFAULT}" CACHE STRING
     "Which algorithms to build as .wasm modules (subset of: ${CU_WASM_ALGOS_ALL})")
 set(CU_WASM_BUILD_TYPE Release CACHE STRING
     "CMAKE_BUILD_TYPE for the wasm cross-compile (independent of the parent)")

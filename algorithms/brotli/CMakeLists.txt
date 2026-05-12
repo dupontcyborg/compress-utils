@@ -53,8 +53,8 @@ include(ExternalProject)
 ExternalProject_Add(
     brotli_external
     PREFIX ${BROTLI_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/google/brotli.git
-    GIT_TAG v1.1.0
+    GIT_REPOSITORY ${BROTLI_URL}
+    GIT_TAG ${BROTLI_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}

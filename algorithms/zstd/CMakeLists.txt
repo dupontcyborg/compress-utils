@@ -50,8 +50,8 @@ include(ExternalProject)
 ExternalProject_Add(
     zstd_external
     PREFIX ${ZSTD_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/facebook/zstd.git
-    GIT_TAG v1.5.6
+    GIT_REPOSITORY ${ZSTD_URL}
+    GIT_TAG ${ZSTD_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
@@ -77,7 +77,10 @@ ExternalProject_Add(
     INSTALL_COMMAND
         ${CMAKE_COMMAND} -E make_directory ${ZSTD_INSTALL_DIR_LIB} ${ZSTD_INSTALL_DIR_INCLUDE} &&
         ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external-build/lib/${ZSTD_LIB_DIR_GENEX}${ZSTD_LIB} ${ZSTD_INSTALL_DIR_LIB} &&
-        ${CMAKE_COMMAND} -E copy ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd.h ${ZSTD_INSTALL_DIR_INCLUDE}
+        ${CMAKE_COMMAND} -E copy
+            ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd.h
+            ${ZSTD_BUILD_DIR}/src/zstd_external/lib/zstd_errors.h
+            ${ZSTD_INSTALL_DIR_INCLUDE}
 )
 
 ######### INSTALL #########

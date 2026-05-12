@@ -59,8 +59,8 @@ endif()
 ExternalProject_Add(
     xz_external
     PREFIX ${XZ_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/tukaani-project/xz.git
-    GIT_TAG v5.6.3
+    GIT_REPOSITORY ${XZ_URL}
+    GIT_TAG ${XZ_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}

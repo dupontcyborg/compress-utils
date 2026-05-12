@@ -48,8 +48,8 @@ include(ExternalProject)
 ExternalProject_Add(
     lz4_external
     PREFIX ${LZ4_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/lz4/lz4.git
-    GIT_TAG v1.10.0
+    GIT_REPOSITORY ${LZ4_URL}
+    GIT_TAG ${LZ4_TAG}
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR build/cmake
     CMAKE_ARGS

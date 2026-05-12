@@ -55,8 +55,8 @@ include(ExternalProject)
 ExternalProject_Add(
     zlib_external
     PREFIX ${ZLIB_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/madler/zlib.git
-    GIT_TAG v1.3.1
+    GIT_REPOSITORY ${ZLIB_URL}
+    GIT_TAG ${ZLIB_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
