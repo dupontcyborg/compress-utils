@@ -112,7 +112,7 @@ The underlying algorithm libraries (zstd, brotli, zlib, bz2, lz4, xz) are all C.
 
 - **Keep CMake** as the canonical build. After C-ification it gets simpler, not more complex.
 - **Adopt `zig cc` as the cross-compiler** for aarch64, musl, universal2, and (optionally) WASM. Drop-in clang frontend, no system deps, unlocks the "missing architectures" TODO.
-- **WASM via Emscripten first**; revisit Zig→WASM only if Emscripten bloat becomes a real problem. Cost of switching is low once the core is C.
+- **WASM via Zig** (`zig build-lib -target wasm32-*`). Decided 2026-05-11 — one toolchain for both aarch64 cross and WASM. Emscripten ruled out for ergonomics.
 - **Do not migrate to Meson / Zig build / Bazel**. The win doesn't justify churning the ecosystem integration (cibuildwheel, vcpkg, find_package, MSVC).
 
 ### Migration plan (do in order — each phase ships independently)
@@ -169,17 +169,44 @@ Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_
 - [x] **C++ binding** (`bindings/cpp/`): header-only INTERFACE library at `bindings/cpp/include/compress_utils.hpp`. Free `cu::compress`/`cu::decompress`, RAII `CompressStream`/`DecompressStream`, `cu::Algorithm` enum, `cu::Error` exception with `.code()`. ~250 lines. Old C++ core (`src/compress_utils.{cpp,hpp}`, `src/compress_utils_func.{cpp,hpp}`, `src/compress_utils_stream.{cpp,hpp}`, all `.cpp/.hpp` under `src/algorithms/*/`, `src/utils/*.hpp`, `src/algorithms.hpp{,.in}`, `src/version.hpp.in`, `src/symbol_exports*.hpp`) deleted.
 - [x] **C binding** (`bindings/c/`): deleted — the new `include/compress_utils.h` IS the C ABI; there's no separate shim layer.
 - [x] **Python binding**: retargeted. `bindings/python/compress_utils_py.cpp` is a thin pybind11 wrapper over the C++ binding (which is itself a wrapper over the C ABI). `compressor()` factory dropped (it was a smell). `version()`, `is_available()`, `set_max_decompressed_size()` added. `CompressError` exception exported. Tests rewritten as a unittest module covering free fn / streaming / cross-API / garbage-rejection / introspection.
-- [ ] **WASM binding**: build on top of the C ABI, not a C++ reimplementation per algorithm.
-  - **Keep** the old branch's per-algorithm `.wasm` artifacts and subpath exports (`compress-utils/zstd`, `compress-utils/brotli`, …) — that's correct for tree-shaking. Combined `.wasm` would be 1.5–2 MB; per-algo is 50–250 KB each.
-  - **Drop** the per-algorithm TypeScript duplication (the old branch had `compress.ts`/`stream.ts`/`module.ts` copy-pasted six times, ~2000 LOC). All algorithms now share the exact same C ABI (one drain protocol, one error model, one size-hint shape), so the TS dispatcher is generic.
-  - **Shape**: `src/core/dispatch.ts` (shared, ~150 lines) + `src/algorithms/<algo>/index.ts` (~15 lines, binds the dispatcher to its `.wasm` factory) + `src/algorithms/<algo>/wasm.generated.js` (emscripten output, per-algo).
-  - **Toolchain**: Emscripten first (lowest-friction; reuses existing CMake integration). Zig→WASM is a fallback if Emscripten output is too big.
-  - **CI**: build the `.wasm` artifacts once on Linux, test the JS package on all OS runners. **Deferred — out of scope for this session.**
+- [~] **WASM binding** — all 6 algos proven end-to-end 2026-05-11.
+  - [x] Zig→WASM toolchain: `cmake/toolchains/zig-wasm.cmake` + wrapper scripts in `cmake/toolchains/zig-bin/`. Targets `wasm32-wasi` reactor mode. Verified with `zig 0.16.0`.
+  - [x] Per-algorithm CMake project: `bindings/wasm/CMakeLists.txt`. Reuses the existing `algorithms/<algo>/CMakeLists.txt` subproject. Forwards `CMAKE_TOOLCHAIN_FILE` (resolved to absolute) into the ExternalProject_Add. `CU_ALGO_STAGING_DIR` keeps wasm artifacts under `CMAKE_BINARY_DIR` so they don't collide with native-build cache in `algorithms/dist/`.
+  - [x] Allocator shim: `src/wasm_runtime.c` exports `cu_alloc`/`cu_free` under `export_name(...)` (only compiled under `__wasm__`).
+  - [x] TypeScript dispatcher: `bindings/wasm/src/core/{types,loader,dispatch}.ts`. Arena-based allocation helper; drain-protocol loop; WASI reactor shim stubs `fd_write`/`random_get`/etc. — none actually fire on the zstd happy path.
+  - [x] All 6 subpaths (`zstd`, `brotli`, `zlib`, `bz2`, `lz4`, `xz`) built + TS bindings + vitest coverage. **16/16 passing.** Sizes after strip+opt: brotli 731 KB, zstd 544 KB, lz4 137 KB, xz 136 KB, bz2 94 KB, zlib 80 KB.
+  - [x] Build pipeline post-processing: `wasm-strip` + `wasm-opt -O3` baked into CMake POST_BUILD. zstd dropped from 3.6 MB (raw, with DWARF) → 544 KB.
+  - [x] Streaming-fallback inside `decompress()` when `size_hint` returns SIZE_UNKNOWN — keeps the one-shot API working for bz2 / brotli / raw-deflate / xz / etc.
+  - [x] Parent-CMake driver: `BUILD_WASM_BINDINGS=ON` on the root CMake spawns 6 ExternalProjects (one per algo) with the zig-wasm toolchain. `CU_WASM_ALGOS=zstd;brotli;…` filters; `CU_WASM_BUILD_TYPE` overrides type independently of parent. No shell scripts.
+  - [x] Per-codec wasm-build fixes:
+    - **xz**: `ENABLE_THREADS=OFF` so liblzma builds without pthread/signal.
+    - **brotli**: `BUILD_COMMAND` overridden to skip the `brotli` CLI target (uses chown/setresuid which WASI lacks).
+    - **zlib**: detect wasm toolchain and expect `libzlibstatic.a` (zlib's `OUTPUT_NAME z` rename only fires under `if(UNIX)`, which excludes WASI).
+    - **bz2**: WASI loader shim returns EBADF (not ENOSYS) from `fd_prestat_get` to terminate libc's preopen scan cleanly.
+  - [x] Package layout: subpath exports per algo, `sideEffects: false`, ESM-only.
+  - [x] **API polish pass** (2026-05-11):
+    - `Symbol.dispose` on `CompressStream`/`DecompressStream` (`using cs = await create*()`).
+    - FinalizationRegistry backstop frees the C-side handle if the JS object is GC'd without a destroy or `using`.
+    - `compressionStream()` / `decompressionStream()` as `TransformStream<Uint8Array, Uint8Array>` for Web Streams pipelines.
+    - `decompress(input, { expectedSize })` — moved from positional second arg.
+    - `version()` and `setMaxDecompressedSize(bytes)` exposed.
+    - `CompressError.algorithm` is now the string name ("zstd"); enum demoted to internal.
+  - [x] **Cross-runtime + browser CI** (2026-05-11). Local results all green:
+    - Node 20 + 22 via vitest (33/33).
+    - Bun 1.3 via `bun test --bun` (33/33).
+    - Deno 2.7 via standalone smoke script (6/6 algos round-trip).
+    - Chromium + Firefox + WebKit via Playwright (1/1 each, all 6 algos in-page).
+    - `.github/workflows/wasm.yml` builds artifacts on Linux, distributes to runtime matrix + browser matrix.
+  - [x] **Tree-shake regression test** (`tests/bundle.test.ts`). Bundles a consumer with esbuild and asserts only the imported algo's `.wasm` URL appears in the output. Also enforces per-algo `.wasm` size budgets.
+  - [ ] Drop sizes further. Likely wins: drop zstd's legacy decoders (we don't expose pre-v0.8 frames), trim brotli's dictionary tables if we accept some quality loss, maybe `-Oz` per-algo for the bigger codecs. Target ~half of current for zstd and brotli.
+  - [x] **Conditional package.json exports** (2026-05-11). Browser/Deno/Bun consumers get `index.browser.js` (fetch-only, streaming compile, zero `node:*` imports). Node consumers get `index.node.js` (static fs import). A `default` runtime-detect fallback exists for tools that don't honor conditions. Verified by re-running the bundle test without `external: ["node:*"]` and by inspecting the emitted JS: no `node:fs` references in the browser bundle.
+  - [ ] Bundle-size budget test (`tests/size.test.ts`) per subpath.
+  - [ ] CI: build all six `.wasm` once on Linux, test the JS package on all OS runners.
 
 #### Phase 5 — Build & distribution
 
 - [x] **Update CMakeLists.txt** for C-as-primary: `CMAKE_C_STANDARD 11`, hidden visibility default, `CMAKE_EXPORT_COMPILE_COMMANDS ON`. (C++20 retained for the C++ binding tests and pybind11.)
-- [ ] **Add `zig cc` toolchain file** at `cmake/toolchains/zig-cc.cmake` for cross-builds. Document usage in `README.md`.
+- [~] **`zig cc` toolchain files**. WASM variant landed 2026-05-11 (`cmake/toolchains/zig-wasm.cmake`). aarch64-linux variant still TODO — should mirror the WASM toolchain shape with `-target aarch64-linux-gnu`.
 - [ ] **CI: add aarch64-linux** to the matrix via `zig cc`. (macOS runners are arm64-native; no Universal2 needed in 2026.) Closes the existing "missing architectures" TODO.
 - [ ] **CI: build WASM once on Linux**, test on all OS runners. Closes the WASM-matrix-waste item.
 - [ ] **CMake package config**: add `compress_utils-config.cmake` for `find_package(compress_utils)` support. (Already on the existing TODO.)
@@ -417,8 +444,8 @@ Six emcc invocations, each producing a self-contained `.wasm` for one algorithm.
 
 ### Toolchain
 
-- **Emscripten first.** Lowest friction: existing CMake integration via `emcmake`, well-trodden path, handles libc/malloc/exception ABI for free.
-- **Zig→WASM as a fallback** only if Emscripten output is too big. Re-evaluate after measuring first cut. Switching is cheap because the C source doesn't change.
+- **Zig.** Decided 2026-05-11. `zig build-lib -target wasm32-freestanding` (or `-wasi` if we need syscalls) compiles `src/algorithms/<algo>/<algo>.c` directly — no separate sysroot, no `emcmake` indirection, no emsdk version-pinning pain. Pairs with the `zig cc` aarch64 plan: one toolchain handles every cross-compile target this project needs.
+- Emscripten was the prior plan; rejected because the ergonomic gap is large and the only thing Emscripten gave us (libc/exception ABI handling) we don't need — the C ABI here is freestanding-friendly (no exceptions, no stdio in hot paths).
 
 ### Tree-shaking story
 
@@ -447,7 +474,7 @@ All the wire-format, level-mapping, dispatch-shape, and security items from the 
 
 - [x] **`fetch-depth: 0` on all CI checkouts** — verified: `pr_build_and_test.yml`, `build_and_test_c_cpp.yml`, `build_and_test_python.yml` all set it.
 - [x] **Rewrite release CI workflows for the new layout** (2026-05-11). `build_and_test_c_cpp.yml` now produces a single per-OS `compress-utils-${OS}[-${VERSION}].tar.gz` (zip on Windows) containing both `dist/c/` and `dist/cpp/`, with a separate `release` job that downloads all OS artifacts and attaches them to the GitHub Release on tag. The `combine` cross-OS merge step is gone. `build_and_test_python.yml` was already aligned with the current layout — left as-is.
-- [ ] **Decide Emscripten vs Zig→WASM** when picking up the WASM binding (Phase 4 leftover).
+- [x] ~~Decide Emscripten vs Zig→WASM~~ — Zig, decided 2026-05-11.
 
 ## Package Managers
 
