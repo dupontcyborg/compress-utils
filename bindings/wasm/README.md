@@ -1,108 +1,144 @@
-# compress-utils — WASM bindings
+# compress-utils
 
-Per-algorithm WebAssembly modules for `compress-utils`. Each algorithm
-ships as a separate `.wasm` so bundlers can tree-shake on subpath import:
+[![npm version](https://img.shields.io/npm/v/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
+[![npm downloads](https://img.shields.io/npm/dm/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
+[![types: built-in](https://img.shields.io/badge/types-built--in-blue.svg)](https://www.npmjs.com/package/compress-utils)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Unified WebAssembly bindings for six compression algorithms — Brotli, bzip2, LZ4, XZ/LZMA, zlib, and Zstandard. Same API for every algorithm, in every JavaScript runtime, with per-algorithm imports so bundlers ship only what you use.
+
+## Installation
+
+```bash
+npm install compress-utils
+# or: pnpm add / yarn add / bun add / deno add npm:compress-utils
+```
+
+No native dependencies, no `postinstall` scripts. Pure WebAssembly. TypeScript types are bundled.
+
+## Quick start
+
+Each algorithm is its own subpath import. Pick the one you need; the rest stay out of your bundle.
 
 ```ts
 import { compress, decompress } from "compress-utils/zstd";
 
-const compressed = await compress(new TextEncoder().encode("hello"));
-const roundtrip = await decompress(compressed);
+const input = new TextEncoder().encode("the quick brown fox " .repeat(50));
+
+const compressed = await compress(input, { level: 9 });
+const restored   = await decompress(compressed);
 ```
 
-If you import `compress-utils/zstd`, only `zstd.wasm` (~150 KB) lands in
-your bundle. Importing `compress-utils/brotli` pulls in `brotli.wasm`
-independently. There is no combined module.
+Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`. Identical surface across all six.
 
-## Status
+### Web Streams
 
-**Scaffolded, not yet verified end-to-end.** As of 2026-05-11:
+```ts
+import { compressionStream, decompressionStream } from "compress-utils/zstd";
 
-- Zig→WASM CMake toolchain landed (`cmake/toolchains/zig-wasm.cmake`).
-- Per-algorithm CMake project landed (`bindings/wasm/CMakeLists.txt`).
-- TypeScript dispatcher + zstd subpath landed.
-- A full `npm run build && npm test` round-trip has **not** been
-  executed yet — pending a build host with `zig` (>=0.13) and `node`
-  (>=18) installed.
-
-The other five algorithms (`brotli`, `zlib`, `bz2`, `lz4`, `xz`) will be
-added once zstd is proven end-to-end. Each is one ~15-line `index.ts`
-plus invoking the existing `scripts/build-all.sh`.
-
-## Build
-
-From this directory:
-
-```bash
-npm run build      # configures root CMake with -DBUILD_WASM_BINDINGS=ON,
-                   # then builds the compress_utils_wasm target, then tsc.
-npm test           # vitest round-trip
+await fetch("/big-file.json")
+    .then(r => r.body!.pipeThrough(compressionStream({ level: 3 })))
+    .then(s => s.pipeTo(uploadDestination));
 ```
 
-Or invoke CMake yourself from the repo root:
+### Manual streaming (with `using` for auto-cleanup)
 
-```bash
-cmake -S . -B build -DBUILD_WASM_BINDINGS=ON
-cmake --build build --target compress_utils_wasm
+```ts
+import { createCompressStream } from "compress-utils/brotli";
+
+using cs = await createCompressStream({ level: 5 });
+const chunks: Uint8Array[] = [];
+for (const chunk of input) chunks.push(cs.write(chunk));
+chunks.push(cs.finish());
+// cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
 ```
 
-`BUILD_WASM_BINDINGS` defaults to OFF so native builds aren't slowed by the
-wasm cross-compile. Limit to specific algorithms with `-DCU_WASM_ALGOS="zstd;brotli"`.
+If `using` isn't available in your toolchain, call `cs.destroy()` explicitly — or rely on the GC backstop (a `FinalizationRegistry` frees the C-side handle eventually).
 
-Prerequisites: `zig` ≥ 0.13 on PATH (`zig cc` is the cross-compiler to
-`wasm32-wasi`), CMake ≥ 3.17, Node ≥ 18. `wasm-strip` + `wasm-opt` (from
-WABT + binaryen) are auto-detected and used to shrink artifacts; if
-absent, the build still succeeds but `.wasm` files stay 3–4× larger.
+## Supported algorithms
 
-## Layout
+| Algorithm | Subpath                  | Approximate `.wasm` size | Wire format produced                       |
+|-----------|--------------------------|---------------------------|--------------------------------------------|
+| zlib      | `compress-utils/zlib`    | 80 KB                     | zlib wrapper (RFC 1950)                    |
+| bzip2     | `compress-utils/bz2`     | 95 KB                     | bzip2 stream                               |
+| XZ/LZMA   | `compress-utils/xz`      | 135 KB                    | XZ stream with CRC64                       |
+| LZ4       | `compress-utils/lz4`     | 140 KB                    | LZ4 frame (compatible with `.lz4` files)   |
+| Zstandard | `compress-utils/zstd`    | 545 KB                    | ZSTD frame with content size               |
+| Brotli    | `compress-utils/brotli`  | 730 KB                    | raw Brotli stream                          |
 
+Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively.
+
+## Other helpful APIs
+
+```ts
+import {
+    version,
+    setMaxDecompressedSize,
+    CompressError,
+} from "compress-utils/zstd";
+
+await version();                          // "0.1.0"
+await setMaxDecompressedSize(256 * 1024 ** 2);
+                                          // bound one-shot decompression (default: 1 GiB; 0 = unbounded)
+
+try {
+    await decompress(garbage);
+} catch (e) {
+    if (e instanceof CompressError) {
+        console.log(e.algorithm, e.code, e.message);
+    }
+}
 ```
-bindings/wasm/
-  CMakeLists.txt              Per-algorithm WASM build.
-  scripts/build-all.sh        Driver: invokes CMake 6 times.
-  src/
-    core/types.ts             Enums + CompressError. Mirrors compress_utils.h.
-    core/loader.ts            WebAssembly.instantiate + WASI reactor shim.
-    core/dispatch.ts          JS↔C ABI marshalling, drain protocol, streams.
-    algorithms/<algo>/
-      index.ts                ~50 LOC public surface, lazy-loads <algo>.wasm.
-      <algo>.wasm             Built by CMake.
-  tests/                      Per-algorithm round-trip tests.
-  dist/                       npm publish artifact.
+
+## Compression levels
+
+Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps that to each algorithm's native range internally — you don't need to know that Zstandard goes 1–22 or zlib goes 1–9. Defaults to `5`.
+
+```ts
+await compress(input, { level: 1 });   // fastest
+await compress(input, { level: 10 });  // smallest
 ```
 
-The shared `dispatch.ts` (~250 lines) is the only non-trivial JS in the
-package. Each algorithm's `index.ts` is mechanical — bind the dispatcher
-to its `.wasm` factory and re-export.
+## Runtime support
 
-## How the build works
+Tested in CI on every release:
 
-1. `scripts/build-all.sh` calls CMake six times, once per algorithm, each
-   in its own `build-<algo>/` directory.
-2. Each invocation configures `bindings/wasm/CMakeLists.txt` with the
-   `cmake/toolchains/zig-wasm.cmake` toolchain and
-   `-DCU_WASM_ALGO=<algo>`.
-3. The toolchain points `CMAKE_C_COMPILER` at `zig cc` (via the wrappers
-   in `cmake/toolchains/zig-bin/`) and sets `-target wasm32-wasi
-   -mexec-model=reactor`.
-4. `bindings/wasm/CMakeLists.txt` reuses the existing
-   `algorithms/<algo>/CMakeLists.txt` subproject — its
-   `ExternalProject_Add` inherits the toolchain automatically, so
-   upstream zstd/brotli/etc. get built for wasm32-wasi alongside our
-   wrapper.
-5. Output staged at `dist/algorithms/<algo>/<algo>.wasm`.
+| Runtime              | Status |
+|----------------------|--------|
+| Node 20, 22          | ✅     |
+| Bun                  | ✅     |
+| Deno 2.x             | ✅     |
+| Chromium / Firefox / WebKit (Playwright) | ✅ |
 
-## Memory model
+The package exposes the [`browser`](https://nodejs.org/api/packages.html#community-conditions-definitions), `node`, `deno`, and `bun` export conditions:
 
-The JS dispatcher allocates wasm linear memory via `cu_alloc`/`cu_free`
-(exported from `src/wasm_runtime.c`), copies caller bytes in, calls the
-C ABI, copies bytes out, and frees. Linear memory may grow during a
-call (codec allocations), so we re-read `exports.memory.buffer` on
-every operation — Uint8Array views are not held across calls.
+- Browser, Deno, and Bun consumers get a `fetch`-based loader → `WebAssembly.instantiateStreaming` (concurrent download + compile).
+- Node consumers get a `fs.readFile`-based loader (Node's built-in `fetch` doesn't handle `file://`).
 
-## Why Zig and not Emscripten
+You don't need to configure anything — the right entry is picked automatically. The browser entry has zero references to `node:*` modules, so it bundles cleanly under Vite, esbuild, webpack 5, Rollup, etc.
 
-The TODO has the rationale ("Zig→WASM ergonomics, single toolchain for
-WASM + aarch64 cross"). In short: one `zig` install replaces `emsdk`
-version-pinning, and the same toolchain pattern unlocks the aarch64
-Linux CI target.
+## TypeScript
+
+The package is TypeScript-first. `.d.ts` files ship alongside the JS for every subpath; no `@types/` package needed.
+
+```ts
+import { compress, type CompressOptions, type CompressError } from "compress-utils/zstd";
+
+const opts: CompressOptions = { level: 7 };
+const compressed: Uint8Array = await compress(input, opts);
+```
+
+## Performance notes
+
+- The first call on a given subpath instantiates the `.wasm` module (~5–20 ms depending on size). Subsequent calls reuse the same instance.
+- Streaming compresses/decompresses in 64 KB chunks internally — multi-GB inputs don't hold the whole result in memory.
+- The JS layer copies bytes into and out of WebAssembly linear memory rather than handing out views, so memory growth inside the codec can never invalidate a `Uint8Array` you hold.
+- Browsers, Deno, and Bun get `WebAssembly.instantiateStreaming` — bytes compile while they download. Node uses the buffered path because its `fetch` doesn't speak `file://`.
+
+## Bundler notes
+
+Per-algorithm imports + `sideEffects: false` mean modern bundlers tree-shake aggressively. A consumer that imports only `compress-utils/zstd` ships exactly one `.wasm` and only the zstd-bound TypeScript glue.
+
+## License
+
+MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
