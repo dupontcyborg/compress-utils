@@ -41,7 +41,7 @@
   - [X] Build `unit-tests-c` and `unit-tests-c-static`
   - [X] Build `xz`
 - [X] Rename `compress-utils` to `compress-utils`
-- [x] ~~Merge all static lib dependencies into `compress-utils-static*` libraries~~ — superseded. The public `compress_utils_static` target was removed (2026-05-11); the shared library and Python wheel are the supported deliverables and both are self-contained. Internal consumers (C test, fuzz, Python module) link an OBJECT library. If a future user needs a bundled pure-static `.a`, build it on demand from the OBJECT library + algorithm archives via an `ar`-extract-and-rearchive step. Tracked as a future item if/when someone asks.
+- [x] ~~Merge all static lib dependencies into `compress-utils-static*` libraries~~ — superseded. The public `compress_utils_static` target was removed (2026-05-11); the shared library and Python wheel are the supported deliverables and both are self-contained. Internal consumers (C test, fuzz, Python module) link an OBJECT library. Decided against shipping a bundled pure-static `.a` via `whole-archive` (2026-05-11) — not enough demand to justify.
   - [ ] (deferred) Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED` to slim the shared library
 - [ ] Add CMake package config for `find_package(compress_utils)` support
 
@@ -182,7 +182,6 @@ Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_
 - [ ] **Add `zig cc` toolchain file** at `cmake/toolchains/zig-cc.cmake` for cross-builds. Document usage in `README.md`.
 - [ ] **CI: add aarch64-linux** to the matrix via `zig cc`. (macOS runners are arm64-native; no Universal2 needed in 2026.) Closes the existing "missing architectures" TODO.
 - [ ] **CI: build WASM once on Linux**, test on all OS runners. Closes the WASM-matrix-waste item.
-- [ ] **Single static library**: collapse all algorithm static libs + their static deps into one `libcompress_utils.a` via `whole-archive`. (Already on the existing TODO — easier post-migration.)
 - [ ] **CMake package config**: add `compress_utils-config.cmake` for `find_package(compress_utils)` support. (Already on the existing TODO.)
 
 #### Phase 6 — Post-migration (unlocks the binding roadmap)
@@ -447,7 +446,7 @@ Once shipped, the React/Vue/server-side-JS use cases all work:
 All the wire-format, level-mapping, dispatch-shape, and security items from the original code review were resolved as part of the C-migration (Phases 1–4). Surviving items that *aren't* already covered above:
 
 - [x] **`fetch-depth: 0` on all CI checkouts** — verified: `pr_build_and_test.yml`, `build_and_test_c_cpp.yml`, `build_and_test_python.yml` all set it.
-- [ ] **Rewrite release CI workflows for the new layout.** `build_and_test_c_cpp.yml` (release artifact packaging for C/C++) and `build_and_test_python.yml` (PyPI publishing) reference deleted `bindings/c/` dist dirs and the old `compress_utils_static`/`compress_utils` CMake target names + install layouts. These only run on `main` pushes and tags, so the PR validation flow (`pr_build_and_test.yml` — generic `cmake + ctest`) is independently usable. Plan: replace the C/C++ release workflow's per-binding `c/`, `cpp/` artifact zips with a single `compress-utils-${OS}.tar.gz` containing `dist/c/` + `dist/cpp/`.
+- [x] **Rewrite release CI workflows for the new layout** (2026-05-11). `build_and_test_c_cpp.yml` now produces a single per-OS `compress-utils-${OS}[-${VERSION}].tar.gz` (zip on Windows) containing both `dist/c/` and `dist/cpp/`, with a separate `release` job that downloads all OS artifacts and attaches them to the GitHub Release on tag. The `combine` cross-OS merge step is gone. `build_and_test_python.yml` was already aligned with the current layout — left as-is.
 - [ ] **Decide Emscripten vs Zig→WASM** when picking up the WASM binding (Phase 4 leftover).
 
 ## Package Managers
