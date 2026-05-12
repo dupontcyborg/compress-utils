@@ -263,10 +263,17 @@ endif()
 
 option(BUILD_CPP_BINDINGS    "Build C++ header-only binding"        ON)
 option(BUILD_PYTHON_BINDINGS "Build Python binding (via pybind11)"  ON)
+option(BUILD_WASM_BINDINGS   "Build per-algorithm .wasm modules (requires zig)" OFF)
 
 if(BUILD_CPP_BINDINGS)
     add_subdirectory(bindings/cpp)
 endif()
 if(BUILD_PYTHON_BINDINGS)
     add_subdirectory(bindings/python)
+endif()
+if(BUILD_WASM_BINDINGS)
+    # Drives one child CMake configure per algorithm with the zig-wasm
+    # toolchain. Cross-compile lives in its own world; native build is
+    # untouched. See bindings/wasm/host.cmake.
+    include(bindings/wasm/host.cmake)
 endif()

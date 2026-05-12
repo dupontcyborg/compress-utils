@@ -2,11 +2,25 @@
 
 ######### DEPENDENCY SETUP #########
 
-# Set directories for Zstd
-set(ALGORITHMS_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+# Set directories for Zstd. The staging root is the project's source tree
+# by default (so the fetch caches across rebuilds), but a cross-compile
+# build (e.g. WASM) overrides CU_ALGO_STAGING_DIR before add_subdirectory
+# to isolate its build artifacts from the native cache.
+if(NOT DEFINED CU_ALGO_STAGING_DIR)
+    set(CU_ALGO_STAGING_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+endif()
+set(ALGORITHMS_DIR "${CU_ALGO_STAGING_DIR}")
 set(ZSTD_BUILD_DIR "${ALGORITHMS_DIR}/zstd/build")
 set(ZSTD_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(ZSTD_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/zstd")
+
+# Resolve toolchain to an absolute path so the ExternalProject's
+# configure step (which runs in its own build dir) can find it.
+if(CMAKE_TOOLCHAIN_FILE)
+    get_filename_component(_CU_TOOLCHAIN_ABS "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+else()
+    set(_CU_TOOLCHAIN_ABS "")
+endif()
 
 # Inherit build type from parent project
 if(NOT CMAKE_BUILD_TYPE)
@@ -39,13 +53,17 @@ ExternalProject_Add(
     GIT_REPOSITORY https://github.com/facebook/zstd.git
     GIT_TAG v1.5.6
     GIT_SHALLOW TRUE
-    CMAKE_ARGS 
+    CMAKE_ARGS
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        # Forward toolchain for cross-compiles (wasm32-wasi, aarch64, etc.).
+        # Absolute path so the ExternalProject's configure step (which
+        # runs in its own build dir) can find it. Empty for native builds.
+        -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DZSTD_BUILD_STATIC=ON
         -DZSTD_BUILD_SHARED=OFF
         -DZSTD_BUILD_PROGRAMS=OFF  

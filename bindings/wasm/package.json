@@ -1,0 +1,82 @@
+{
+  "name": "compress-utils",
+  "version": "0.1.0",
+  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz \u2014 tree-shakeable per-algorithm imports.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./zstd": {
+      "types": "./dist/algorithms/zstd/index.d.ts",
+      "browser": "./dist/algorithms/zstd/index.browser.js",
+      "deno": "./dist/algorithms/zstd/index.browser.js",
+      "bun": "./dist/algorithms/zstd/index.browser.js",
+      "node": "./dist/algorithms/zstd/index.node.js",
+      "default": "./dist/algorithms/zstd/index.js"
+    },
+    "./brotli": {
+      "types": "./dist/algorithms/brotli/index.d.ts",
+      "browser": "./dist/algorithms/brotli/index.browser.js",
+      "deno": "./dist/algorithms/brotli/index.browser.js",
+      "bun": "./dist/algorithms/brotli/index.browser.js",
+      "node": "./dist/algorithms/brotli/index.node.js",
+      "default": "./dist/algorithms/brotli/index.js"
+    },
+    "./zlib": {
+      "types": "./dist/algorithms/zlib/index.d.ts",
+      "browser": "./dist/algorithms/zlib/index.browser.js",
+      "deno": "./dist/algorithms/zlib/index.browser.js",
+      "bun": "./dist/algorithms/zlib/index.browser.js",
+      "node": "./dist/algorithms/zlib/index.node.js",
+      "default": "./dist/algorithms/zlib/index.js"
+    },
+    "./bz2": {
+      "types": "./dist/algorithms/bz2/index.d.ts",
+      "browser": "./dist/algorithms/bz2/index.browser.js",
+      "deno": "./dist/algorithms/bz2/index.browser.js",
+      "bun": "./dist/algorithms/bz2/index.browser.js",
+      "node": "./dist/algorithms/bz2/index.node.js",
+      "default": "./dist/algorithms/bz2/index.js"
+    },
+    "./lz4": {
+      "types": "./dist/algorithms/lz4/index.d.ts",
+      "browser": "./dist/algorithms/lz4/index.browser.js",
+      "deno": "./dist/algorithms/lz4/index.browser.js",
+      "bun": "./dist/algorithms/lz4/index.browser.js",
+      "node": "./dist/algorithms/lz4/index.node.js",
+      "default": "./dist/algorithms/lz4/index.js"
+    },
+    "./xz": {
+      "types": "./dist/algorithms/xz/index.d.ts",
+      "browser": "./dist/algorithms/xz/index.browser.js",
+      "deno": "./dist/algorithms/xz/index.browser.js",
+      "bun": "./dist/algorithms/xz/index.browser.js",
+      "node": "./dist/algorithms/xz/index.node.js",
+      "default": "./dist/algorithms/xz/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build:wasm": "cmake -S ../.. -B ../../build-wasm -DBUILD_WASM_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_BINDINGS=OFF -DENABLE_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build ../../build-wasm --target compress_utils_wasm -j",
+    "build:ts": "tsc -p tsconfig.json",
+    "build": "npm run build:wasm && npm run build:ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:browser": "playwright test",
+    "test:deno": "deno run --allow-read --allow-env tests-runtime/deno-smoke.ts",
+    "test:bun": "bun test --bun tests/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
