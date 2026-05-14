@@ -17,9 +17,6 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "paths": {
-      "#resolver": ["./src/core/resolve-default.ts"]
-    },
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },

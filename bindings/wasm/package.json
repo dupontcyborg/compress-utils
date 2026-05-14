@@ -14,7 +14,7 @@
   },
   "imports": {
     "#resolver": {
-      "types":   "./dist/core/resolve-default.d.ts",
+      "types":   "./src/core/resolve-default.ts",
       "browser": "./dist/core/resolve-browser.js",
       "deno":    "./dist/core/resolve-browser.js",
       "bun":     "./dist/core/resolve-browser.js",
