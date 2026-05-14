@@ -1,17 +1,15 @@
-# compress-utils WASM build.
+# compress-utils WASM build — child CMake project, one invocation per algo.
 #
-# Invoked as a SEPARATE CMake project (not via add_subdirectory from the
-# root) because it cross-compiles to wasm32-wasi while the root build
-# targets the host. One CMake invocation per algorithm:
+# Not invoked directly. The parent `BUILD_WASM_BINDINGS=ON` configure pulls
+# in cmake/host.cmake (next to this file), which fans out via
+# ExternalProject_Add: one child configure of this CMakeLists per entry in
+# CU_WASM_ALGOS, each pinned to a single algorithm by -DCU_WASM_ALGO.
 #
-#   cmake -S bindings/wasm -B build-wasm-zstd \
-#         --toolchain cmake/toolchains/zig-wasm.cmake \
-#         -DCU_WASM_ALGO=zstd -DCMAKE_BUILD_TYPE=Release
-#   cmake --build build-wasm-zstd
-#
-# Output: build-wasm-${ALGO}/${ALGO}.wasm — one self-contained module
-# per algorithm. The TypeScript dispatcher loads them on demand, one
-# subpath import per algo, so bundlers can tree-shake aggressively.
+# Output: <build>/${ALGO}.wasm — one self-contained module per algorithm,
+# then post-processed (wasm-strip / wasm-opt) and staged into
+# bindings/wasm/dist/algorithms/${ALGO}/. The TypeScript dispatcher loads
+# them on demand, one subpath import per algo, so bundlers can tree-shake
+# aggressively.
 #
 # Upstream codec sources are pulled in by reusing the existing
 # algorithms/${ALGO}/CMakeLists.txt subproject. Its ExternalProject_Add

@@ -84,9 +84,26 @@ export interface WasmExports {
 }
 
 const ERRNO_BADF = 8;
+const ERRNO_IO = 29;
 const ERRNO_NOSYS = 52;
 
-function wasiImports(): WebAssembly.ModuleImports {
+/* crypto.getRandomValues caps each call at 65536 bytes (per WebCrypto spec).
+ * Larger random_get requests get split. We've never seen a codec ask for
+ * more than a few bytes, but the loop is cheap insurance. */
+const CRYPTO_MAX_CHUNK = 65536;
+
+/* Resolved once, lazily: globalThis.crypto is present in browsers, Deno,
+ * Bun, and Node ≥19. Node 18 has it behind `node:crypto`'s webcrypto
+ * export — we don't try to load that here because our `engines.node` is
+ * ≥18 but the test matrix only covers Node 20+. Falling back to `null`
+ * makes random_get fail loudly instead of returning all-zeros. */
+const webCrypto: Crypto | null =
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.getRandomValues === "function"
+        ? globalThis.crypto
+        : null;
+
+function wasiImports(getMemory: () => WebAssembly.Memory): WebAssembly.ModuleImports {
     return {
         // proc_exit: codec code paths shouldn't call this, but if libc
         // startup hits an unrecoverable error it does. Throw so callers
@@ -116,13 +133,19 @@ function wasiImports(): WebAssembly.ModuleImports {
         environ_sizes_get(): number { return 0; },
         environ_get(): number { return 0; },
         clock_time_get(): number { return ERRNO_NOSYS; },
-        // random_get: needed if a codec seeds randomness from /dev/urandom
-        // surrogates. Fill with crypto.getRandomValues when available.
+        // random_get: fill `len` bytes at `buf` with CSPRNG output.
+        // Fails loud (ERRNO_IO) if no crypto is available — the previous
+        // silent zero-fill was a correctness footgun for any future codec
+        // that actually seeds from entropy.
         random_get(buf: number, len: number): number {
-            // Resolved lazily — we don't have memory yet at imports time.
-            // Stub to "success but unseeded"; codecs that actually need
-            // entropy must opt-in to a richer shim.
-            void buf; void len;
+            if (!webCrypto) return ERRNO_IO;
+            const memory = getMemory();
+            for (let off = 0; off < len; off += CRYPTO_MAX_CHUNK) {
+                const chunk = Math.min(CRYPTO_MAX_CHUNK, len - off);
+                webCrypto.getRandomValues(
+                    new Uint8Array(memory.buffer, buf + off, chunk),
+                );
+            }
             return 0;
         },
     };
@@ -131,9 +154,16 @@ function wasiImports(): WebAssembly.ModuleImports {
 export async function loadModule(
     source: BufferSource | Response | PromiseLike<Response>,
 ): Promise<WasmExports> {
-    const imports = { wasi_snapshot_preview1: wasiImports() };
+    // random_get needs `instance.exports.memory`, which doesn't exist
+    // until after `WebAssembly.instantiate` returns. The closure captures
+    // a lazy accessor; the import object itself is built first.
+    let instance: WebAssembly.Instance | undefined;
+    const imports = {
+        wasi_snapshot_preview1: wasiImports(
+            () => (instance!.exports as unknown as WasmExports).memory,
+        ),
+    };
 
-    let instance: WebAssembly.Instance;
     if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) {
         const { instance: inst } = await WebAssembly.instantiate(source, imports);
         instance = inst;

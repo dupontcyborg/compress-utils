@@ -26,6 +26,11 @@ import {
 
 const DEFAULT_LEVEL = 5;
 const STREAM_DRAIN_CHUNK = 64 * 1024;
+/* Safety cap on drain() iterations. A correct codec returns Ok within a
+ * few iterations per write — anything past this many BUF_TOO_SMALL retries
+ * means the C side is stuck in a state where it neither emits output nor
+ * signals completion. Throw rather than spin forever. */
+const DRAIN_MAX_ITERATIONS = 1 << 16;
 
 /** Tracks allocations so a single try/finally can free them all. */
 class Arena {
@@ -35,6 +40,11 @@ class Arena {
     constructor(exports: WasmExports) { this.exports = exports; }
 
     alloc(bytes: number, algoName: AlgorithmName): number {
+        // Empty-input compress/decompress is a valid edge case (codecs
+        // produce a non-empty header/footer for an empty payload). Bump
+        // zero-byte requests to 1 so cu_alloc returns a real pointer
+        // backing zero useful bytes — passing the resulting (ptr, 0) to
+        // the C ABI is well-defined; passing (NULL, 0) is not.
         if (bytes === 0) bytes = 1;
         const ptr = this.exports.cu_alloc(bytes);
         if (ptr === 0) {
@@ -356,7 +366,13 @@ function drain(
 
         let inPtr = inPtr0;
         let remainingIn = inLen;
-        while (true) {
+        for (let i = 0; ; i++) {
+            if (i >= DRAIN_MAX_ITERATIONS) {
+                throw new CompressError(
+                    Status.StreamState, dispatcher.algorithmName,
+                    `drain exceeded ${DRAIN_MAX_ITERATIONS} iterations without completion`,
+                );
+            }
             dispatcher.writeU32(outLenPtr, STREAM_DRAIN_CHUNK);
             const status = call(inPtr, remainingIn, outPtr, outLenPtr);
             const produced = dispatcher.readU32(outLenPtr);

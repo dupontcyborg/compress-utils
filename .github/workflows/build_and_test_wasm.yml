@@ -190,7 +190,10 @@ jobs:
           # registry-url wires NODE_AUTH_TOKEN into ~/.npmrc.
           registry-url: "https://registry.npmjs.org"
 
-      - run: npm install
+      # `npm ci` (not `install`) on the release path: deterministic, errors
+      # on lockfile drift, and skips lifecycle scripts that could rewrite
+      # the dist/ we just downloaded as an artifact.
+      - run: npm ci
 
       - name: Set package version from tag
         run: |

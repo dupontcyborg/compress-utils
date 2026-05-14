@@ -45,18 +45,18 @@ async function bundleConsumer(consumerSrc: string): Promise<BundleResult> {
         target: "es2022",
         outdir,
         // Resolve through this package's package.json exports so esbuild
-        // picks the "browser" condition (→ index.browser.js, fetch-only).
-        // No `external: ["node:*"]` needed — the browser entry has no
-        // node imports in its graph.
+        // picks the "browser" condition. The single algo index.js routes
+        // through the `#resolver` subpath import, which the conditions
+        // below map to resolve-browser.js — fetch-only, no node imports.
         nodePaths: [path.join(PKG_ROOT, "node_modules")],
         conditions: ["browser", "import"],
         alias: {
-            "compress-utils/zstd":   path.join(PKG_ROOT, "dist/algorithms/zstd/index.browser.js"),
-            "compress-utils/brotli": path.join(PKG_ROOT, "dist/algorithms/brotli/index.browser.js"),
-            "compress-utils/zlib":   path.join(PKG_ROOT, "dist/algorithms/zlib/index.browser.js"),
-            "compress-utils/bz2":    path.join(PKG_ROOT, "dist/algorithms/bz2/index.browser.js"),
-            "compress-utils/lz4":    path.join(PKG_ROOT, "dist/algorithms/lz4/index.browser.js"),
-            "compress-utils/xz":     path.join(PKG_ROOT, "dist/algorithms/xz/index.browser.js"),
+            "compress-utils/zstd":   path.join(PKG_ROOT, "dist/algorithms/zstd/index.js"),
+            "compress-utils/brotli": path.join(PKG_ROOT, "dist/algorithms/brotli/index.js"),
+            "compress-utils/zlib":   path.join(PKG_ROOT, "dist/algorithms/zlib/index.js"),
+            "compress-utils/bz2":    path.join(PKG_ROOT, "dist/algorithms/bz2/index.js"),
+            "compress-utils/lz4":    path.join(PKG_ROOT, "dist/algorithms/lz4/index.js"),
+            "compress-utils/xz":     path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
         },
         logLevel: "silent",
     });

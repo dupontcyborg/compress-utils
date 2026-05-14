@@ -1,16 +1,12 @@
 /**
- * lz4 subpath — default build with runtime detection. Honored when the
- * consumer doesn't pick a more specific export condition.
+ * lz4 subpath. Resolver is selected via the package's `#resolver`
+ * subpath import — see ../../core/algorithm.ts and package.json `imports`.
  */
+import { defineAlgorithm } from "../../core/algorithm.js";
 import { Algorithm } from "../../core/types.js";
-import { createBindings } from "../../core/dispatch.js";
-import { resolveWasm } from "../../core/resolve-default.js";
 
-const bindings = /*#__PURE__*/ createBindings(
-    Algorithm.Lz4,
-    "lz4",
-    new URL("./lz4.wasm", import.meta.url),
-    resolveWasm,
+const bindings = /*#__PURE__*/ defineAlgorithm(
+    Algorithm.Lz4, "lz4", new URL("./lz4.wasm", import.meta.url),
 );
 
 export const compress = bindings.compress;

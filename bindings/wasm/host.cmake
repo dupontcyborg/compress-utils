@@ -48,12 +48,15 @@ foreach(ALGO IN LISTS CU_WASM_ALGOS)
     set(_PROJ wasm_${ALGO})
     set(_PREFIX ${CMAKE_BINARY_DIR}/wasm-${ALGO})
 
+    # No BUILD_ALWAYS: rely on ExternalProject's stamp files. The wasm
+    # subproject's POST_BUILD custom command re-runs whenever the target
+    # itself is rebuilt, which is what wires the staged .wasm to the
+    # underlying .c sources. To force a re-stage, delete the build dir.
     ExternalProject_Add(${_PROJ}
         PREFIX           ${_PREFIX}
         SOURCE_DIR       ${_CU_WASM_SRC}
         BINARY_DIR       ${_PREFIX}/build
         INSTALL_COMMAND  ""
-        BUILD_ALWAYS     1
         CMAKE_GENERATOR  "${CMAKE_GENERATOR}"
         CMAKE_ARGS
             -DCMAKE_TOOLCHAIN_FILE=${_CU_WASM_TOOLCHAIN}

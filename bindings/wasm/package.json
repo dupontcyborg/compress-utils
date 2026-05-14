@@ -5,53 +5,21 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./zstd": {
-      "types": "./dist/algorithms/zstd/index.d.ts",
-      "browser": "./dist/algorithms/zstd/index.browser.js",
-      "deno": "./dist/algorithms/zstd/index.browser.js",
-      "bun": "./dist/algorithms/zstd/index.browser.js",
-      "node": "./dist/algorithms/zstd/index.node.js",
-      "default": "./dist/algorithms/zstd/index.js"
-    },
-    "./brotli": {
-      "types": "./dist/algorithms/brotli/index.d.ts",
-      "browser": "./dist/algorithms/brotli/index.browser.js",
-      "deno": "./dist/algorithms/brotli/index.browser.js",
-      "bun": "./dist/algorithms/brotli/index.browser.js",
-      "node": "./dist/algorithms/brotli/index.node.js",
-      "default": "./dist/algorithms/brotli/index.js"
-    },
-    "./zlib": {
-      "types": "./dist/algorithms/zlib/index.d.ts",
-      "browser": "./dist/algorithms/zlib/index.browser.js",
-      "deno": "./dist/algorithms/zlib/index.browser.js",
-      "bun": "./dist/algorithms/zlib/index.browser.js",
-      "node": "./dist/algorithms/zlib/index.node.js",
-      "default": "./dist/algorithms/zlib/index.js"
-    },
-    "./bz2": {
-      "types": "./dist/algorithms/bz2/index.d.ts",
-      "browser": "./dist/algorithms/bz2/index.browser.js",
-      "deno": "./dist/algorithms/bz2/index.browser.js",
-      "bun": "./dist/algorithms/bz2/index.browser.js",
-      "node": "./dist/algorithms/bz2/index.node.js",
-      "default": "./dist/algorithms/bz2/index.js"
-    },
-    "./lz4": {
-      "types": "./dist/algorithms/lz4/index.d.ts",
-      "browser": "./dist/algorithms/lz4/index.browser.js",
-      "deno": "./dist/algorithms/lz4/index.browser.js",
-      "bun": "./dist/algorithms/lz4/index.browser.js",
-      "node": "./dist/algorithms/lz4/index.node.js",
-      "default": "./dist/algorithms/lz4/index.js"
-    },
-    "./xz": {
-      "types": "./dist/algorithms/xz/index.d.ts",
-      "browser": "./dist/algorithms/xz/index.browser.js",
-      "deno": "./dist/algorithms/xz/index.browser.js",
-      "bun": "./dist/algorithms/xz/index.browser.js",
-      "node": "./dist/algorithms/xz/index.node.js",
-      "default": "./dist/algorithms/xz/index.js"
+    "./zstd":   "./dist/algorithms/zstd/index.js",
+    "./brotli": "./dist/algorithms/brotli/index.js",
+    "./zlib":   "./dist/algorithms/zlib/index.js",
+    "./bz2":    "./dist/algorithms/bz2/index.js",
+    "./lz4":    "./dist/algorithms/lz4/index.js",
+    "./xz":     "./dist/algorithms/xz/index.js"
+  },
+  "imports": {
+    "#resolver": {
+      "types":   "./dist/core/resolve-default.d.ts",
+      "browser": "./dist/core/resolve-browser.js",
+      "deno":    "./dist/core/resolve-browser.js",
+      "bun":     "./dist/core/resolve-browser.js",
+      "node":    "./dist/core/resolve-node.js",
+      "default": "./dist/core/resolve-default.js"
     }
   },
   "files": [

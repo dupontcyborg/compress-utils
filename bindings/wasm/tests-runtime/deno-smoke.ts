@@ -13,16 +13,17 @@
 
 const PKG = new URL("../dist/algorithms/", import.meta.url);
 
-// Deno's fetch handles file:// natively — pick the browser-shaped entry
-// (streaming compile via fetch). The "default" entry would work too but
-// would carry the runtime-detection branch we don't need here.
+// Deep-import each algo's collapsed index.js directly. Deno walks up to
+// bindings/wasm/package.json to resolve the `#resolver` subpath import,
+// and its `deno` condition routes that to resolve-browser.js — so the
+// fetch-based loader path is what actually runs here.
 const algos = [
-    { name: "zstd",   url: new URL("zstd/index.browser.js",   PKG) },
-    { name: "brotli", url: new URL("brotli/index.browser.js", PKG) },
-    { name: "zlib",   url: new URL("zlib/index.browser.js",   PKG) },
-    { name: "bz2",    url: new URL("bz2/index.browser.js",    PKG) },
-    { name: "lz4",    url: new URL("lz4/index.browser.js",    PKG) },
-    { name: "xz",     url: new URL("xz/index.browser.js",     PKG) },
+    { name: "zstd",   url: new URL("zstd/index.js",   PKG) },
+    { name: "brotli", url: new URL("brotli/index.js", PKG) },
+    { name: "zlib",   url: new URL("zlib/index.js",   PKG) },
+    { name: "bz2",    url: new URL("bz2/index.js",    PKG) },
+    { name: "lz4",    url: new URL("lz4/index.js",    PKG) },
+    { name: "xz",     url: new URL("xz/index.js",     PKG) },
 ];
 
 const enc = new TextEncoder();
