@@ -3,7 +3,20 @@
 ######### DEPENDENCY SETUP #########
 
 # Set directories for bz2
-set(ALGORITHMS_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+# Staging root: defaults to source tree (cached across native builds);
+# cross-compile (wasm) overrides CU_ALGO_STAGING_DIR before add_subdirectory.
+if(NOT DEFINED CU_ALGO_STAGING_DIR)
+    set(CU_ALGO_STAGING_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+endif()
+
+# Resolve toolchain to abs path so the child configure can find it.
+if(CMAKE_TOOLCHAIN_FILE)
+    get_filename_component(_CU_TOOLCHAIN_ABS "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+else()
+    set(_CU_TOOLCHAIN_ABS "")
+endif()
+
+set(ALGORITHMS_DIR "${CU_ALGO_STAGING_DIR}")
 set(BZ2_BUILD_DIR "${ALGORITHMS_DIR}/bz2/build")
 set(BZ2_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(BZ2_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/bz2")
@@ -33,8 +46,8 @@ include(ExternalProject)
 ExternalProject_Add(
     bz2_external
     PREFIX ${BZ2_BUILD_DIR}
-    GIT_REPOSITORY https://gitlab.com/bzip2/bzip2.git
-    GIT_TAG master
+    GIT_REPOSITORY ${BZ2_URL}
+    GIT_TAG ${BZ2_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
@@ -42,6 +55,9 @@ ExternalProject_Add(
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        # Forward toolchain for cross-compiles (wasm32-wasi, aarch64).
+        # Empty for native builds; CMake ignores the empty value.
+        -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DENABLE_STATIC_LIB=ON
         -DENABLE_SHARED_LIB=OFF
         -DENABLE_APP=OFF

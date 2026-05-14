@@ -3,7 +3,20 @@
 ######### DEPENDENCY SETUP #########
 
 # Set directories for LZ4
-set(ALGORITHMS_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+# Staging root: defaults to source tree (cached across native builds);
+# cross-compile (wasm) overrides CU_ALGO_STAGING_DIR before add_subdirectory.
+if(NOT DEFINED CU_ALGO_STAGING_DIR)
+    set(CU_ALGO_STAGING_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+endif()
+
+# Resolve toolchain to abs path so the child configure can find it.
+if(CMAKE_TOOLCHAIN_FILE)
+    get_filename_component(_CU_TOOLCHAIN_ABS "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+else()
+    set(_CU_TOOLCHAIN_ABS "")
+endif()
+
+set(ALGORITHMS_DIR "${CU_ALGO_STAGING_DIR}")
 set(LZ4_BUILD_DIR "${ALGORITHMS_DIR}/lz4/build")
 set(LZ4_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(LZ4_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/lz4")
@@ -35,8 +48,8 @@ include(ExternalProject)
 ExternalProject_Add(
     lz4_external
     PREFIX ${LZ4_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/lz4/lz4.git
-    GIT_TAG v1.10.0
+    GIT_REPOSITORY ${LZ4_URL}
+    GIT_TAG ${LZ4_TAG}
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR build/cmake
     CMAKE_ARGS
@@ -45,6 +58,9 @@ ExternalProject_Add(
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        # Forward toolchain for cross-compiles (wasm32-wasi, aarch64).
+        # Empty for native builds; CMake ignores the empty value.
+        -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DLZ4_BUILD_LEGACY_LZ4C=OFF
         -DLZ4_BUILD_CLI=OFF
         -DBUILD_SHARED_LIBS=OFF

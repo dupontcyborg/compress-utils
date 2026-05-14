@@ -3,7 +3,20 @@
 ######### DEPENDENCY SETUP #########
 
 # Set directories for Brotli
-set(ALGORITHMS_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+# Staging root: defaults to source tree (cached across native builds);
+# cross-compile (wasm) overrides CU_ALGO_STAGING_DIR before add_subdirectory.
+if(NOT DEFINED CU_ALGO_STAGING_DIR)
+    set(CU_ALGO_STAGING_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+endif()
+
+# Resolve toolchain to abs path so the child configure can find it.
+if(CMAKE_TOOLCHAIN_FILE)
+    get_filename_component(_CU_TOOLCHAIN_ABS "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+else()
+    set(_CU_TOOLCHAIN_ABS "")
+endif()
+
+set(ALGORITHMS_DIR "${CU_ALGO_STAGING_DIR}")
 set(BROTLI_BUILD_DIR "${ALGORITHMS_DIR}/brotli/build")
 set(BROTLI_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(BROTLI_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/brotli")
@@ -40,8 +53,8 @@ include(ExternalProject)
 ExternalProject_Add(
     brotli_external
     PREFIX ${BROTLI_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/google/brotli.git
-    GIT_TAG v1.1.0
+    GIT_REPOSITORY ${BROTLI_URL}
+    GIT_TAG ${BROTLI_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
@@ -49,10 +62,17 @@ ExternalProject_Add(
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        # Forward toolchain for cross-compiles (wasm32-wasi, aarch64).
+        # Empty for native builds; CMake ignores the empty value.
+        -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DBUILD_SHARED_LIBS=OFF
         -DBROTLI_DISABLE_TESTS=ON
         -DBROTLI_BUNDLED_MODE=ON
     BUILD_IN_SOURCE 0
+    # Skip the `brotli` CLI target — it pulls in chown/setresuid etc that
+    # WASI doesn't have. We only need the three libraries.
+    BUILD_COMMAND ${CMAKE_COMMAND} --build . --config $<CONFIG>
+        --target brotlienc --target brotlidec --target brotlicommon
     UPDATE_DISCONNECTED 1
     BUILD_BYPRODUCTS 
         ${BROTLI_INSTALL_DIR_LIB}/${BROTLI_LIB_ENC}

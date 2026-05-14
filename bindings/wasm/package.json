@@ -1,0 +1,50 @@
+{
+  "name": "compress-utils",
+  "version": "0.1.0",
+  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz \u2014 tree-shakeable per-algorithm imports.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./zstd":   "./dist/algorithms/zstd/index.js",
+    "./brotli": "./dist/algorithms/brotli/index.js",
+    "./zlib":   "./dist/algorithms/zlib/index.js",
+    "./bz2":    "./dist/algorithms/bz2/index.js",
+    "./lz4":    "./dist/algorithms/lz4/index.js",
+    "./xz":     "./dist/algorithms/xz/index.js"
+  },
+  "imports": {
+    "#resolver": {
+      "types":   "./src/core/resolve-default.ts",
+      "browser": "./dist/core/resolve-browser.js",
+      "deno":    "./dist/core/resolve-browser.js",
+      "bun":     "./dist/core/resolve-browser.js",
+      "node":    "./dist/core/resolve-node.js",
+      "default": "./dist/core/resolve-default.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build:wasm": "cmake -S ../.. -B ../../build-wasm -DBUILD_WASM_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_BINDINGS=OFF -DENABLE_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build ../../build-wasm --target compress_utils_wasm -j",
+    "build:ts": "tsc -p tsconfig.json",
+    "build": "npm run build:wasm && npm run build:ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:browser": "playwright test",
+    "test:deno": "deno run --allow-read --allow-env tests-runtime/deno-smoke.ts",
+    "test:bun": "bun test --bun tests/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

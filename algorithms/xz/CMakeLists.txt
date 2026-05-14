@@ -3,7 +3,20 @@
 ######### DEPENDENCY SETUP #########
 
 # Set directories for XZ
-set(ALGORITHMS_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+# Staging root: defaults to source tree (cached across native builds);
+# cross-compile (wasm) overrides CU_ALGO_STAGING_DIR before add_subdirectory.
+if(NOT DEFINED CU_ALGO_STAGING_DIR)
+    set(CU_ALGO_STAGING_DIR "${CMAKE_SOURCE_DIR}/algorithms")
+endif()
+
+# Resolve toolchain to abs path so the child configure can find it.
+if(CMAKE_TOOLCHAIN_FILE)
+    get_filename_component(_CU_TOOLCHAIN_ABS "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+else()
+    set(_CU_TOOLCHAIN_ABS "")
+endif()
+
+set(ALGORITHMS_DIR "${CU_ALGO_STAGING_DIR}")
 set(XZ_BUILD_DIR "${ALGORITHMS_DIR}/xz/build")
 set(XZ_INSTALL_DIR_LIB "${ALGORITHMS_DIR}/dist/lib")
 set(XZ_INSTALL_DIR_INCLUDE "${ALGORITHMS_DIR}/dist/include/xz")
@@ -24,8 +37,13 @@ include(ExternalProject)
 
 # Conditional compiler flags for Windows
 if (MSVC)
-    set(XZ_C_FLAGS "/wd5105")
-    set(XZ_CXX_FLAGS "/wd5105")
+    # Leading space matters — these get appended onto ${CMAKE_C_FLAGS}
+    # in the ExternalProject_Add below without a separator. Without the
+    # space, MSVC sees `/D_WINDOWS/wd5105` as one bogus macro token
+    # (warning C5102: invalid command-line macro definition) and the
+    # `/wd5105` suppression goes unapplied.
+    set(XZ_C_FLAGS " /wd5105")
+    set(XZ_CXX_FLAGS " /wd5105")
 else()
     set(XZ_C_FLAGS "")
     set(XZ_CXX_FLAGS "")
@@ -46,8 +64,8 @@ endif()
 ExternalProject_Add(
     xz_external
     PREFIX ${XZ_BUILD_DIR}
-    GIT_REPOSITORY https://github.com/tukaani-project/xz.git
-    GIT_TAG v5.6.3
+    GIT_REPOSITORY ${XZ_URL}
+    GIT_TAG ${XZ_TAG}
     GIT_SHALLOW TRUE
     CMAKE_ARGS 
         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
@@ -55,8 +73,16 @@ ExternalProject_Add(
         -DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}${XZ_C_FLAGS}
         -DCMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}
         -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        # Forward toolchain for cross-compiles (wasm32-wasi, aarch64).
+        # Empty for native builds; CMake ignores the empty value.
+        -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DBUILD_SHARED_LIBS=OFF
         -DLZMA_API_STATIC=ON
+        # WASI lacks pthread/signal; tukaani's threaded encoder won't
+        # compile against zig's wasm-wasi-musl headers. Disable thread
+        # support — affects only multi-threaded encoder paths we don't
+        # expose via the public C ABI.
+        -DENABLE_THREADS=OFF
     BUILD_IN_SOURCE 0
     BUILD_COMMAND ${CMAKE_COMMAND} --build . --target liblzma --config $<CONFIG>
     UPDATE_DISCONNECTED 1
