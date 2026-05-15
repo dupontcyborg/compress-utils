@@ -1,6 +1,6 @@
 {
   "name": "compress-utils",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz \u2014 tree-shakeable per-algorithm imports.",
   "type": "module",
   "sideEffects": false,

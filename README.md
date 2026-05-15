@@ -15,7 +15,7 @@ A unified, high-performance interface for six compression algorithms — **Zstan
 
 ```
                       ┌─────────────────────────────┐
-   Your application → │  Binding (C / C++ / Python) │
+   Your application → │  C / C++ / Python / JS / TS │
                       └──────────────┬──────────────┘
                                      │
                       ┌──────────────▼──────────────┐
@@ -35,8 +35,8 @@ The C library is the canonical surface. Every other binding is a thin shim — s
 |----------|------------------------------------------------------|-----------------------------------------------|
 | **C**    | Build from source ([instructions below](#building)) | [`include/compress_utils.h`](include/compress_utils.h) — the canonical ABI |
 | **C++**  | Header-only; built alongside C                       | [bindings/cpp/README.md](bindings/cpp/README.md) |
-| **Python** | `pip install compress-utils` *(coming soon to PyPI)* | [bindings/python/README.md](bindings/python/README.md) |
-| WASM / JS  | _Planned — see [TODO.md](TODO.md#wasm-binding-plan-decided-2026-05-11)_ |  |
+| **Python** | `pip install compress-utils` | [bindings/python/README.md](bindings/python/README.md) |
+| **JS / TS (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
 | Go, Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
 
 For now each binding's README has its own installation + quickstart. A cross-cutting `docs/` is planned for architecture, allocation model, and per-algorithm notes — tracked in [TODO.md](TODO.md#documentation-plan-planned-2026-05-11).
@@ -83,7 +83,7 @@ The default build produces:
 Useful flags:
 
 - `--algorithms=zstd,zlib` — limit which compressors are included (smaller binary).
-- `--languages=cpp,python` — limit which bindings are built (C is always built; it's the core).
+- `--languages=cpp,python,wasm` — limit which bindings are built (C is always built; it's the core).
 - `--release` — Release build (LTO, `-O3` / `/O2`).
 - `--clean` — force a clean rebuild.
 - `--skip-tests` — don't build/run the test suite.

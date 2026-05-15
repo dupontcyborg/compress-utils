@@ -13,3 +13,7 @@ CMakeLists.txt linguist-vendored
 # Shell scripts
 *.sh linguist-vendored
 *.ps1 linguist-vendored
+
+# Node ESM tooling scripts (test harness shims) — not part of the
+# project's source-language footprint.
+*.mjs linguist-vendored

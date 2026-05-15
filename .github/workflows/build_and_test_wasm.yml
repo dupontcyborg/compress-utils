@@ -187,7 +187,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # registry-url wires NODE_AUTH_TOKEN into ~/.npmrc.
+          # registry-url is still needed so npm CLI talks to npmjs.org (not
+          # a mirror). No NODE_AUTH_TOKEN under trusted publishing — the
+          # OIDC handshake supplies a short-lived token automatically.
           registry-url: "https://registry.npmjs.org"
 
       # `npm ci` (not `install`) on the release path: deterministic, errors
@@ -200,10 +202,14 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
-      - name: Publish (provenance-signed)
+      # Trusted publishing: npm CLI 11.5+ detects the GitHub OIDC token
+      # via `id-token: write` and exchanges it for a one-shot publish
+      # token. No NPM_TOKEN secret required — npmjs.org verifies the
+      # claim against the package's Trusted Publisher config (repo +
+      # workflow + environment must all match). --provenance is implied
+      # under trusted publishing but kept explicit for clarity.
+      - name: Publish (trusted publisher + provenance)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Bundle artifacts for GitHub Release
         run: |
