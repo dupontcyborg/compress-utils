@@ -47,3 +47,5 @@ py.typed
 
 # MacOS
 .DS_Store
+
+.cache/

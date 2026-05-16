@@ -87,6 +87,13 @@ target_compile_definitions(${CU_WASM_ALGO} PRIVATE
     INCLUDE_${_CU_ALGO_UPPER}
     CU_BUILD_SHARED
 )
+# Passed in by host.cmake from the parent's PROJECT_VERSION_FROM_GIT.
+# Empty when this CMakeLists is configured outside the host driver
+# (which isn't a supported workflow but shouldn't fail-loud either).
+if(CU_BUILD_VERSION)
+    target_compile_definitions(${CU_WASM_ALGO} PRIVATE
+        CU_BUILD_VERSION="${CU_BUILD_VERSION}")
+endif()
 
 # XZ needs LZMA_API_STATIC.
 if(CU_WASM_ALGO STREQUAL "xz")

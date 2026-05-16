@@ -65,6 +65,10 @@ foreach(ALGO IN LISTS CU_WASM_ALGOS)
             # in .wasm balloons artifact size 6x and isn't useful in a
             # browser context. Override with -DCU_WASM_BUILD_TYPE=Debug.
             -DCMAKE_BUILD_TYPE=${CU_WASM_BUILD_TYPE}
+            # Parent already resolved this from git describe; pass through
+            # so the wasm-side cu_version() reports the same string as the
+            # native shared lib.
+            -DCU_BUILD_VERSION=${PROJECT_VERSION_FROM_GIT}
     )
     add_dependencies(compress_utils_wasm ${_PROJ})
 endforeach()

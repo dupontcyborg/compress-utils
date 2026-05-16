@@ -207,6 +207,9 @@ target_include_directories(compress_utils_obj
 target_compile_definitions(compress_utils_obj PRIVATE
     ${CU_TARGET_DEFINITIONS}
     CU_BUILD_SHARED
+    # cu_version() reads this; carries the full git-describe tag including
+    # any prerelease suffix (0.7.0-rc.1, 0.7.0-rc.1-3-gabcd, etc.).
+    CU_BUILD_VERSION="${PROJECT_VERSION_FROM_GIT}"
 )
 # INTERFACE link deps propagate to consumers (the shared lib, Python
 # module, tests) so they all pick up the algorithm static archives.

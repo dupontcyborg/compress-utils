@@ -1,6 +1,6 @@
 {
   "name": "compress-utils",
-  "version": "0.7.0",
+  "version": "0.7.0-rc.1",
   "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz \u2014 tree-shakeable per-algorithm imports.",
   "type": "module",
   "sideEffects": false,
@@ -24,7 +24,8 @@
   },
   "files": [
     "dist/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build:wasm": "cmake -S ../.. -B ../../build-wasm -DBUILD_WASM_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_BINDINGS=OFF -DENABLE_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build ../../build-wasm --target compress_utils_wasm -j",

@@ -24,7 +24,16 @@
 #define CU_STR(x) CU_STR_(x)
 
 const char* cu_version(void) {
+    /* CU_BUILD_VERSION is injected by CMake from `git describe --tags`
+     * (see cmake/GitVersion.cmake). It carries the full tag including any
+     * prerelease suffix — e.g. "0.7.0", "0.7.0-rc.1", "0.7.0-rc.1-3-gabcd".
+     * Falls back to the header's static MAJOR.MINOR.PATCH macros if the
+     * build wasn't given a value (out-of-tree builds with no git history). */
+#ifdef CU_BUILD_VERSION
+    return CU_BUILD_VERSION;
+#else
     return CU_STR(CU_VERSION_MAJOR) "." CU_STR(CU_VERSION_MINOR) "." CU_STR(CU_VERSION_PATCH);
+#endif
 }
 
 /* ============================================================================
