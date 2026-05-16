@@ -4,6 +4,35 @@
   "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz — tree-shakeable per-algorithm imports.",
   "type": "module",
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dupontcyborg/compress-utils.git",
+    "directory": "bindings/wasm"
+  },
+  "homepage": "https://github.com/dupontcyborg/compress-utils#readme",
+  "bugs": {
+    "url": "https://github.com/dupontcyborg/compress-utils/issues"
+  },
+  "author": "Nicolas Dupont <nico@dupont.live> (https://nico.codes)",
+  "license": "MIT",
+  "keywords": [
+    "compression",
+    "decompression",
+    "wasm",
+    "webassembly",
+    "zstd",
+    "brotli",
+    "zlib",
+    "gzip",
+    "bzip2",
+    "lz4",
+    "xz",
+    "lzma"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "exports": {
     "./zstd": "./dist/algorithms/zstd/index.js",
     "./brotli": "./dist/algorithms/brotli/index.js",
@@ -51,6 +80,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "license": "MIT"
+  }
 }
