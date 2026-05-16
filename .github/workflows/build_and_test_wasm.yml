@@ -38,7 +38,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
-      - run: npm ci
+      # `npm install` rather than `npm ci`: Biome's per-platform optional
+      # native deps (@biomejs/cli-linux-*, @emnapi/*) often aren't fully
+      # recorded in a lockfile generated on macOS, so `npm ci` rejects
+      # the resulting drift on Linux runners. See npm/cli#4828.
+      - run: npm install --no-audit --no-fund
       # Lint only — `npm run check` would also gate on formatter diffs,
       # which we keep opt-in (run `npm run format` locally).
       - run: npm run lint
@@ -208,10 +212,13 @@ jobs:
           # registry-url wires NODE_AUTH_TOKEN into ~/.npmrc.
           registry-url: "https://registry.npmjs.org"
 
-      # `npm ci` (not `install`) on the release path: deterministic, errors
-      # on lockfile drift, and skips lifecycle scripts that could rewrite
-      # the dist/ we just downloaded as an artifact.
-      - run: npm ci
+      # `npm install` rather than `npm ci`: the lockfile generated on
+      # macOS doesn't always capture Biome's Linux-side optional deps
+      # (npm/cli#4828), and `npm ci` rejects that drift on the Linux
+      # runner. `--ignore-scripts` preserves the safety we wanted from
+      # `npm ci` — no lifecycle script can rewrite the dist/ we just
+      # downloaded as an artifact.
+      - run: npm install --no-audit --no-fund --ignore-scripts
 
       - name: Set package version from tag
         run: |
