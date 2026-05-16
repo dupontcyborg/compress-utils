@@ -1,24 +1,24 @@
 {
   "name": "compress-utils",
-  "version": "0.7.0-rc.1",
-  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz \u2014 tree-shakeable per-algorithm imports.",
+  "version": "0.7.0",
+  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz — tree-shakeable per-algorithm imports.",
   "type": "module",
   "sideEffects": false,
   "exports": {
-    "./zstd":   "./dist/algorithms/zstd/index.js",
+    "./zstd": "./dist/algorithms/zstd/index.js",
     "./brotli": "./dist/algorithms/brotli/index.js",
-    "./zlib":   "./dist/algorithms/zlib/index.js",
-    "./bz2":    "./dist/algorithms/bz2/index.js",
-    "./lz4":    "./dist/algorithms/lz4/index.js",
-    "./xz":     "./dist/algorithms/xz/index.js"
+    "./zlib": "./dist/algorithms/zlib/index.js",
+    "./bz2": "./dist/algorithms/bz2/index.js",
+    "./lz4": "./dist/algorithms/lz4/index.js",
+    "./xz": "./dist/algorithms/xz/index.js"
   },
   "imports": {
     "#resolver": {
-      "types":   "./src/core/resolve-default.ts",
+      "types": "./src/core/resolve-default.ts",
       "browser": "./dist/core/resolve-browser.js",
-      "deno":    "./dist/core/resolve-browser.js",
-      "bun":     "./dist/core/resolve-browser.js",
-      "node":    "./dist/core/resolve-node.js",
+      "deno": "./dist/core/resolve-browser.js",
+      "bun": "./dist/core/resolve-browser.js",
+      "node": "./dist/core/resolve-node.js",
       "default": "./dist/core/resolve-default.js"
     }
   },
@@ -35,14 +35,19 @@
     "test:watch": "vitest",
     "test:browser": "playwright test",
     "test:deno": "deno run --allow-read --allow-env tests-runtime/deno-smoke.ts",
-    "test:bun": "bun test --bun tests/"
+    "test:bun": "bun test --bun tests/",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "check": "biome check ."
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.15",
     "@playwright/test": "^1.60.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.8.0",
     "esbuild": "^0.28.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">=18"

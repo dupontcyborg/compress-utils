@@ -34,8 +34,7 @@ export const enum Status {
 }
 
 /** Canonical lower-case algorithm names. */
-export type AlgorithmName =
-    | "zstd" | "brotli" | "zlib" | "bz2" | "lz4" | "xz";
+export type AlgorithmName = "zstd" | "brotli" | "zlib" | "bz2" | "lz4" | "xz";
 
 /** Thrown for any non-Ok status. Carries the raw status code and algo name. */
 export class CompressError extends Error {

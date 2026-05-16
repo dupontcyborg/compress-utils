@@ -6,7 +6,9 @@ import { defineAlgorithm } from "../../core/algorithm.js";
 import { Algorithm } from "../../core/types.js";
 
 const bindings = /*#__PURE__*/ defineAlgorithm(
-    Algorithm.Xz, "xz", new URL("./xz.wasm", import.meta.url),
+    Algorithm.Xz,
+    "xz",
+    new URL("./xz.wasm", import.meta.url),
 );
 
 export const compress = bindings.compress;

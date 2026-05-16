@@ -51,12 +51,12 @@ async function bundleConsumer(consumerSrc: string): Promise<BundleResult> {
         nodePaths: [path.join(PKG_ROOT, "node_modules")],
         conditions: ["browser", "import"],
         alias: {
-            "compress-utils/zstd":   path.join(PKG_ROOT, "dist/algorithms/zstd/index.js"),
+            "compress-utils/zstd": path.join(PKG_ROOT, "dist/algorithms/zstd/index.js"),
             "compress-utils/brotli": path.join(PKG_ROOT, "dist/algorithms/brotli/index.js"),
-            "compress-utils/zlib":   path.join(PKG_ROOT, "dist/algorithms/zlib/index.js"),
-            "compress-utils/bz2":    path.join(PKG_ROOT, "dist/algorithms/bz2/index.js"),
-            "compress-utils/lz4":    path.join(PKG_ROOT, "dist/algorithms/lz4/index.js"),
-            "compress-utils/xz":     path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
+            "compress-utils/zlib": path.join(PKG_ROOT, "dist/algorithms/zlib/index.js"),
+            "compress-utils/bz2": path.join(PKG_ROOT, "dist/algorithms/bz2/index.js"),
+            "compress-utils/lz4": path.join(PKG_ROOT, "dist/algorithms/lz4/index.js"),
+            "compress-utils/xz": path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
         },
         logLevel: "silent",
     });

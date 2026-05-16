@@ -47,9 +47,7 @@ const algos: [string, AlgoModule][] = [
 for (const [name, m] of algos) {
     describe(name, () => {
         it("round-trips a small ASCII payload (one-shot)", async () => {
-            const input = enc.encode(
-                "the quick brown fox jumps over the lazy dog\n".repeat(50),
-            );
+            const input = enc.encode("the quick brown fox jumps over the lazy dog\n".repeat(50));
             const compressed = await m.compress(input);
             expect(compressed.byteLength).toBeGreaterThan(0);
 
@@ -81,6 +79,9 @@ function concat(chunks: Uint8Array[]): Uint8Array {
     const total = chunks.reduce((n, c) => n + c.byteLength, 0);
     const out = new Uint8Array(total);
     let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+    for (const c of chunks) {
+        out.set(c, off);
+        off += c.byteLength;
+    }
     return out;
 }

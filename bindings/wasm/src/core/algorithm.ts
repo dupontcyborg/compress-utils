@@ -14,7 +14,7 @@
 
 import { resolveWasm } from "#resolver";
 import { createBindings } from "./dispatch.js";
-import { Algorithm, type AlgorithmName } from "./types.js";
+import type { Algorithm, AlgorithmName } from "./types.js";
 
 export function defineAlgorithm(
     algorithm: Algorithm,

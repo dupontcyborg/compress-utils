@@ -18,12 +18,12 @@ const PKG = new URL("../dist/algorithms/", import.meta.url);
 // and its `deno` condition routes that to resolve-browser.js — so the
 // fetch-based loader path is what actually runs here.
 const algos = [
-    { name: "zstd",   url: new URL("zstd/index.js",   PKG) },
+    { name: "zstd", url: new URL("zstd/index.js", PKG) },
     { name: "brotli", url: new URL("brotli/index.js", PKG) },
-    { name: "zlib",   url: new URL("zlib/index.js",   PKG) },
-    { name: "bz2",    url: new URL("bz2/index.js",    PKG) },
-    { name: "lz4",    url: new URL("lz4/index.js",    PKG) },
-    { name: "xz",     url: new URL("xz/index.js",     PKG) },
+    { name: "zlib", url: new URL("zlib/index.js", PKG) },
+    { name: "bz2", url: new URL("bz2/index.js", PKG) },
+    { name: "lz4", url: new URL("lz4/index.js", PKG) },
+    { name: "xz", url: new URL("xz/index.js", PKG) },
 ];
 
 const enc = new TextEncoder();

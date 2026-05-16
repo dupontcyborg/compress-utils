@@ -1,0 +1,64 @@
+{
+    "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+    "files": {
+        "includes": [
+            "src/**/*.ts",
+            "tests/**/*.ts",
+            "tests-browser/**/*.ts",
+            "tests-runtime/**/*.ts",
+            "*.ts",
+            "*.mjs",
+            "!dist",
+            "!node_modules",
+            "!build-*",
+            "!.serve",
+            "!playwright-report",
+            "!test-results"
+        ]
+    },
+    "formatter": {
+        "enabled": true,
+        "indentStyle": "space",
+        "indentWidth": 4,
+        "lineWidth": 100
+    },
+    "javascript": {
+        "formatter": {
+            "quoteStyle": "double",
+            "trailingCommas": "all",
+            "semicolons": "always"
+        }
+    },
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "style": {
+                "noNonNullAssertion": "warn"
+            },
+            "suspicious": {
+                "noExplicitAny": "warn",
+                "noConstEnum": "off"
+            }
+        }
+    },
+    "overrides": [
+        {
+            "includes": ["tests/**/*.ts", "tests-browser/**/*.ts", "tests-runtime/**/*.ts"],
+            "linter": {
+                "rules": {
+                    "style": {
+                        "noNonNullAssertion": "off"
+                    }
+                }
+            }
+        }
+    ],
+    "assist": {
+        "actions": {
+            "source": {
+                "organizeImports": "off"
+            }
+        }
+    }
+}

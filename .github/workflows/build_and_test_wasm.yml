@@ -25,6 +25,24 @@ on:
       - ".github/workflows/build_and_test_wasm.yml"
 
 jobs:
+  lint:
+    name: Lint TS (Biome)
+    # Runs independently from `build`: Biome doesn't need wasm artifacts
+    # and finishes in seconds, so a failed lint surfaces fast without
+    # waiting on the cross-compile. `publish_to_npm` blocks on it below.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci
+      # Lint only — `npm run check` would also gate on formatter diffs,
+      # which we keep opt-in (run `npm run format` locally).
+      - run: npm run lint
+
   build:
     name: Build .wasm artifacts (Linux x86_64)
     runs-on: ubuntu-latest
@@ -163,7 +181,7 @@ jobs:
 
   publish_to_npm:
     name: Publish to npm
-    needs: [build, test-runtime-matrix, test-browsers]
+    needs: [lint, build, test-runtime-matrix, test-browsers]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment: release

@@ -17,9 +17,7 @@ export const resolveWasm: WasmResolver = async (url) => {
     const isDeno = typeof Deno !== "undefined";
     const isBun = typeof Bun !== "undefined";
     const isNode =
-        typeof process !== "undefined" &&
-        process.versions?.node !== undefined &&
-        !isDeno && !isBun;
+        typeof process !== "undefined" && process.versions?.node !== undefined && !isDeno && !isBun;
 
     // Node's fetch can't do file://. Everyone else's can (Deno + Bun
     // natively; browsers only see http(s)). So Node is the only path

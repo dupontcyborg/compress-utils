@@ -9,14 +9,9 @@
  * tree-shaking.
  */
 
+import { checkStatus, decodeCString, loadModule, type WasmExports } from "./loader.js";
 import {
-    checkStatus,
-    decodeCString,
-    loadModule,
-    type WasmExports,
-} from "./loader.js";
-import {
-    Algorithm,
+    type Algorithm,
     CompressError,
     Status,
     type AlgorithmName,
@@ -37,7 +32,9 @@ class Arena {
     private readonly exports: WasmExports;
     private readonly ptrs: number[] = [];
 
-    constructor(exports: WasmExports) { this.exports = exports; }
+    constructor(exports: WasmExports) {
+        this.exports = exports;
+    }
 
     alloc(bytes: number, algoName: AlgorithmName): number {
         // Empty-input compress/decompress is a valid edge case (codecs
@@ -48,10 +45,7 @@ class Arena {
         if (bytes === 0) bytes = 1;
         const ptr = this.exports.cu_alloc(bytes);
         if (ptr === 0) {
-            throw new CompressError(
-                Status.Oom, algoName,
-                `cu_alloc(${bytes}) returned NULL`,
-            );
+            throw new CompressError(Status.Oom, algoName, `cu_alloc(${bytes}) returned NULL`);
         }
         this.ptrs.push(ptr);
         return ptr;
@@ -74,7 +68,8 @@ export class Dispatcher {
         this.algorithmName = algorithmName;
         if (exports.cu_algorithm_available(algorithm) === 0) {
             throw new CompressError(
-                Status.UnsupportedAlgo, algorithmName,
+                Status.UnsupportedAlgo,
+                algorithmName,
                 `algorithm "${algorithmName}" not compiled into this .wasm module`,
             );
         }
@@ -104,7 +99,12 @@ export class Dispatcher {
             this.writeBytes(inPtr, input);
             this.writeU32(outLenPtr, bound);
             const status = this.exports.cu_compress(
-                this.algorithm, inPtr, inLen, outPtr, outLenPtr, level,
+                this.algorithm,
+                inPtr,
+                inLen,
+                outPtr,
+                outLenPtr,
+                level,
             );
             checkStatus(this.exports, status, this.algorithmName);
             return this.readBytes(outPtr, this.readU32(outLenPtr));
@@ -132,7 +132,11 @@ export class Dispatcher {
             const outLenPtr = arena.alloc(4, this.algorithmName);
             this.writeU32(outLenPtr, outSize);
             const status = this.exports.cu_decompress(
-                this.algorithm, inPtr, inLen, outPtr, outLenPtr,
+                this.algorithm,
+                inPtr,
+                inLen,
+                outPtr,
+                outLenPtr,
             );
             checkStatus(this.exports, status, this.algorithmName);
             return this.readBytes(outPtr, this.readU32(outLenPtr));
@@ -159,9 +163,7 @@ export class Dispatcher {
     private tryProbeSize(arena: Arena, inPtr: number, inLen: number): number | undefined {
         const sizePtr = arena.alloc(4, this.algorithmName);
         this.writeU32(sizePtr, 0);
-        const status = this.exports.cu_decompress_size_hint(
-            this.algorithm, inPtr, inLen, sizePtr,
-        );
+        const status = this.exports.cu_decompress_size_hint(this.algorithm, inPtr, inLen, sizePtr);
         if (status === Status.Ok) return this.readU32(sizePtr);
         if (status === Status.SizeUnknown) return undefined;
         checkStatus(this.exports, status, this.algorithmName);
@@ -176,9 +178,7 @@ export class Dispatcher {
         try {
             const streamPP = arena.alloc(4, this.algorithmName);
             this.writeU32(streamPP, 0);
-            const status = this.exports.cu_compress_stream_create(
-                this.algorithm, level, streamPP,
-            );
+            const status = this.exports.cu_compress_stream_create(this.algorithm, level, streamPP);
             checkStatus(this.exports, status, this.algorithmName);
             return new CompressStream(this, this.readU32(streamPP));
         } finally {
@@ -191,9 +191,7 @@ export class Dispatcher {
         try {
             const streamPP = arena.alloc(4, this.algorithmName);
             this.writeU32(streamPP, 0);
-            const status = this.exports.cu_decompress_stream_create(
-                this.algorithm, streamPP,
-            );
+            const status = this.exports.cu_decompress_stream_create(this.algorithm, streamPP);
             checkStatus(this.exports, status, this.algorithmName);
             return new DecompressStream(this, this.readU32(streamPP));
         } finally {
@@ -215,7 +213,9 @@ export class Dispatcher {
     /** @internal */ readU32(ptr: number): number {
         return new DataView(this.exports.memory.buffer).getUint32(ptr, true);
     }
-    /** @internal */ newArena(): Arena { return new Arena(this.exports); }
+    /** @internal */ newArena(): Arena {
+        return new Arena(this.exports);
+    }
 }
 
 /* ----------------------------------------------------------------------- *
@@ -249,10 +249,7 @@ abstract class StreamBase {
     protected finished = false;
     private readonly cleanup: StreamCleanup;
 
-    constructor(
-        dispatcher: Dispatcher, handle: number,
-        destroyFn: (handle: number) => void,
-    ) {
+    constructor(dispatcher: Dispatcher, handle: number, destroyFn: (handle: number) => void) {
         this.dispatcher = dispatcher;
         this.handle = handle;
         this.cleanup = { destroy: destroyFn, handle };
@@ -262,7 +259,8 @@ abstract class StreamBase {
     protected ensureLive(): void {
         if (this.handle === 0) {
             throw new CompressError(
-                Status.StreamState, this.dispatcher.algorithmName,
+                Status.StreamState,
+                this.dispatcher.algorithmName,
                 "stream has been destroyed",
             );
         }
@@ -278,26 +276,32 @@ abstract class StreamBase {
     }
 
     /** Symbol.dispose — enables `using stream = await create*()`. */
-    [Symbol.dispose](): void { this.destroy(); }
+    [Symbol.dispose](): void {
+        this.destroy();
+    }
 }
 
 export class CompressStream extends StreamBase {
     constructor(dispatcher: Dispatcher, handle: number) {
-        super(dispatcher, handle, (h) =>
-            dispatcher.exports.cu_compress_stream_destroy(h));
+        super(dispatcher, handle, (h) => dispatcher.exports.cu_compress_stream_destroy(h));
     }
 
     write(chunk: Uint8Array): Uint8Array {
         this.ensureLive();
         if (this.finished) {
             throw new CompressError(
-                Status.StreamFinished, this.dispatcher.algorithmName,
+                Status.StreamFinished,
+                this.dispatcher.algorithmName,
                 "write after finish",
             );
         }
         return drain(this.dispatcher, chunk, (inPtr, inLen, outPtr, outLenPtr) =>
             this.dispatcher.exports.cu_compress_stream_write(
-                this.handle, inPtr, inLen, outPtr, outLenPtr,
+                this.handle,
+                inPtr,
+                inLen,
+                outPtr,
+                outLenPtr,
             ),
         );
     }
@@ -306,24 +310,25 @@ export class CompressStream extends StreamBase {
         this.ensureLive();
         this.finished = true;
         return drain(this.dispatcher, null, (_in, _len, outPtr, outLenPtr) =>
-            this.dispatcher.exports.cu_compress_stream_finish(
-                this.handle, outPtr, outLenPtr,
-            ),
+            this.dispatcher.exports.cu_compress_stream_finish(this.handle, outPtr, outLenPtr),
         );
     }
 }
 
 export class DecompressStream extends StreamBase {
     constructor(dispatcher: Dispatcher, handle: number) {
-        super(dispatcher, handle, (h) =>
-            dispatcher.exports.cu_decompress_stream_destroy(h));
+        super(dispatcher, handle, (h) => dispatcher.exports.cu_decompress_stream_destroy(h));
     }
 
     write(chunk: Uint8Array): Uint8Array {
         this.ensureLive();
         return drain(this.dispatcher, chunk, (inPtr, inLen, outPtr, outLenPtr) =>
             this.dispatcher.exports.cu_decompress_stream_write(
-                this.handle, inPtr, inLen, outPtr, outLenPtr,
+                this.handle,
+                inPtr,
+                inLen,
+                outPtr,
+                outLenPtr,
             ),
         );
     }
@@ -332,9 +337,7 @@ export class DecompressStream extends StreamBase {
         this.ensureLive();
         this.finished = true;
         return drain(this.dispatcher, null, (_in, _len, outPtr, outLenPtr) =>
-            this.dispatcher.exports.cu_decompress_stream_finish(
-                this.handle, outPtr, outLenPtr,
-            ),
+            this.dispatcher.exports.cu_decompress_stream_finish(this.handle, outPtr, outLenPtr),
         );
     }
 }
@@ -347,10 +350,7 @@ export class DecompressStream extends StreamBase {
 function drain(
     dispatcher: Dispatcher,
     input: Uint8Array | null,
-    call: (
-        inPtr: number, inLen: number,
-        outPtr: number, outLenPtr: number,
-    ) => number,
+    call: (inPtr: number, inLen: number, outPtr: number, outLenPtr: number) => number,
 ): Uint8Array {
     const arena = dispatcher.newArena();
     const chunks: Uint8Array[] = [];
@@ -369,7 +369,8 @@ function drain(
         for (let i = 0; ; i++) {
             if (i >= DRAIN_MAX_ITERATIONS) {
                 throw new CompressError(
-                    Status.StreamState, dispatcher.algorithmName,
+                    Status.StreamState,
+                    dispatcher.algorithmName,
                     `drain exceeded ${DRAIN_MAX_ITERATIONS} iterations without completion`,
                 );
             }
@@ -394,7 +395,10 @@ function drain(
     if (chunks.length === 1) return chunks[0]!;
     const merged = new Uint8Array(total);
     let off = 0;
-    for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
+    for (const c of chunks) {
+        merged.set(c, off);
+        off += c.byteLength;
+    }
     return merged;
 }
 
@@ -426,8 +430,7 @@ export interface AlgorithmBindings {
     setMaxDecompressedSize(bytes: number): Promise<void>;
 }
 
-export type WasmResolver =
-    (url: URL) => Promise<BufferSource | Response | PromiseLike<Response>>;
+export type WasmResolver = (url: URL) => Promise<BufferSource | Response | PromiseLike<Response>>;
 
 export function createBindings(
     algorithm: Algorithm,
@@ -508,4 +511,3 @@ export function createBindings(
         },
     };
 }
-

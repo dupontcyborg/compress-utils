@@ -101,14 +101,10 @@ describe("Web Streams API", () => {
         const input = enc.encode("web-streams payload ".repeat(2000));
         const source = readable(input, 4096);
 
-        const compressed = await collect(
-            source.pipeThrough(compressionStream({ level: 3 })),
-        );
+        const compressed = await collect(source.pipeThrough(compressionStream({ level: 3 })));
         expect(compressed.byteLength).toBeGreaterThan(0);
 
-        const out = await collect(
-            readable(compressed, 8192).pipeThrough(decompressionStream()),
-        );
+        const out = await collect(readable(compressed, 8192).pipeThrough(decompressionStream()));
         expect(dec.decode(out)).toBe(dec.decode(input));
     });
 
@@ -116,14 +112,15 @@ describe("Web Streams API", () => {
         const text = "chained-stream ".repeat(500);
         const compressed = await collect(
             new ReadableStream<string>({
-                start(c) { c.enqueue(text); c.close(); },
+                start(c) {
+                    c.enqueue(text);
+                    c.close();
+                },
             })
                 .pipeThrough(new TextEncoderStream())
                 .pipeThrough(compressionStream()),
         );
-        const out = await collect(
-            readable(compressed).pipeThrough(decompressionStream()),
-        );
+        const out = await collect(readable(compressed).pipeThrough(decompressionStream()));
         expect(dec.decode(out)).toBe(text);
     });
 });
@@ -132,7 +129,10 @@ function readable(data: Uint8Array, chunkSize = 8192): ReadableStream<Uint8Array
     let off = 0;
     return new ReadableStream({
         pull(c) {
-            if (off >= data.byteLength) { c.close(); return; }
+            if (off >= data.byteLength) {
+                c.close();
+                return;
+            }
             const end = Math.min(off + chunkSize, data.byteLength);
             c.enqueue(data.subarray(off, end));
             off = end;
@@ -155,6 +155,9 @@ function concat(chunks: Uint8Array[]): Uint8Array {
     const total = chunks.reduce((n, c) => n + c.byteLength, 0);
     const out = new Uint8Array(total);
     let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+    for (const c of chunks) {
+        out.set(c, off);
+        off += c.byteLength;
+    }
     return out;
 }

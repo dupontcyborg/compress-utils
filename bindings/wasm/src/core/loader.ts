@@ -36,46 +36,57 @@ export interface WasmExports {
     readonly cu_compress_bound: (in_len: number, algo: number) => number;
     readonly cu_compress: (
         algo: number,
-        in_ptr: number, in_len: number,
-        out_ptr: number, out_len_ptr: number,
+        in_ptr: number,
+        in_len: number,
+        out_ptr: number,
+        out_len_ptr: number,
         level: number,
     ) => number;
     readonly cu_decompress: (
         algo: number,
-        in_ptr: number, in_len: number,
-        out_ptr: number, out_len_ptr: number,
+        in_ptr: number,
+        in_len: number,
+        out_ptr: number,
+        out_len_ptr: number,
     ) => number;
     readonly cu_decompress_size_hint: (
         algo: number,
-        in_ptr: number, in_len: number,
+        in_ptr: number,
+        in_len: number,
         out_size_ptr: number,
     ) => number;
 
     readonly cu_compress_stream_create: (
-        algo: number, level: number, out_stream_pp: number,
+        algo: number,
+        level: number,
+        out_stream_pp: number,
     ) => number;
     readonly cu_compress_stream_write: (
         stream: number,
-        in_ptr: number, in_len: number,
-        out_ptr: number, out_len_ptr: number,
+        in_ptr: number,
+        in_len: number,
+        out_ptr: number,
+        out_len_ptr: number,
     ) => number;
     readonly cu_compress_stream_finish: (
         stream: number,
-        out_ptr: number, out_len_ptr: number,
+        out_ptr: number,
+        out_len_ptr: number,
     ) => number;
     readonly cu_compress_stream_destroy: (stream: number) => void;
 
-    readonly cu_decompress_stream_create: (
-        algo: number, out_stream_pp: number,
-    ) => number;
+    readonly cu_decompress_stream_create: (algo: number, out_stream_pp: number) => number;
     readonly cu_decompress_stream_write: (
         stream: number,
-        in_ptr: number, in_len: number,
-        out_ptr: number, out_len_ptr: number,
+        in_ptr: number,
+        in_len: number,
+        out_ptr: number,
+        out_len_ptr: number,
     ) => number;
     readonly cu_decompress_stream_finish: (
         stream: number,
-        out_ptr: number, out_len_ptr: number,
+        out_ptr: number,
+        out_len_ptr: number,
     ) => number;
     readonly cu_decompress_stream_destroy: (stream: number) => void;
 
@@ -115,24 +126,54 @@ function wasiImports(getMemory: () => WebAssembly.Memory): WebAssembly.ModuleImp
         // we'd want to wire this to console.warn — but that needs us to
         // read iovs out of linear memory, which the caller doesn't have
         // a handle to at import-resolution time.
-        fd_write(): number { return ERRNO_NOSYS; },
-        fd_close(): number { return ERRNO_NOSYS; },
-        fd_seek(): number { return ERRNO_NOSYS; },
-        fd_read(): number { return ERRNO_NOSYS; },
-        fd_fdstat_get(): number { return ERRNO_NOSYS; },
-        fd_fdstat_set_flags(): number { return ERRNO_NOSYS; },
+        fd_write(): number {
+            return ERRNO_NOSYS;
+        },
+        fd_close(): number {
+            return ERRNO_NOSYS;
+        },
+        fd_seek(): number {
+            return ERRNO_NOSYS;
+        },
+        fd_read(): number {
+            return ERRNO_NOSYS;
+        },
+        fd_fdstat_get(): number {
+            return ERRNO_NOSYS;
+        },
+        fd_fdstat_set_flags(): number {
+            return ERRNO_NOSYS;
+        },
         // EBADF terminates the wasi-libc preopen scan cleanly. ENOSYS
         // makes the libc init path think the syscall is implemented but
         // failed unexpectedly, and on some libc builds aborts.
-        fd_prestat_get(): number { return ERRNO_BADF; },
-        fd_prestat_dir_name(): number { return ERRNO_BADF; },
-        fd_filestat_get(): number { return ERRNO_NOSYS; },
-        path_open(): number { return ERRNO_NOSYS; },
-        poll_oneoff(): number { return ERRNO_NOSYS; },
-        sched_yield(): number { return 0; },
-        environ_sizes_get(): number { return 0; },
-        environ_get(): number { return 0; },
-        clock_time_get(): number { return ERRNO_NOSYS; },
+        fd_prestat_get(): number {
+            return ERRNO_BADF;
+        },
+        fd_prestat_dir_name(): number {
+            return ERRNO_BADF;
+        },
+        fd_filestat_get(): number {
+            return ERRNO_NOSYS;
+        },
+        path_open(): number {
+            return ERRNO_NOSYS;
+        },
+        poll_oneoff(): number {
+            return ERRNO_NOSYS;
+        },
+        sched_yield(): number {
+            return 0;
+        },
+        environ_sizes_get(): number {
+            return 0;
+        },
+        environ_get(): number {
+            return 0;
+        },
+        clock_time_get(): number {
+            return ERRNO_NOSYS;
+        },
         // random_get: fill `len` bytes at `buf` with CSPRNG output.
         // Fails loud (ERRNO_IO) if no crypto is available — the previous
         // silent zero-fill was a correctness footgun for any future codec
@@ -142,9 +183,7 @@ function wasiImports(getMemory: () => WebAssembly.Memory): WebAssembly.ModuleImp
             const memory = getMemory();
             for (let off = 0; off < len; off += CRYPTO_MAX_CHUNK) {
                 const chunk = Math.min(CRYPTO_MAX_CHUNK, len - off);
-                webCrypto.getRandomValues(
-                    new Uint8Array(memory.buffer, buf + off, chunk),
-                );
+                webCrypto.getRandomValues(new Uint8Array(memory.buffer, buf + off, chunk));
             }
             return 0;
         },
@@ -169,7 +208,8 @@ export async function loadModule(
         instance = inst;
     } else {
         const { instance: inst } = await WebAssembly.instantiateStreaming(
-            source as Response | PromiseLike<Response>, imports,
+            source as Response | PromiseLike<Response>,
+            imports,
         );
         instance = inst;
     }
@@ -179,9 +219,7 @@ export async function loadModule(
     return exports;
 }
 
-export function decodeCString(
-    memory: WebAssembly.Memory, ptr: number, maxLen = 4096,
-): string {
+export function decodeCString(memory: WebAssembly.Memory, ptr: number, maxLen = 4096): string {
     if (ptr === 0) return "";
     const view = new Uint8Array(memory.buffer, ptr);
     let end = 0;
@@ -190,9 +228,7 @@ export function decodeCString(
 }
 
 /** Convert a non-Ok status into a thrown CompressError using the C side's message. */
-export function checkStatus(
-    exports: WasmExports, status: number, algorithm: AlgorithmName,
-): void {
+export function checkStatus(exports: WasmExports, status: number, algorithm: AlgorithmName): void {
     if (status === Status.Ok) return;
     const lastErrPtr = exports.cu_last_error();
     let msg = decodeCString(exports.memory, lastErrPtr);
