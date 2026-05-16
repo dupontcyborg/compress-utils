@@ -112,6 +112,16 @@ Plus a libFuzzer harness (`-DENABLE_FUZZ=ON`, clang only) at `tests/fuzz/fuzz_de
 
 Pre-1.0. The C ABI is the source of truth for cross-language behavior — see [`include/compress_utils.h`](include/compress_utils.h) for the contract. Open work (additional language bindings, doc site, CMake package config, fuzz corpora, interop tests against canonical compressors per language) is tracked in [TODO.md](TODO.md).
 
+## AI disclosure
+
+This project was built with substantial use of large language models. Specifically:
+
+- Architecture and design: human (me, [@dupontcyborg](https://nico.codes), a senior software engineer).
+- Implementation: basically entirely LLM-driven. Most of the C core, all of the C++/Python/WASM bindings, and the test suites were drafted by Mr. Claude
+- Review: me again.
+
+Bugs and typos are most likely my own.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
