@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [node-20, node-22, bun, deno]
+        runtime: [node-20, node-22, node-24, bun, deno]
     defaults:
       run:
         working-directory: bindings/wasm
@@ -123,6 +123,10 @@ jobs:
         if: matrix.runtime == 'node-22'
         uses: actions/setup-node@v4
         with: { node-version: "22" }
+      - name: Setup Node 24
+        if: matrix.runtime == 'node-24'
+        uses: actions/setup-node@v4
+        with: { node-version: "24" }
       - name: Setup Bun
         if: matrix.runtime == 'bun'
         uses: oven-sh/setup-bun@v1

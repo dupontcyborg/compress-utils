@@ -16,6 +16,25 @@ npm install compress-utils
 
 No native dependencies, no `postinstall` scripts. Pure WebAssembly. TypeScript types are bundled.
 
+### CDN (no bundler)
+
+The package is published as ESM. You can pull it straight from a CDN — no install step, no build step.
+
+```html
+<script type="module">
+    import { compress, decompress } from "https://esm.sh/compress-utils/zstd";
+    const out = await compress(new TextEncoder().encode("hello"));
+</script>
+```
+
+Alternate CDN endpoints:
+
+| CDN        | Per-algo URL                                                          |
+|------------|-----------------------------------------------------------------------|
+| esm.sh     | `https://esm.sh/compress-utils/<algo>`                                |
+| jsDelivr   | `https://cdn.jsdelivr.net/npm/compress-utils/dist/algorithms/<algo>/index.js` |
+| unpkg      | `https://unpkg.com/compress-utils/dist/algorithms/<algo>/index.js`    |
+
 ## Quick start
 
 Each algorithm is its own subpath import. Pick the one you need; the rest stay out of your bundle.
@@ -68,28 +87,6 @@ If `using` isn't available in your toolchain, call `cs.destroy()` explicitly —
 
 Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively.
 
-## Other helpful APIs
-
-```ts
-import {
-    version,
-    setMaxDecompressedSize,
-    CompressError,
-} from "compress-utils/zstd";
-
-await version();                          // "0.1.0"
-await setMaxDecompressedSize(256 * 1024 ** 2);
-                                          // bound one-shot decompression (default: 1 GiB; 0 = unbounded)
-
-try {
-    await decompress(garbage);
-} catch (e) {
-    if (e instanceof CompressError) {
-        console.log(e.algorithm, e.code, e.message);
-    }
-}
-```
-
 ## Compression levels
 
 Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps that to each algorithm's native range internally — you don't need to know that Zstandard goes 1–22 or zlib goes 1–9. Defaults to `5`.
@@ -105,17 +102,10 @@ Tested in CI on every release:
 
 | Runtime              | Status |
 |----------------------|--------|
-| Node 20, 22          | ✅     |
+| Node 20, 22, 24      | ✅     |
 | Bun                  | ✅     |
 | Deno 2.x             | ✅     |
 | Chromium / Firefox / WebKit (Playwright) | ✅ |
-
-The package exposes the [`browser`](https://nodejs.org/api/packages.html#community-conditions-definitions), `node`, `deno`, and `bun` export conditions:
-
-- Browser, Deno, and Bun consumers get a `fetch`-based loader → `WebAssembly.instantiateStreaming` (concurrent download + compile).
-- Node consumers get a `fs.readFile`-based loader (Node's built-in `fetch` doesn't handle `file://`).
-
-You don't need to configure anything — the right entry is picked automatically. The browser entry has zero references to `node:*` modules, so it bundles cleanly under Vite, esbuild, webpack 5, Rollup, etc.
 
 ## TypeScript
 
@@ -142,3 +132,7 @@ Per-algorithm imports + `sideEffects: false` mean modern bundlers tree-shake agg
 ## License
 
 MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
+
+---
+
+Built by [Nico Dupont](https://nico.codes).

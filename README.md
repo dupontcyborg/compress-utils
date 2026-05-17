@@ -129,3 +129,7 @@ MIT — see [LICENSE](LICENSE).
 ## Acknowledgments
 
 This project wraps six battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
+---
+
+Built by [Nico Dupont](https://nico.codes).

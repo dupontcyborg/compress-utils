@@ -101,14 +101,19 @@ For applications that round-trip many small payloads with the same algorithm, pr
 
 ## Project layout
 
-This is one of three official bindings to the [compress-utils](https://github.com/dupontcyborg/compress-utils) C library:
+This is one of four official bindings to the [compress-utils](https://github.com/dupontcyborg/compress-utils) C library:
 
 - **C** — the canonical ABI in `include/compress_utils.h`.
 - **C++** — header-only `cu::` namespace, `bindings/cpp/`.
 - **Python** — this package.
+- **JS / TS (WASM)** — `npm install compress-utils`, `bindings/wasm/`.
 
-WASM/JS, Go, Rust, Swift, and Java bindings are tracked in [TODO.md](https://github.com/dupontcyborg/compress-utils/blob/main/TODO.md).
+Go, Rust, Swift, and Java bindings are tracked in [TODO.md](https://github.com/dupontcyborg/compress-utils/blob/main/TODO.md).
 
 ## License
 
 MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
+
+---
+
+Built by [Nico Dupont](https://nico.codes).
