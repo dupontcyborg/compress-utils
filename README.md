@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/algorithms-6-green?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-3-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/badge/languages-5-yellow?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
@@ -29,14 +29,15 @@ A unified, high-performance interface for six compression algorithms — **Zstan
 
 The C library is the canonical surface. Every other binding is a thin shim — same allocation model, same error codes, same streaming protocol. Add a binding for any language that speaks C ABI; the work is mostly making the language's idioms (strings, exceptions, generators) feel natural on top of a uniform substrate.
 
-## Pick your language
+## Supported languages
 
 | Language | Install                                              | Docs                                          |
 |----------|------------------------------------------------------|-----------------------------------------------|
-| **C**    | Build from source ([instructions below](#building)) | [`include/compress_utils.h`](include/compress_utils.h) — the canonical ABI |
-| **C++**  | Header-only; built alongside C                       | [bindings/cpp/README.md](bindings/cpp/README.md) |
+| **C**    | Build from source | [include/compress_utils.h](include/compress_utils.h) |
+| **C++**  | Build from source | [bindings/cpp/README.md](bindings/cpp/README.md) |
 | **Python** | `pip install compress-utils` | [bindings/python/README.md](bindings/python/README.md) |
-| **JS / TS (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
+| **JavaScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
+| **TypeScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
 | Go, Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
 
 For now each binding's README has its own installation + quickstart. A cross-cutting `docs/` is planned for architecture, allocation model, and per-algorithm notes — tracked in [TODO.md](TODO.md#documentation-plan-planned-2026-05-11).
