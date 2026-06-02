@@ -6,6 +6,10 @@ on:
     tags:
       - "v*"
 
+# Least-privilege default for all jobs; jobs needing more override below.
+permissions:
+  contents: read
+
 jobs:
   build_wheels:
     runs-on: ${{ matrix.os }}
