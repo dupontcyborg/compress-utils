@@ -29,7 +29,25 @@ jobs:
         python-version: "3.13"
 
     - name: Install Python Dependencies
-      run: pip install pybind11 pytest
+      # zstandard/brotli/lz4 are the canonical references for the interop
+      # suite (test_interop_py); without them those algorithms self-skip.
+      run: pip install pybind11 pytest zstandard brotli lz4
+
+    - name: Install codec CLIs for interop cross-check (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y zstd xz-utils lz4 bzip2 brotli
+
+    - name: Install codec CLIs for interop cross-check (macOS)
+      if: runner.os == 'macOS'
+      # bzip2 ships with macOS; the rest come from Homebrew.
+      run: brew install zstd xz lz4 brotli
+
+    - name: Install codec CLIs for interop cross-check (Windows)
+      if: runner.os == 'Windows'
+      # Best-effort: the cross-check skips any tool that isn't on PATH, so a
+      # partial install never fails the build — it just narrows coverage.
+      continue-on-error: true
+      run: choco install -y zstandard brotli lz4 xz
 
     - name: Configure CMake for All Language Bindings & All Compressors
       run: |

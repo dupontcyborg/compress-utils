@@ -90,4 +90,30 @@ if(ENABLE_TESTS)
     set_tests_properties(test_compress_utils_py PROPERTIES
         ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}"
     )
+
+    # Canonical-implementation interop: our output <-> PyPI/stdlib decoders,
+    # both directions, every algorithm. Algorithms whose reference library
+    # (zstandard / brotli / lz4) isn't installed self-skip, so this passes
+    # on a bare checkout; CI installs them (see pyproject `test` extra) so
+    # the full set actually runs.
+    add_test(
+        NAME test_interop_py
+        COMMAND ${Python3_EXECUTABLE} ${PYTHON_BINDING_DIR}/tests/test_interop.py
+        WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
+    )
+    set_tests_properties(test_interop_py PROPERTIES
+        ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}"
+    )
+
+    # CLI cross-check: our output <-> the canonical reference *binaries*
+    # (zstd/xz/lz4/bzip2/brotli), driven through this binding. Tools that
+    # aren't on PATH self-skip; only a genuine round-trip mismatch fails.
+    add_test(
+        NAME test_interop_cli
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/interop/cli_crosscheck.py
+        WORKING_DIRECTORY ${PYTHON_BINDING_DIR}
+    )
+    set_tests_properties(test_interop_cli PROPERTIES
+        ENVIRONMENT "PYTHONPATH=${PYTHON_BINDING_DIR}"
+    )
 endif()

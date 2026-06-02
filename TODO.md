@@ -366,9 +366,18 @@ Gated on the CLI binaries being available in the runner; skipped on systems miss
 
 Should the interop tests be **mandatory in PR CI** or **a separate nightly job**? Mandatory makes them a release gate; nightly keeps PR latency low. I'd lean mandatory — they're fast — but worth deciding when the work lands.
 
-- [ ] **Implement interop test suites per binding** (C, C++, Python now; WASM when it exists).
-- [ ] **Add the CLI cross-check** as a separate workflow step or shell script.
-- [ ] **Decide PR-gate vs. nightly** placement.
+**Resolved (2026-06-02): mandatory in PR CI.** Both channels run as CTest
+steps in `pr_build_and_test.yml` on macOS/Windows/Linux, and the
+Python-library channel additionally runs across the full wheel matrix via
+cibuildwheel `test-requires`. They add <1s locally — no reason to defer to
+nightly.
+
+- [~] **Implement interop test suites per binding** (2026-06-02).
+  - [x] **Python** — `bindings/python/tests/test_interop.py`. All 6 algos × 6 payloads × both directions vs canonical refs (stdlib `zlib`/`bz2`/`lzma` + PyPI `zstandard`/`brotli`/`lz4`). PyPI refs self-skip if absent; CI installs them. Registered as CTest `test_interop_py` and runs across the wheel matrix.
+  - [ ] **C / C++** — deferred by design. Calling the *same* bundled static archive we link is the least-independent reference possible; it can't catch a framing divergence the Python + CLI channels don't already cover against separate implementations/binaries. Codec headers land in `algorithms/dist/include/<algo>/` and `<algo>_library` IMPORTED targets are linkable, so a `tests/test_interop.c` is easy to add if we ever need to validate against an unbundled codec version. Rationale captured in `tests/interop/README.md`.
+  - [ ] **WASM** — when bandwidth allows; the WASM binding already round-trips against Node/Bun/Deno/browsers, but not yet against independent JS codec packages (`fflate`, etc.).
+- [x] **Add the CLI cross-check** (2026-06-02) — `tests/interop/cli_crosscheck.py`. Round-trips our output against the canonical binaries (`zstd`/`xz`/`lz4`/`bzip2`/`brotli`), both directions, driven through the Python binding. Skip-tolerant (missing tool ≠ failure). Registered as CTest `test_interop_cli`; PR CI installs the binaries per-OS. `zlib` is intentionally excluded (raw RFC-1950 stream has no standard CLI reader; covered by the stdlib channel).
+- [x] **Decide PR-gate vs. nightly** placement — PR-gate (see Resolved note above).
 
 ---
 
