@@ -14,6 +14,10 @@ CMakeLists.txt linguist-vendored
 *.sh linguist-vendored
 *.ps1 linguist-vendored
 
+# Zig cross-compiler wrapper shims (extensionless bash one-liners, so the
+# *.sh rule above doesn't catch them) — toolchain glue, not source.
+cmake/toolchains/zig-bin/** linguist-vendored
+
 # Node ESM tooling scripts (test harness shims) — not part of the
 # project's source-language footprint.
 *.mjs linguist-vendored
