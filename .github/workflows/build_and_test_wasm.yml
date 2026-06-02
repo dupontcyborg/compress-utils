@@ -24,6 +24,10 @@ on:
       - "cmake/toolchains/zig-wasm.cmake"
       - ".github/workflows/build_and_test_wasm.yml"
 
+# Least-privilege default for all jobs; jobs needing more override below.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint TS (Biome)

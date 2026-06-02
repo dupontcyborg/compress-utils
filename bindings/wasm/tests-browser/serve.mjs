@@ -102,7 +102,12 @@ const MIME = {
 const server = http.createServer(async (req, res) => {
     let p = decodeURIComponent((req.url || "/").split("?")[0]);
     if (p === "/") p = "/index.html";
-    const file = path.join(OUT, p.replace(/^\//, ""));
+    const file = path.resolve(OUT, p.replace(/^\//, ""));
+    // Containment check: reject anything that resolves outside OUT.
+    if (file !== OUT && !file.startsWith(OUT + path.sep)) {
+        res.writeHead(403).end("forbidden");
+        return;
+    }
     try {
         const body = await readFile(file);
         const ext = path.extname(file);

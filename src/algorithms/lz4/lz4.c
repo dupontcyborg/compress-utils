@@ -336,7 +336,7 @@ static cu_status_t lz4_cstream_write(
     }
 
     /* Consume in_buf one block at a time. */
-    while (st->in_tail - st->in_head > 0) {
+    while (st->in_tail > st->in_head) {
         s = cstream_feed_one_block(st);
         if (s != CU_OK) return s;
         if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
@@ -368,7 +368,7 @@ static cu_status_t lz4_cstream_finish(
     }
 
     /* Drain pending input. */
-    while (st->in_tail - st->in_head > 0) {
+    while (st->in_tail > st->in_head) {
         cu_status_t s = cstream_feed_one_block(st);
         if (s != CU_OK) return s;
         if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }

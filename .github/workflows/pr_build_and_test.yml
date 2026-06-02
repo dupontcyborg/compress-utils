@@ -5,6 +5,10 @@ on:
     types: [opened, synchronize]
     branches: [ "main" ]
 
+# Least-privilege default for all jobs; jobs needing more override below.
+permissions:
+  contents: read
+
 jobs:
   build_and_test:
     runs-on: ${{ matrix.os }}
