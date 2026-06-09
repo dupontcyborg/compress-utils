@@ -12,14 +12,23 @@ and algorithm. Three jobs:
    (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
-Status: **C driver implemented.** Others follow the same protocol.
+Status: **C driver + C baseline implemented.** Other languages follow
+the same protocol.
 
 ## Quick start
 
 ```sh
-./build.sh --release                 # produces dist/c/ (the C driver links it)
+./build.sh --release                 # produces dist/c/ + algorithms/dist/ (drivers link them)
 python3 benchmarks/runner.py         # runs the matrix, writes results/<…>.json
 python3 benchmarks/report.py         # prints a table + writes results/plots/*.png
+```
+
+Overlay the binding against its native-library baseline (measures wrapper
+overhead — the two should land on top of each other):
+
+```sh
+python3 benchmarks/runner.py --drivers c,c-baseline
+python3 benchmarks/report.py         # plots show solid=compress-utils, dashed=baseline
 ```
 
 Narrow the matrix while iterating:
@@ -43,7 +52,9 @@ benchmarks/
     manifest.json    per-file sha256; runner verifies + regenerates on drift
     data/            generated inputs (gitignored)
   drivers/
-    c/bench.c        C driver (implements the protocol below)
+    c/bench_harness.h  shared C harness: timing, stats, NDJSON, job loop
+    c/bench.c          compress-utils driver (wraps the cu_* ABI)
+    c/bench_baseline.c  baseline: raw libzstd/libbrotli/… linked directly
   lib/
     bench_common.py  run metadata, result schema, throughput math
   runner.py          builds a driver, runs the matrix, writes results

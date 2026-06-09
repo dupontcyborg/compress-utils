@@ -38,7 +38,8 @@ def print_table(data: dict) -> None:
         key=lambda r: (r["input_id"], r["algo"], r.get("impl", ""), r["level"]),
     )
     multi_impl = len({r.get("impl", "compress-utils") for r in recs}) > 1
-    print(f"\n  {meta['driver_lang']} v{meta['driver_version']}  "
+    drivers = ", ".join(f"{d['key']} v{d['version']}" for d in meta.get("drivers", []))
+    print(f"\n  {drivers}  "
           f"@ {meta['git_sha']}{'*' if meta.get('git_dirty') else ''}  "
           f"| {meta['machine']['cpu']} ({meta['machine']['arch']})")
     print(f"  {meta['samples']} samples + {meta['warmup']} warmup\n")

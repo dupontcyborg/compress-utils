@@ -92,8 +92,10 @@ class RunMeta:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     git_sha: str = field(default_factory=git_sha)
     git_dirty: bool = field(default_factory=git_dirty)
-    driver_lang: str = "c"
-    driver_version: str = "unknown"
+    # A run may merge several drivers (e.g. the binding + its native baseline)
+    # into one result set so the report can overlay them. Each entry:
+    # {"key","lang","version"}.
+    drivers: list = field(default_factory=list)
     samples: int = 5
     warmup: int = 1
     machine: dict = field(default_factory=machine_fingerprint)
