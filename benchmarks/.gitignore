@@ -1,0 +1,8 @@
+# Generated corpus data (reproducible from generate.py + manifest.json).
+corpus/data/
+
+# Compiled drivers.
+drivers/c/bench
+
+# Run outputs. Commit baselines explicitly with `git add -f`.
+results/
