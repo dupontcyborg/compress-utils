@@ -12,6 +12,10 @@
  * every result record, so the report tooling can overlay our binding against
  * the native baseline for the same (lang, algo).
  *
+ * Modes: each job runs in one-shot or streaming mode. A codec may leave its
+ * *_stream pointers NULL (e.g. the native baseline before its streaming
+ * support lands); stream-mode jobs for such codecs are skipped, not failed.
+ *
  * Header-only: each driver is a single translation unit that includes this and
  * provides main(). Timing wraps only the compress / decompress calls.
  */
@@ -31,8 +35,11 @@ struct bench_codec;
 
 /* compress/decompress return 0 on success (with *out_len set to bytes
  * written) and non-zero on failure, optionally setting *err to a static
- * message. native_id is impl-private scratch (the compress-utils driver
- * stashes its algorithm enum there; the native driver ignores it). */
+ * message. The *_stream variants take a chunk size (the input is fed in
+ * chunk-sized pieces, exercising the streaming drain protocol) and may be
+ * NULL if the driver doesn't implement streaming for that codec yet.
+ * native_id is impl-private scratch (the compress-utils driver stashes its
+ * algorithm enum there; the native driver ignores it). */
 typedef struct bench_codec {
     const char* name; /* algorithm: "zstd", "brotli", … */
     const char* impl; /* implementation tag for the record */
@@ -42,6 +49,11 @@ typedef struct bench_codec {
                     uint8_t* out, size_t* out_len, int level, const char** err);
     int (*decompress)(const struct bench_codec*, const uint8_t* in, size_t in_len,
                       uint8_t* out, size_t* out_len, const char** err);
+    int (*compress_stream)(const struct bench_codec*, const uint8_t* in, size_t in_len,
+                           uint8_t* out, size_t* out_len, int level, size_t chunk,
+                           const char** err);
+    int (*decompress_stream)(const struct bench_codec*, const uint8_t* in, size_t in_len,
+                             uint8_t* out, size_t* out_len, size_t chunk, const char** err);
 } bench_codec_t;
 
 /* ---- timing -------------------------------------------------------------- */
@@ -120,8 +132,15 @@ static const bench_codec_t* bench_find(const bench_codec_t* codecs, size_t n,
 
 /* ---- one job ------------------------------------------------------------- */
 
+/* Returns 1 = result emitted, 0 = failure, -1 = skipped (stream mode requested
+ * but this codec has no streaming functions). */
 static int bench_run_job(const char* lang, const bench_codec_t* codec, int level,
-                         const char* path, size_t samples, size_t warmup) {
+                         int is_stream, size_t chunk, const char* path,
+                         size_t samples, size_t warmup) {
+    if (is_stream && (!codec->compress_stream || !codec->decompress_stream)) {
+        return -1;
+    }
+
     size_t in_len = 0;
     uint8_t* in = bench_read_file(path, &in_len);
     if (!in) {
@@ -146,18 +165,23 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
 
     for (size_t i = 0; i < warmup && !failed; i++) {
         comp_len = bound;
-        failed = codec->compress(codec, in, in_len, comp, &comp_len, level, &err);
+        failed = is_stream
+            ? codec->compress_stream(codec, in, in_len, comp, &comp_len, level, chunk, &err)
+            : codec->compress(codec, in, in_len, comp, &comp_len, level, &err);
     }
     for (size_t i = 0; i < samples && !failed; i++) {
         comp_len = bound;
         uint64_t t0 = bench_now_ns();
-        failed = codec->compress(codec, in, in_len, comp, &comp_len, level, &err);
+        failed = is_stream
+            ? codec->compress_stream(codec, in, in_len, comp, &comp_len, level, chunk, &err)
+            : codec->compress(codec, in, in_len, comp, &comp_len, level, &err);
         uint64_t t1 = bench_now_ns();
         c_t[i] = t1 - t0;
     }
     if (failed) {
-        fprintf(stderr, "bench: compress(%s/%s L%d) failed: %s\n",
-                codec->name, codec->impl, level, err ? err : "?");
+        fprintf(stderr, "bench: compress(%s/%s L%d %s) failed: %s\n",
+                codec->name, codec->impl, level, is_stream ? "stream" : "oneshot",
+                err ? err : "?");
         free(in); free(comp); free(dec); free(c_t); free(d_t);
         return 0;
     }
@@ -165,18 +189,23 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
     size_t dec_len = 0;
     for (size_t i = 0; i < warmup && !failed; i++) {
         dec_len = in_len;
-        failed = codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
+        failed = is_stream
+            ? codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err)
+            : codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
     }
     for (size_t i = 0; i < samples && !failed; i++) {
         dec_len = in_len;
         uint64_t t0 = bench_now_ns();
-        failed = codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
+        failed = is_stream
+            ? codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err)
+            : codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
         uint64_t t1 = bench_now_ns();
         d_t[i] = t1 - t0;
     }
     if (failed) {
-        fprintf(stderr, "bench: decompress(%s/%s L%d) failed: %s\n",
-                codec->name, codec->impl, level, err ? err : "?");
+        fprintf(stderr, "bench: decompress(%s/%s L%d %s) failed: %s\n",
+                codec->name, codec->impl, level, is_stream ? "stream" : "oneshot",
+                err ? err : "?");
         free(in); free(comp); free(dec); free(c_t); free(d_t);
         return 0;
     }
@@ -196,6 +225,9 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
     fputs("\"impl\":", o); bench_emit_json_string(o, codec->impl); fputs(",", o);
     fputs("\"algo\":", o); bench_emit_json_string(o, codec->name); fputs(",", o);
     fprintf(o, "\"level\":%d,", level);
+    fputs("\"mode\":", o); bench_emit_json_string(o, is_stream ? "stream" : "oneshot");
+    fputs(",", o);
+    fprintf(o, "\"chunk_bytes\":%zu,", is_stream ? chunk : (size_t)0);
     fputs("\"input\":", o); bench_emit_json_string(o, path); fputs(",", o);
     fprintf(o, "\"input_bytes\":%zu,", in_len);
     fprintf(o, "\"output_bytes\":%zu,", comp_len);
@@ -224,19 +256,32 @@ static size_t bench_env_size(const char* name, size_t fallback) {
     return n > 0 ? (size_t)n : fallback;
 }
 
+/* Emit a one-line marker so every input job line yields exactly one output
+ * line. This keeps the runner's interleaved line-synchronous protocol in
+ * step even when a job is skipped (unsupported) or fails. */
+static void bench_emit_marker(const char* key) {
+    printf("{\"%s\":true}\n", key);
+    fflush(stdout);
+}
+
 /* Print {"lang","version","driver"} and return 0. `driver` is the runner's
- * registry key for this binary (e.g. "c" or "c-baseline"); the runner uses it to
- * name the results file so distinct drivers don't collide. */
+ * registry key for this binary (e.g. "c" or "c-baseline"); the runner uses it
+ * to name the results file so distinct drivers don't collide. */
 static int bench_info(const char* lang, const char* version, const char* driver) {
     printf("{\"lang\":\"%s\",\"version\":\"%s\",\"driver\":\"%s\"}\n",
            lang, version, driver);
     return 0;
 }
 
-/* Read jobs from stdin, run each, emit NDJSON. Returns process exit code. */
+/* Read jobs from stdin, run each, emit NDJSON. Returns process exit code.
+ *
+ * Job line: "<algo> <level> [<mode>] <path>". `mode` is "oneshot" or "stream";
+ * it's optional for backward compatibility — a 3-field line is treated as
+ * one-shot. `path` may contain spaces. */
 static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_codecs) {
     size_t samples = bench_env_size("BENCH_SAMPLES", 5);
     size_t warmup = bench_env_size("BENCH_WARMUP", 1);
+    size_t chunk = bench_env_size("BENCH_CHUNK", 64 * 1024);
 
     char line[8192];
     int failures = 0;
@@ -247,7 +292,6 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
         }
         if (len == 0) continue;
 
-        /* Parse "<algo> <level> <path>"; path may contain spaces. */
         char* algo = line;
         char* sp1 = strchr(line, ' ');
         if (!sp1) { fprintf(stderr, "bench: bad job line: %s\n", line); failures++; continue; }
@@ -257,17 +301,36 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
         char* sp2 = strchr(level_s, ' ');
         if (!sp2) { fprintf(stderr, "bench: bad job line: %s\n", line); failures++; continue; }
         *sp2 = '\0';
-        char* path = sp2 + 1;
-        while (*path == ' ') path++;
         int level = (int)strtol(level_s, NULL, 10);
 
+        /* Remainder is "[mode ]path". Detect an optional leading mode token. */
+        char* rest = sp2 + 1;
+        while (*rest == ' ') rest++;
+        int is_stream = 0;
+        char* path = rest;
+        if (!strncmp(rest, "stream ", 7)) {
+            is_stream = 1;
+            path = rest + 7;
+        } else if (!strncmp(rest, "oneshot ", 8)) {
+            path = rest + 8;
+        }
+        while (*path == ' ') path++;
+
         const bench_codec_t* codec = bench_find(codecs, n_codecs, algo);
-        if (!codec) {
-            /* Not an error: this driver simply doesn't provide this algo
-             * (e.g. a baseline lib the runner asked for but we don't wrap). */
+        if (!codec) {  /* this driver doesn't provide this algo */
+            bench_emit_marker("skipped");
             continue;
         }
-        if (!bench_run_job(lang, codec, level, path, samples, warmup)) failures++;
+
+        int r = bench_run_job(lang, codec, level, is_stream, chunk, path, samples, warmup);
+        if (r == 1) {
+            /* result line already emitted by bench_run_job */
+        } else if (r == -1) {
+            bench_emit_marker("skipped");  /* stream unsupported for this codec */
+        } else {
+            failures++;
+            bench_emit_marker("error");  /* detail already on stderr */
+        }
     }
     return failures ? 1 : 0;
 }

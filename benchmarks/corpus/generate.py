@@ -154,6 +154,24 @@ def verify() -> bool:
     return True
 
 
+def resolve() -> list[dict]:
+    """Ensure the synthetic 'smoke' tier exists and return its datasets in the
+    common shape used by the runner ({id, path, bytes, sha256, tier, ...})."""
+    if not verify():
+        generate(force=True)
+    out = []
+    for d in load_manifest()["datasets"]:
+        out.append({
+            "id": d["id"],
+            "path": str((CORPUS_DIR / d["file"]).resolve()),
+            "bytes": d["bytes"],
+            "sha256": d["sha256"],
+            "tier": "smoke",
+            "description": d["description"],
+        })
+    return out
+
+
 if __name__ == "__main__":
     m = generate(force=True)
     print(f"Generated {len(m['datasets'])} datasets into {DATA_DIR}")

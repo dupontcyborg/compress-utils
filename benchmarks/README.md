@@ -12,8 +12,9 @@ and algorithm. Three jobs:
    (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
-Status: **C driver + C baseline implemented.** Other languages follow
-the same protocol.
+Status: **C driver + C baseline implemented**, both one-shot; streaming
+implemented for the compress-utils driver. Corpora: `smoke` (synthetic),
+`silesia`, `enwik8`. Other languages follow the same protocol.
 
 ## Quick start
 
@@ -37,6 +38,19 @@ Narrow the matrix while iterating:
 python3 benchmarks/runner.py --algos zstd,brotli --levels 1,9 --samples 9 --warmup 2
 ```
 
+Pick a corpus tier (default `smoke`):
+
+```sh
+python3 benchmarks/runner.py --corpus silesia          # standard real-world corpus
+python3 benchmarks/runner.py --corpus smoke,enwik8     # merge tiers
+```
+
+Benchmark streaming as well as one-shot (default `oneshot`):
+
+```sh
+python3 benchmarks/runner.py --modes oneshot,stream --chunk 65536
+```
+
 Regression diff between two runs (same machine):
 
 ```sh
@@ -48,9 +62,13 @@ python3 benchmarks/report.py new.json --baseline results/baseline-c.json
 ```
 benchmarks/
   corpus/
-    generate.py      deterministic corpus (fixed seed → reproducible)
-    manifest.json    per-file sha256; runner verifies + regenerates on drift
-    data/            generated inputs (gitignored)
+    corpora.py       tier registry + resolve() — the runner's entry point
+    generate.py      synthetic 'smoke' tier (fixed seed → reproducible)
+    fetch.py         fetched tiers: silesia, enwik8 (download + extract + verify)
+    manifest.json    synthetic per-file sha256 (tracked)
+    fetched.lock.json  sha256 lock for fetched corpora, trust-on-first-use (tracked)
+    data/            generated/extracted inputs (gitignored)
+    cache/           downloaded archives (gitignored)
   drivers/
     c/bench_harness.h  shared C harness: timing, stats, NDJSON, job loop
     c/bench.c          compress-utils driver (wraps the cu_* ABI)
@@ -61,6 +79,26 @@ benchmarks/
   report.py          tables, plots, regression diff
   results/           output JSON + plots (gitignored; commit baselines explicitly)
 ```
+
+## Corpora (tiers)
+
+Selected with `--corpus` (comma-separated; `all` = every tier):
+
+| Tier      | Contents                                            | Source | Size |
+|-----------|-----------------------------------------------------|--------|------|
+| `smoke`   | 4 synthetic datasets (text/json/binary/random)      | generated, fixed seed | ~6 MB |
+| `silesia` | the standard 12-file real-world corpus              | fetched (per-file zips) | ~211 MB |
+| `enwik8`  | 100 MB Wikipedia text — the standard ratio benchmark | fetched | 100 MB |
+
+`smoke` is the default and the **only tier suited to CI**: deterministic, no
+network, fast. The fetched tiers are for on-demand local runs (slower, larger).
+
+**Integrity.** Synthetic data is reproducible from `generate.py` and checked
+against `manifest.json`. Fetched corpora are pinned **trust-on-first-use**: the
+first download records each file's sha256 into `fetched.lock.json` (tracked),
+and every later run verifies against it — a changed upstream download fails
+loudly. Downloads cache under `corpus/cache/`; payloads extract to
+`corpus/data/` (both gitignored). Delete `data/<id>` to force a re-fetch.
 
 ## Metric definitions
 
@@ -86,27 +124,47 @@ Throughput must only be compared between runs on the **same machine** — the
 runner stamps a CPU fingerprint into every result file and `report.py` warns
 when a regression diff crosses machines.
 
+**Impls are measured interleaved.** The runner runs every driver on each job
+spec back-to-back (persistent processes, one job line → one result line), not
+all-of-A-then-all-of-B. This keeps two impls in the same thermal/throttle
+window — running them minutes or hours apart silently corrupts the comparison
+(a fast codec's true overhead is ~0, so any time-skew shows up as fake
+overhead). On macOS the runner also holds off sleep via `caffeinate`, and it
+checkpoints the results file every 64 specs so a long run is never
+all-or-nothing.
+
 ## Driver protocol
 
 Every language driver is a process that:
 
-- reads **one job per line** from stdin: `<algo> <level> <abs_input_path>`
+- reads **one job per line** from stdin: `<algo> <level> [<mode>] <path>` where
+  `mode` is `oneshot` (default if omitted) or `stream`; `path` may contain spaces
 - writes **one NDJSON object per job** to stdout, in input order
-- honors env `BENCH_SAMPLES` (default 5) and `BENCH_WARMUP` (default 1)
-- prints `{"lang","version"}` and exits when invoked with a single `--info` arg
+- honors env `BENCH_SAMPLES` (default 5), `BENCH_WARMUP` (default 1),
+  `BENCH_CHUNK` (stream chunk size, default 65536)
+- prints `{"lang","version","driver"}` and exits when invoked with `--info`
+- for a `stream` job on an algorithm it doesn't stream, emits nothing (skip)
 
 Each result object carries raw measurements; the runner enriches with derived
 `ratio` / `*_mbps` and attaches run metadata:
 
 ```json
 {
-  "lang": "c", "algo": "zstd", "level": 6,
+  "lang": "c", "impl": "compress-utils", "algo": "zstd", "level": 6,
+  "mode": "oneshot", "chunk_bytes": 0,
   "input": "/abs/path/text.bin", "input_bytes": 1500000, "output_bytes": 412345,
   "compress_ns_median": 1234567, "compress_ns_mad": 1234, "compress_ns_min": 1200000,
   "decompress_ns_median": 234567, "decompress_ns_mad": 234, "decompress_ns_min": 230000,
   "samples": 5, "warmup": 1, "verified": true
 }
 ```
+
+**Modes.** One-shot times `cu_compress`/`cu_decompress`; streaming feeds the
+input in `chunk`-sized pieces through the `cu_*_stream_*` drain protocol and
+times the whole operation. Streaming and one-shot can produce slightly
+different output for the same level (different framing), so they're tracked as
+distinct series. The native baseline driver currently implements one-shot only;
+its `stream` jobs are skipped until native streaming lands.
 
 ## Adding a language driver
 

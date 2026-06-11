@@ -96,6 +96,8 @@ class RunMeta:
     # into one result set so the report can overlay them. Each entry:
     # {"key","lang","version"}.
     drivers: list = field(default_factory=list)
+    corpus: str = "smoke"
+    chunk: int = 64 * 1024
     samples: int = 5
     warmup: int = 1
     machine: dict = field(default_factory=machine_fingerprint)
@@ -134,6 +136,7 @@ def enrich(rec: dict) -> dict:
     existing drivers need no change."""
     r = dict(rec)
     r.setdefault("impl", "compress-utils")
+    r.setdefault("mode", "oneshot")
     r["ratio"] = ratio(rec)
     r["compress_mbps"] = compress_mbps(rec)
     r["decompress_mbps"] = decompress_mbps(rec)

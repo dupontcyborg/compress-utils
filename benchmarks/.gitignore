@@ -1,5 +1,7 @@
-# Generated corpus data (reproducible from generate.py + manifest.json).
+# Generated/fetched corpus payloads. Synthetic is reproducible from
+# generate.py; fetched corpora are pinned by corpus/fetched.lock.json (tracked).
 corpus/data/
+corpus/cache/
 
 # Compiled drivers.
 drivers/c/bench

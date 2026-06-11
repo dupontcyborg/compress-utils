@@ -35,17 +35,22 @@ def print_table(data: dict) -> None:
     meta = data["meta"]
     recs = sorted(
         data["records"],
-        key=lambda r: (r["input_id"], r["algo"], r.get("impl", ""), r["level"]),
+        key=lambda r: (r["input_id"], r["algo"], r.get("impl", ""), r.get("mode", ""),
+                       r["level"]),
     )
     multi_impl = len({r.get("impl", "compress-utils") for r in recs}) > 1
+    multi_mode = len({r.get("mode", "oneshot") for r in recs}) > 1
     drivers = ", ".join(f"{d['key']} v{d['version']}" for d in meta.get("drivers", []))
     print(f"\n  {drivers}  "
           f"@ {meta['git_sha']}{'*' if meta.get('git_dirty') else ''}  "
           f"| {meta['machine']['cpu']} ({meta['machine']['arch']})")
-    print(f"  {meta['samples']} samples + {meta['warmup']} warmup\n")
+    chunk_note = f", chunk={meta.get('chunk')}B" if multi_mode else ""
+    print(f"  corpus={meta.get('corpus', 'smoke')}{chunk_note}  "
+          f"{meta['samples']} samples + {meta['warmup']} warmup\n")
 
     impl_col = f"{'impl':16} " if multi_impl else ""
-    hdr = (f"  {'input':8} {'algo':7} {impl_col}{'lvl':>3} "
+    mode_col = f"{'mode':8} " if multi_mode else ""
+    hdr = (f"  {'input':8} {'algo':7} {impl_col}{mode_col}{'lvl':>3} "
            f"{'ratio':>7} {'c MB/s':>9} {'d MB/s':>9}  {'ok':>2}")
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
@@ -57,8 +62,9 @@ def print_table(data: dict) -> None:
             cur = r["input_id"]
         ok = "✓" if r.get("verified") else "✗"
         impl_cell = f"{r.get('impl', 'compress-utils'):16} " if multi_impl else ""
+        mode_cell = f"{r.get('mode', 'oneshot'):8} " if multi_mode else ""
         print(
-            f"  {r['input_id']:8} {r['algo']:7} {impl_cell}{r['level']:>3} "
+            f"  {r['input_id']:8} {r['algo']:7} {impl_cell}{mode_cell}{r['level']:>3} "
             f"{r['ratio']:>7.3f} {r['compress_mbps']:>9.1f} {r['decompress_mbps']:>9.1f}  {ok:>2}"
         )
     print()
@@ -84,30 +90,42 @@ def make_plots(data: dict) -> None:
     inputs = sorted({r["input_id"] for r in recs})
     algos = sorted({r["algo"] for r in recs})
     cmap = {a: c for a, c in zip(algos, plt.cm.tab10.colors)}
-    # Color encodes algorithm; line style encodes implementation, so a native
-    # baseline overlays its compress-utils counterpart in the same hue.
-    impls = sorted({r.get("impl", "compress-utils") for r in recs})
-    styles = ["-o", "--s", ":^", "-.D"]
-    impl_style = {im: styles[i % len(styles)] for i, im in enumerate(impls)}
-    multi_impl = len(impls) > 1
+    # Color encodes algorithm; line style encodes the (impl, mode) series, so a
+    # native baseline or a streaming variant overlays its counterpart in the
+    # same hue.
+    def series_of(r: dict) -> tuple:
+        return (r.get("impl", "compress-utils"), r.get("mode", "oneshot"))
+
+    series = sorted({series_of(r) for r in recs})
+    styles = ["-o", "--s", ":^", "-.D", "--o", ":s"]
+    series_style = {s: styles[i % len(styles)] for i, s in enumerate(series)}
+    multi_series = len(series) > 1
+
+    def series_label(s: tuple) -> str:
+        impl, mode = s
+        parts = [impl] if impl != "compress-utils" else []
+        if mode != "oneshot":
+            parts.append(mode)
+        return f"{parts[0]}" if len(parts) == 1 else "/".join(parts)
 
     # 1) Pareto frontier per input: ratio (x) vs compress speed (y), points are
-    #    levels, one line per (algo, impl). The classic "which codec wins where".
+    #    levels, one line per (algo, impl, mode). "Which codec wins where."
     for inp in inputs:
         fig, ax = plt.subplots(figsize=(7, 5))
         for algo in algos:
-            for impl in impls:
+            for s in series:
                 pts = sorted(
                     (r for r in recs if r["input_id"] == inp and r["algo"] == algo
-                     and r.get("impl", "compress-utils") == impl),
+                     and series_of(r) == s),
                     key=lambda r: r["ratio"],
                 )
                 if not pts:
                     continue
                 xs = [p["ratio"] for p in pts]
                 ys = [p["compress_mbps"] for p in pts]
-                label = f"{algo} ({impl})" if multi_impl else algo
-                ax.plot(xs, ys, impl_style[impl], color=cmap[algo], label=label, markersize=4)
+                sl = series_label(s)
+                label = f"{algo} ({sl})" if (multi_series and sl) else algo
+                ax.plot(xs, ys, series_style[s], color=cmap[algo], label=label, markersize=4)
                 for p in pts:
                     ax.annotate(str(p["level"]), (p["ratio"], p["compress_mbps"]),
                                 fontsize=6, alpha=0.6)
@@ -123,11 +141,15 @@ def make_plots(data: dict) -> None:
         plt.close(fig)
         print(f"[report] wrote {out}")
 
-    # 2) Throughput bars per input at the median level present.
+    # 2) Throughput bars per input at the median level present. Restrict to one
+    #    series (prefer compress-utils one-shot) so bars don't double up when
+    #    multiple impls/modes are present.
     levels = sorted({r["level"] for r in recs})
     mid = levels[len(levels) // 2]
+    bar_series = ("compress-utils", "oneshot") if ("compress-utils", "oneshot") in series else series[0]
     for inp in inputs:
-        sub = [r for r in recs if r["input_id"] == inp and r["level"] == mid]
+        sub = [r for r in recs if r["input_id"] == inp and r["level"] == mid
+               and series_of(r) == bar_series]
         if not sub:
             continue
         sub.sort(key=lambda r: r["algo"])
@@ -158,7 +180,8 @@ def make_plots(data: dict) -> None:
 
 
 def key(r: dict) -> tuple:
-    return (r["input_id"], r["algo"], r.get("impl", "compress-utils"), r["level"])
+    return (r["input_id"], r["algo"], r.get("impl", "compress-utils"),
+            r.get("mode", "oneshot"), r["level"])
 
 
 def regress(new: dict, base: dict) -> int:
