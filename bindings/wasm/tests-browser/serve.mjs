@@ -8,7 +8,7 @@
  */
 
 import http from "node:http";
-import { readFile, mkdir, writeFile, copyFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, copyFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import esbuild from "esbuild";
@@ -18,6 +18,7 @@ const PKG_ROOT = path.resolve(__dirname, "..");
 const OUT = path.join(__dirname, ".serve");
 
 await mkdir(OUT, { recursive: true });
+const OUT_REAL = await realpath(OUT);
 
 // The consumer references all six subpaths so the smoke test covers
 // every algo in one page load.
@@ -115,17 +116,25 @@ const server = http.createServer(async (req, res) => {
     }
 
     const requestedPath = path.normalize(p).replace(/^([/\\])+/, "");
-    const file = path.resolve(OUT, requestedPath);
+    const file = path.resolve(OUT_REAL, requestedPath);
 
-    // Containment check: reject anything that resolves outside OUT.
-    if (file !== OUT && !file.startsWith(OUT + path.sep)) {
+    let realFile;
+    try {
+        realFile = await realpath(file);
+    } catch {
+        res.writeHead(404).end("not found");
+        return;
+    }
+
+    // Containment check on canonical paths: reject anything outside OUT.
+    if (realFile !== OUT_REAL && !realFile.startsWith(OUT_REAL + path.sep)) {
         res.writeHead(403).end("forbidden");
         return;
     }
 
     try {
-        const body = await readFile(file);
-        const ext = path.extname(file);
+        const body = await readFile(realFile);
+        const ext = path.extname(realFile);
         res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
         res.end(body);
     } catch {
