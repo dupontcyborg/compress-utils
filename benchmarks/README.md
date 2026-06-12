@@ -12,9 +12,10 @@ and algorithm. Three jobs:
    (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
-Status: **C driver + C baseline implemented**, both one-shot and streaming.
-Corpora: `smoke` (synthetic), `silesia`, `enwik8`. Other languages follow the
-same protocol.
+Status: **C, C-native baseline, WASM (Node), and Python drivers implemented** —
+all one-shot + streaming. Corpora: `smoke` (synthetic), `silesia`,
+`silesia-mini`, `enwik8`. Ecosystem-library baselines (JS/Python native libs)
+are not done yet — see TODO.md.
 
 ## Quick start
 
@@ -73,6 +74,8 @@ benchmarks/
     c/bench_harness.h  shared C harness: timing, stats, NDJSON, job loop
     c/bench.c          compress-utils driver (wraps the cu_* ABI)
     c/bench_baseline.c  baseline: raw libzstd/libbrotli/… linked directly
+    wasm/bench_wasm.mjs   compress-utils WASM package via Node (records module size)
+    python/bench_py.py    compress-utils Python binding
   lib/
     bench_common.py  run metadata, result schema, throughput math
   runner.py          builds a driver, runs the matrix, writes results

@@ -116,10 +116,24 @@ def build_wasm() -> list[str]:
     return ["node", str(script)]
 
 
+def build_python() -> list[str]:
+    """The Python driver runs the compress-utils Python binding."""
+    script = bc.BENCH_ROOT / "drivers" / "python" / "bench_py.py"
+    pkg = bc.REPO_ROOT / "bindings" / "python"
+    check = subprocess.run(
+        [sys.executable, "-c", "import compress_utils"],
+        env={**os.environ, "PYTHONPATH": str(pkg)}, capture_output=True,
+    )
+    if check.returncode != 0:
+        sys.exit("error: Python binding not importable. Build it first:  ./build.sh\n")
+    return [sys.executable, str(script)]
+
+
 DRIVERS = {
     "c": build_c,
     "c-baseline": build_c_baseline,
     "wasm": build_wasm,
+    "python": build_python,
 }
 
 
