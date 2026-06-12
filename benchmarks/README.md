@@ -17,6 +17,21 @@ all one-shot + streaming. Corpora: `smoke` (synthetic), `silesia`,
 `silesia-mini`, `enwik8`. Ecosystem-library baselines (JS/Python native libs)
 are not done yet — see TODO.md.
 
+## Language comparison
+
+![throughput by language and algorithm](assets/lang-comparison.png)
+
+The same six codecs across the three language bindings, measured back-to-back in
+one interleaved run (Silesia-mini, level 6, one-shot). Compression **ratio is
+identical** across languages — only throughput differs:
+
+- **Python ≈ native C.** The binding is the C core via pybind11, so compress is
+  ~1.0× and decompress ~1.0–1.4× (overhead only shows on the fastest decoders).
+- **WASM ~1.2–1.3× slower to compress, ~1.1–1.8× to decompress.** zstd decode is
+  the worst case (native SIMD tricks); lz4 decode is nearly free (memory-bound).
+
+Regenerate with `python3 benchmarks/plot_langs.py` after a 3-way run.
+
 ## Quick start
 
 ```sh
@@ -80,6 +95,8 @@ benchmarks/
     bench_common.py  run metadata, result schema, throughput math
   runner.py          builds a driver, runs the matrix, writes results
   report.py          tables, plots, regression diff
+  plot_langs.py      cross-language comparison chart for this README
+  assets/            tracked chart(s) embedded above
   results/           output JSON + plots (gitignored; commit baselines explicitly)
 ```
 
