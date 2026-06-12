@@ -77,37 +77,54 @@ def _compile(src: Path, out: Path, cflags: list[str], ldflags: list[str]) -> Pat
     return out
 
 
-def build_c() -> Path:
+# A driver builder returns the argv used to launch it (so C drivers are a
+# compiled binary, the WASM driver is `node <script>`, future drivers whatever).
+
+
+def build_c() -> list[str]:
     lib, inc = _cu_paths()
-    return _compile(
+    out = _compile(
         DRIVER_DIR / "bench.c",
         DRIVER_DIR / "bench",
         cflags=[f"-I{inc}"],
         ldflags=[f"-L{lib}", "-lcompress_utils", f"-Wl,-rpath,{lib}"],
     )
+    return [str(out)]
 
 
-def build_c_baseline() -> Path:
+def build_c_baseline() -> list[str]:
     lib, inc = _baseline_paths()
     # brotli enc/dec depend on common → list common last for picky linkers.
     libs = ["-lzstd", "-lbrotlienc", "-lbrotlidec", "-lbrotlicommon",
             "-lbz2_static", "-llz4", "-llzma", "-lz"]
-    return _compile(
+    out = _compile(
         DRIVER_DIR / "bench_baseline.c",
         DRIVER_DIR / "bench_baseline",
         cflags=[f"-I{inc}"],
         ldflags=[f"-L{lib}", *libs],
     )
+    return [str(out)]
+
+
+def build_wasm() -> list[str]:
+    """The WASM driver runs the built compress-utils WASM package via Node."""
+    script = bc.BENCH_ROOT / "drivers" / "wasm" / "bench_wasm.mjs"
+    dist = bc.REPO_ROOT / "bindings" / "wasm" / "dist" / "algorithms"
+    if not dist.joinpath("zstd", "zstd.wasm").exists():
+        sys.exit("error: WASM package not built. Build it first:\n"
+                 "       (cd bindings/wasm && npm run build)\n")
+    return ["node", str(script)]
 
 
 DRIVERS = {
     "c": build_c,
     "c-baseline": build_c_baseline,
+    "wasm": build_wasm,
 }
 
 
-def driver_info(binary: Path) -> dict:
-    out = subprocess.run([str(binary), "--info"], capture_output=True, text=True, check=True)
+def driver_info(argv: list[str]) -> dict:
+    out = subprocess.run([*argv, "--info"], capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
 
@@ -173,8 +190,8 @@ def run_interleaved(built: list[tuple], jobs: list[tuple], samples: int, warmup:
     env = {**os.environ, "BENCH_SAMPLES": str(samples), "BENCH_WARMUP": str(warmup),
            "BENCH_CHUNK": str(chunk)}
     procs = []
-    for key, _info, binary in built:
-        p = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    for key, _info, argv in built:
+        p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              text=True, bufsize=1, env=env)
         procs.append([key, p, False])  # [key, proc, dead]
 
@@ -259,9 +276,9 @@ def main() -> None:
     built: list[tuple] = []
     driver_meta: list[dict] = []
     for key in driver_keys:
-        binary = DRIVERS[key]()
-        info = driver_info(binary)
-        built.append((key, info, binary))
+        argv = DRIVERS[key]()
+        info = driver_info(argv)
+        built.append((key, info, argv))
         driver_meta.append({"key": key, "lang": info["lang"], "version": info["version"]})
 
     meta = bc.RunMeta(drivers=driver_meta, corpus=args.corpus, chunk=args.chunk,

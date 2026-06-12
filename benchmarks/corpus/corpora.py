@@ -23,6 +23,7 @@ import generate as synthetic  # noqa: E402
 TIER_RESOLVERS = {
     "smoke": synthetic.resolve,
     "silesia": fetch.resolve_silesia,
+    "silesia-mini": fetch.resolve_silesia_mini,
     "enwik8": fetch.resolve_enwik8,
 }
 TIERS = list(TIER_RESOLVERS)

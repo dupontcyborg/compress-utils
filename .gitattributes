@@ -28,3 +28,6 @@ bindings/wasm/tests-browser/** linguist-vendored
 bindings/wasm/tests-runtime/** linguist-vendored
 bindings/wasm/playwright.config.ts linguist-vendored
 bindings/wasm/vitest.config.ts linguist-vendored
+
+# Benchmarks
+benchmarks/** linguist-vendored

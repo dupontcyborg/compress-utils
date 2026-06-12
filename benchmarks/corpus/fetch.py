@@ -28,6 +28,10 @@ LOCK = CORPUS_DIR / "fetched.lock.json"
 
 SILESIA_FILES = ["dickens", "mozilla", "mr", "nci", "ooffice", "osdb",
                  "reymont", "sao", "samba", "webster", "xml", "x-ray"]
+# A representative subset (~63 MB) spanning the distinct content types — English
+# prose, source code, binary, database, floats, markup — for fast iteration and
+# for the WASM driver, where the JS↔WASM boundary makes the full 212 MB slow.
+SILESIA_MINI = ["dickens", "samba", "x-ray", "osdb", "sao", "xml"]
 SILESIA_BASE = "https://github.com/MiloszKrajewski/SilesiaCorpus/raw/master"
 ENWIK8_URL = "https://mattmahoney.net/dc/enwik8.zip"
 
@@ -123,4 +127,11 @@ def resolve_silesia() -> list[dict]:
     return [
         _ensure(name, f"{SILESIA_BASE}/{name}.zip", "silesia", f"Silesia corpus: {name}")
         for name in SILESIA_FILES
+    ]
+
+
+def resolve_silesia_mini() -> list[dict]:
+    return [
+        _ensure(name, f"{SILESIA_BASE}/{name}.zip", "silesia-mini", f"Silesia (mini): {name}")
+        for name in SILESIA_MINI
     ]
