@@ -100,14 +100,29 @@ const MIME = {
 };
 
 const server = http.createServer(async (req, res) => {
-    let p = decodeURIComponent((req.url || "/").split("?")[0]);
+    let p;
+    try {
+        p = decodeURIComponent((req.url || "/").split("?")[0]);
+    } catch {
+        res.writeHead(400).end("bad request");
+        return;
+    }
+
     if (p === "/") p = "/index.html";
-    const file = path.resolve(OUT, p.replace(/^\//, ""));
+    if (p.includes("\0")) {
+        res.writeHead(400).end("bad request");
+        return;
+    }
+
+    const requestedPath = path.normalize(p).replace(/^([/\\])+/, "");
+    const file = path.resolve(OUT, requestedPath);
+
     // Containment check: reject anything that resolves outside OUT.
     if (file !== OUT && !file.startsWith(OUT + path.sep)) {
         res.writeHead(403).end("forbidden");
         return;
     }
+
     try {
         const body = await readFile(file);
         const ext = path.extname(file);
