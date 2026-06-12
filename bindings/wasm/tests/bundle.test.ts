@@ -104,15 +104,20 @@ describe("tree-shaking: per-algo subpath isolation", () => {
 });
 
 describe("per-algo .wasm size budgets", () => {
-    // These caps are generous — set so a regression is obvious without
-    // failing on routine codec drift. Tighten when we do the size pass.
+    // Tightened after the WASM size pass (docs/wasm-size.md #1–#3 + brotli
+    // EARLY static-init). Each cap is ~8–12% over the current artifact —
+    // enough headroom for routine codec drift, tight enough that a real
+    // regression trips it (e.g. --export-dynamic returning would blow zstd
+    // past 440; brotli falling back to BROTLI_STATIC_INIT=NONE jumps it to
+    // ~712, well past 520). Current sizes: zlib 78, bz2 92, xz 132, lz4 108,
+    // zstd 406, brotli 471 KB.
     const BUDGET_KB: Record<string, number> = {
-        zlib: 120,
-        bz2: 140,
-        xz: 200,
-        lz4: 200,
-        zstd: 700,
-        brotli: 850,
+        zlib: 88,
+        bz2: 102,
+        xz: 145,
+        lz4: 120,
+        zstd: 440,
+        brotli: 520,
     };
 
     for (const algo of ALL_ALGOS) {

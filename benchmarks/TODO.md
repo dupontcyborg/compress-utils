@@ -23,17 +23,18 @@ Workflow per step: change → rebuild wasm → re-run wasm driver on `silesia-mi
 - [x] **#1** Drop `-Wl,--export-dynamic` in `cmake/toolchains/zig-wasm.cmake`; export only the 19-symbol `cu_*` ABI allow-list (`bindings/wasm/CMakeLists.txt`). zstd exports 691→21.
 - [x] **#2** zstd build flags: `ZSTD_LEGACY_SUPPORT=OFF` + `ZSTD_BUILD_DICTBUILDER=OFF` (`algorithms/zstd/CMakeLists.txt`). **`ZSTD_LIB_MINIFY` held back** — it trades decode speed for size, so it moves to the #4 (perf-gated) bucket.
 - [x] **#3** Final `wasm-opt -Oz` pass (was `-O3`; DCE bites once #1 lands).
+- [x] **#6** brotli EARLY static-init (`-DBROTLI_STATIC_INIT=1`, wasm-only gate in `algorithms/brotli/CMakeLists.txt`). v1.2.0 embeds a ~192 KB encoder-only dictionary LUT as const data by default; EARLY computes it at `_initialize` instead. **brotli 712→471 KB (−34%)** — the single biggest lever, bigger than #1–#3 combined. Native artifact unchanged.
+- [x] Tighten `bindings/wasm/tests/bundle.test.ts` size budgets to the new sizes (zlib 88, bz2 102, xz 145, lz4 120, zstd 440, brotli 520 KB — ~8–12% headroom; trips on a real regression).
 - [ ] **#4** (gated) `ZSTD_LIB_MINIFY` and/or `-Oz`/`-Os` on codec libs — only if throughput holds.
 - [ ] **#5** (deferred) `wasm32-freestanding` + tiny malloc (drops WASI/libc startup).
-- [ ] Tighten `bindings/wasm/tests/bundle.test.ts` size budgets to the new sizes (headroom today: zstd 406/700, lz4 108/200, brotli 712/850).
-- [ ] Correct `docs/wasm-size.md`: its zstd projection (~50–65%) over-counted — dead *exports* ≠ dead *code*; the shared codec core stays referenced. Actual zstd −24%.
+- [ ] Correct `docs/wasm-size.md`: (a) its zstd projection (~50–65%) over-counted — dead *exports* ≠ dead *code*, the shared codec core stays referenced (actual zstd −24%); (b) add the brotli static-init LUT finding — brotli is data-bound, and the v1.2.0 LUT, not just the dictionary, drives its size.
 
 Validation (silesia-mini, AppleM4Max, vs `baseline-wasm`): ratio identical on all
-216 specs; no throughput regression (the few flags were thermal-tail noise on the
-fastest codecs, gone on a fresh lz4 re-measure); 29/29 wasm tests pass. #1–#3 are
-perf-neutral as predicted.
+216 specs; no throughput regression (#1–#3 flags were thermal-tail noise on the
+fastest codecs, gone on a fresh re-measure; brotli EARLY measured +6.8% C / +7.9% D
+median, ratio unchanged); 29/29 wasm tests pass. All changes perf-neutral.
 
-Current (after #1–#3 — was ~1.69 MB):
+Current (after #1–#3 + #6 — was ~1.69 MB):
 
 ┌────────┬─────────┬─────────┐
 │ module │  before │  after  │
@@ -48,7 +49,7 @@ Current (after #1–#3 — was ~1.69 MB):
 ├────────┼─────────┼─────────┤
 │ zstd   │  535 KB │  406 KB │  −24%
 ├────────┼─────────┼─────────┤
-│ brotli │  714 KB │  712 KB │
+│ brotli │  714 KB │  471 KB │  −34%
 ├────────┼─────────┼─────────┤
-│ total  │ 1.69 MB │ 1.49 MB │  −9%
+│ total  │ 1.69 MB │ 1.26 MB │  −25%
 └────────┴─────────┴─────────┘
