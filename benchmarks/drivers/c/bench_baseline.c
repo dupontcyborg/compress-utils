@@ -241,15 +241,333 @@ static int xz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     return 0;
 }
 
+/* ---- streaming --------------------------------------------------------------
+ * Feed input in `chunk`-sized pieces through each library's native streaming
+ * API, writing all output into the (bound-sized) `out` buffer. Mirrors the
+ * cu_*_stream_* paths so a cu-vs-native stream comparison is apples-to-apples.
+ * Streaming doesn't know the total size up front, so frames omit content size
+ * (which can make the stream ratio differ slightly from one-shot — expected).
+ */
+
+/* zstd */
+static int z_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                     uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    ZSTD_CCtx* z = ZSTD_createCCtx();
+    if (!z) { *err = "ZSTD_createCCtx"; return 1; }
+    ZSTD_CCtx_setParameter(z, ZSTD_c_compressionLevel, zstd_level(level));
+    ZSTD_outBuffer ob = {out, *out_len, 0};
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        ZSTD_inBuffer ib = {in + off, n, 0};
+        while (ib.pos < ib.size) {
+            size_t r = ZSTD_compressStream2(z, &ob, &ib, ZSTD_e_continue);
+            if (ZSTD_isError(r)) { *err = ZSTD_getErrorName(r); rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        ZSTD_inBuffer ib = {NULL, 0, 0};
+        size_t rem;
+        do {
+            rem = ZSTD_compressStream2(z, &ob, &ib, ZSTD_e_end);
+            if (ZSTD_isError(rem)) { *err = ZSTD_getErrorName(rem); rc = 1; break; }
+        } while (rem != 0);
+    }
+    ZSTD_freeCCtx(z);
+    if (!rc) *out_len = ob.pos;
+    return rc;
+}
+
+static int z_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                     uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    ZSTD_DCtx* z = ZSTD_createDCtx();
+    if (!z) { *err = "ZSTD_createDCtx"; return 1; }
+    ZSTD_outBuffer ob = {out, *out_len, 0};
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        ZSTD_inBuffer ib = {in + off, n, 0};
+        while (ib.pos < ib.size) {
+            size_t r = ZSTD_decompressStream(z, &ob, &ib);
+            if (ZSTD_isError(r)) { *err = ZSTD_getErrorName(r); rc = 1; break; }
+        }
+    }
+    ZSTD_freeDCtx(z);
+    if (!rc) *out_len = ob.pos;
+    return rc;
+}
+
+/* brotli */
+static int br_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    BrotliEncoderState* e = BrotliEncoderCreateInstance(NULL, NULL, NULL);
+    if (!e) { *err = "BrotliEncoderCreateInstance"; return 1; }
+    BrotliEncoderSetParameter(e, BROTLI_PARAM_QUALITY, brotli_level(level));
+    BrotliEncoderSetParameter(e, BROTLI_PARAM_LGWIN, BROTLI_DEFAULT_WINDOW);
+    size_t cap = *out_len, avail_out = cap;
+    uint8_t* next_out = out;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t avail_in = in_len - off < chunk ? in_len - off : chunk;
+        const uint8_t* next_in = in + off;
+        while (avail_in > 0) {
+            if (!BrotliEncoderCompressStream(e, BROTLI_OPERATION_PROCESS, &avail_in, &next_in,
+                                             &avail_out, &next_out, NULL)) {
+                *err = "brotli process"; rc = 1; break;
+            }
+        }
+    }
+    if (!rc) {
+        size_t avail_in = 0;
+        const uint8_t* next_in = NULL;
+        while (!BrotliEncoderIsFinished(e)) {
+            if (!BrotliEncoderCompressStream(e, BROTLI_OPERATION_FINISH, &avail_in, &next_in,
+                                             &avail_out, &next_out, NULL)) {
+                *err = "brotli finish"; rc = 1; break;
+            }
+        }
+    }
+    BrotliEncoderDestroyInstance(e);
+    if (!rc) *out_len = cap - avail_out;
+    return rc;
+}
+
+static int br_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    BrotliDecoderState* dec = BrotliDecoderCreateInstance(NULL, NULL, NULL);
+    if (!dec) { *err = "BrotliDecoderCreateInstance"; return 1; }
+    size_t cap = *out_len, avail_out = cap;
+    uint8_t* next_out = out;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t avail_in = in_len - off < chunk ? in_len - off : chunk;
+        const uint8_t* next_in = in + off;
+        for (;;) {
+            BrotliDecoderResult r = BrotliDecoderDecompressStream(
+                dec, &avail_in, &next_in, &avail_out, &next_out, NULL);
+            if (r == BROTLI_DECODER_RESULT_SUCCESS) { done = 1; break; }
+            if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) break;
+            *err = "brotli decode"; rc = 1; break;
+        }
+    }
+    BrotliDecoderDestroyInstance(dec);
+    if (!rc) *out_len = cap - avail_out;
+    return rc;
+}
+
+/* zlib */
+static int zl_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    z_stream s; memset(&s, 0, sizeof(s));
+    if (deflateInit(&s, clamp_level(level, 1, 9)) != Z_OK) { *err = "deflateInit"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = out; s.avail_out = (uInt)cap;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (Bytef*)(uintptr_t)(in + off); s.avail_in = (uInt)n;
+        while (s.avail_in > 0) {
+            if (deflate(&s, Z_NO_FLUSH) != Z_OK) { *err = "deflate"; rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        int r;
+        do { r = deflate(&s, Z_FINISH); } while (r == Z_OK);
+        if (r != Z_STREAM_END) { *err = "deflate finish"; rc = 1; }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    deflateEnd(&s);
+    return rc;
+}
+
+static int zl_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    z_stream s; memset(&s, 0, sizeof(s));
+    if (inflateInit(&s) != Z_OK) { *err = "inflateInit"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = out; s.avail_out = (uInt)cap;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (Bytef*)(uintptr_t)(in + off); s.avail_in = (uInt)n;
+        while (s.avail_in > 0) {
+            int r = inflate(&s, Z_NO_FLUSH);
+            if (r == Z_STREAM_END) { done = 1; break; }
+            if (r != Z_OK) { *err = "inflate"; rc = 1; break; }
+        }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    inflateEnd(&s);
+    return rc;
+}
+
+/* bz2 */
+static int bz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    bz_stream s; memset(&s, 0, sizeof(s));
+    if (BZ2_bzCompressInit(&s, clamp_level(level, 1, 9), 0, 0) != BZ_OK) {
+        *err = "bzCompressInit"; return 1;
+    }
+    size_t cap = *out_len;
+    s.next_out = (char*)out; s.avail_out = (unsigned int)cap;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (char*)(uintptr_t)(in + off); s.avail_in = (unsigned int)n;
+        while (s.avail_in > 0) {
+            if (BZ2_bzCompress(&s, BZ_RUN) != BZ_RUN_OK) { *err = "bzCompress"; rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        int r;
+        do { r = BZ2_bzCompress(&s, BZ_FINISH); } while (r == BZ_FINISH_OK);
+        if (r != BZ_STREAM_END) { *err = "bz finish"; rc = 1; }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    BZ2_bzCompressEnd(&s);
+    return rc;
+}
+
+static int bz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    bz_stream s; memset(&s, 0, sizeof(s));
+    if (BZ2_bzDecompressInit(&s, 0, 0) != BZ_OK) { *err = "bzDecompressInit"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = (char*)out; s.avail_out = (unsigned int)cap;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (char*)(uintptr_t)(in + off); s.avail_in = (unsigned int)n;
+        while (s.avail_in > 0) {
+            int r = BZ2_bzDecompress(&s);
+            if (r == BZ_STREAM_END) { done = 1; break; }
+            if (r != BZ_OK) { *err = "bzDecompress"; rc = 1; break; }
+        }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    BZ2_bzDecompressEnd(&s);
+    return rc;
+}
+
+/* lz4 (frame) */
+static int l4_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    LZ4F_cctx* cc = NULL;
+    if (LZ4F_isError(LZ4F_createCompressionContext(&cc, LZ4F_VERSION))) {
+        *err = "lz4 cctx"; return 1;
+    }
+    LZ4F_preferences_t p;
+    lz4_prefs(&p, level, 0);  /* streaming: content size unknown */
+    size_t cap = *out_len, pos = 0;
+    int rc = 0;
+    size_t r = LZ4F_compressBegin(cc, out, cap, &p);
+    if (LZ4F_isError(r)) { *err = LZ4F_getErrorName(r); rc = 1; } else { pos = r; }
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        r = LZ4F_compressUpdate(cc, out + pos, cap - pos, in + off, n, NULL);
+        if (LZ4F_isError(r)) { *err = LZ4F_getErrorName(r); rc = 1; break; }
+        pos += r;
+    }
+    if (!rc) {
+        r = LZ4F_compressEnd(cc, out + pos, cap - pos, NULL);
+        if (LZ4F_isError(r)) { *err = LZ4F_getErrorName(r); rc = 1; } else { pos += r; }
+    }
+    LZ4F_freeCompressionContext(cc);
+    if (!rc) *out_len = pos;
+    return rc;
+}
+
+static int l4_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    LZ4F_dctx* d = NULL;
+    if (LZ4F_isError(LZ4F_createDecompressionContext(&d, LZ4F_VERSION))) {
+        *err = "lz4 dctx"; return 1;
+    }
+    size_t cap = *out_len, opos = 0, ipos = 0;
+    int rc = 0;
+    while (ipos < in_len) {
+        size_t src = in_len - ipos < chunk ? in_len - ipos : chunk;
+        size_t dst = cap - opos;
+        size_t hint = LZ4F_decompress(d, out + opos, &dst, in + ipos, &src, NULL);
+        if (LZ4F_isError(hint)) { *err = LZ4F_getErrorName(hint); rc = 1; break; }
+        opos += dst; ipos += src;
+        if (hint == 0) break;  /* frame complete */
+        if (src == 0 && dst == 0) { *err = "lz4 stalled"; rc = 1; break; }
+    }
+    LZ4F_freeDecompressionContext(d);
+    if (!rc) *out_len = opos;
+    return rc;
+}
+
+/* xz */
+static int xz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    lzma_stream s = LZMA_STREAM_INIT;
+    if (lzma_easy_encoder(&s, (uint32_t)clamp_level(level - 1, 0, 9), LZMA_CHECK_CRC64) != LZMA_OK) {
+        *err = "lzma encoder"; return 1;
+    }
+    size_t cap = *out_len;
+    s.next_out = out; s.avail_out = cap;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = in + off; s.avail_in = n;
+        while (s.avail_in > 0) {
+            if (lzma_code(&s, LZMA_RUN) != LZMA_OK) { *err = "lzma run"; rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        lzma_ret r;
+        do { r = lzma_code(&s, LZMA_FINISH); } while (r == LZMA_OK);
+        if (r != LZMA_STREAM_END) { *err = "lzma finish"; rc = 1; }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    lzma_end(&s);
+    return rc;
+}
+
+static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                      uint8_t* out, size_t* out_len, size_t chunk, const char** err) {
+    (void)c; if (chunk == 0) chunk = 64 * 1024;
+    lzma_stream s = LZMA_STREAM_INIT;
+    if (lzma_stream_decoder(&s, UINT64_MAX, 0) != LZMA_OK) { *err = "lzma decoder"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = out; s.avail_out = cap;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = in + off; s.avail_in = n;
+        while (s.avail_in > 0) {
+            lzma_ret r = lzma_code(&s, LZMA_RUN);
+            if (r == LZMA_STREAM_END) { done = 1; break; }
+            if (r != LZMA_OK) { *err = "lzma decode"; rc = 1; break; }
+        }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    lzma_end(&s);
+    return rc;
+}
+
 /* ---- registry ------------------------------------------------------------ */
 
 static const bench_codec_t CODECS[] = {
-    {"zstd", "libzstd", 0, z_bound, z_compress, z_decompress},
-    {"brotli", "libbrotli", 0, br_bound, br_compress, br_decompress},
-    {"zlib", "zlib", 0, zl_bound, zl_compress, zl_decompress},
-    {"bz2", "libbz2", 0, bz_bound, bz_compress, bz_decompress},
-    {"lz4", "liblz4", 0, l4_bound, l4_compress, l4_decompress},
-    {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress},
+    {"zstd", "libzstd", 0, z_bound, z_compress, z_decompress, z_cstream, z_dstream},
+    {"brotli", "libbrotli", 0, br_bound, br_compress, br_decompress, br_cstream, br_dstream},
+    {"zlib", "zlib", 0, zl_bound, zl_compress, zl_decompress, zl_cstream, zl_dstream},
+    {"bz2", "libbz2", 0, bz_bound, bz_compress, bz_decompress, bz_cstream, bz_dstream},
+    {"lz4", "liblz4", 0, l4_bound, l4_compress, l4_decompress, l4_cstream, l4_dstream},
+    {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream},
 };
 static const size_t N_CODECS = sizeof(CODECS) / sizeof(CODECS[0]);
 

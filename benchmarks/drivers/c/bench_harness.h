@@ -13,8 +13,8 @@
  * the native baseline for the same (lang, algo).
  *
  * Modes: each job runs in one-shot or streaming mode. A codec may leave its
- * *_stream pointers NULL (e.g. the native baseline before its streaming
- * support lands); stream-mode jobs for such codecs are skipped, not failed.
+ * *_stream pointers NULL; stream-mode jobs for such codecs are skipped (a skip
+ * marker keeps the runner's line-synchronous protocol in step), not failed.
  *
  * Header-only: each driver is a single translation unit that includes this and
  * provides main(). Timing wraps only the compress / decompress calls.

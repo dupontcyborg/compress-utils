@@ -12,9 +12,9 @@ and algorithm. Three jobs:
    (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
-Status: **C driver + C baseline implemented**, both one-shot; streaming
-implemented for the compress-utils driver. Corpora: `smoke` (synthetic),
-`silesia`, `enwik8`. Other languages follow the same protocol.
+Status: **C driver + C baseline implemented**, both one-shot and streaming.
+Corpora: `smoke` (synthetic), `silesia`, `enwik8`. Other languages follow the
+same protocol.
 
 ## Quick start
 
@@ -163,8 +163,10 @@ Each result object carries raw measurements; the runner enriches with derived
 input in `chunk`-sized pieces through the `cu_*_stream_*` drain protocol and
 times the whole operation. Streaming and one-shot can produce slightly
 different output for the same level (different framing), so they're tracked as
-distinct series. The native baseline driver currently implements one-shot only;
-its `stream` jobs are skipped until native streaming lands.
+distinct series. Both the compress-utils driver and the native baseline
+implement streaming (the baseline mirrors each library's native streaming API
+— `ZSTD_compressStream2`, `deflate`, `BrotliEncoderCompressStream`, etc.), so
+stream mode gets a full cu-vs-native overlay.
 
 ## Adding a language driver
 
