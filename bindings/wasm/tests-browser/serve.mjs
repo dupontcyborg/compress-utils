@@ -116,6 +116,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const requestedPath = path.normalize(p).replace(/^([/\\])+/, "");
+    if (
+        path.isAbsolute(requestedPath) ||
+        requestedPath.split(/[\\/]+/).includes("..")
+    ) {
+        res.writeHead(403).end("forbidden");
+        return;
+    }
     const file = path.resolve(OUT_REAL, requestedPath);
 
     let realFile;
