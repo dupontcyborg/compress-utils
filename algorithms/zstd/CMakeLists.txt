@@ -66,9 +66,17 @@ ExternalProject_Add(
         -DCMAKE_TOOLCHAIN_FILE=${_CU_TOOLCHAIN_ABS}
         -DZSTD_BUILD_STATIC=ON
         -DZSTD_BUILD_SHARED=OFF
-        -DZSTD_BUILD_PROGRAMS=OFF  
-        -DZSTD_BUILD_TESTS=OFF     
+        -DZSTD_BUILD_PROGRAMS=OFF
+        -DZSTD_BUILD_TESTS=OFF
         -DZSTD_BUILD_CONTRIB=OFF
+        # Size: drop features our binding never touches. LEGACY_SUPPORT decodes
+        # pre-v0.8 frames (we never emit or read them); DICTBUILDER is the ZDICT
+        # training API (we expose no dictionary surface — see src/algorithms/
+        # zstd/). Both are dead code for our paths, so removing them is
+        # perf-neutral. (ZSTD_LIB_MINIFY is intentionally NOT set here — it
+        # trades decode speed for size and belongs behind the benchmark gate.)
+        -DZSTD_LEGACY_SUPPORT=OFF
+        -DZSTD_BUILD_DICTBUILDER=OFF
     SOURCE_SUBDIR build/cmake
     BUILD_IN_SOURCE 0
     UPDATE_DISCONNECTED 1

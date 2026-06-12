@@ -100,6 +100,29 @@ if(CU_WASM_ALGO STREQUAL "xz")
     target_compile_definitions(${CU_WASM_ALGO} PRIVATE LZMA_API_STATIC)
 endif()
 
+# --- Export allow-list ------------------------------------------------------
+# The toolchain dropped `-Wl,--export-dynamic`, so by default nothing but the
+# reactor `_initialize` + `memory` is exported and wasm-ld GCs everything the
+# module doesn't reference. Re-surface exactly the symbols the JS loader calls
+# (see bindings/wasm/src/core/loader.ts WasmExports) — the cu_* ABI plus the
+# cu_alloc/cu_free allocator shims. Everything else (the upstream codecs' full
+# public API, our unused cu_algorithm_name/cu_clear_last_error) stays internal
+# and gets dead-stripped. Each --export= name is also a GC root, so listing a
+# symbol both keeps it and exports it.
+set(_CU_WASM_EXPORTS
+    cu_alloc cu_free
+    cu_version cu_algorithm_available cu_last_error cu_strerror
+    cu_compress_bound cu_compress cu_decompress cu_decompress_size_hint
+    cu_set_max_decompressed_size
+    cu_compress_stream_create cu_compress_stream_write
+    cu_compress_stream_finish cu_compress_stream_destroy
+    cu_decompress_stream_create cu_decompress_stream_write
+    cu_decompress_stream_finish cu_decompress_stream_destroy
+)
+foreach(_sym IN LISTS _CU_WASM_EXPORTS)
+    target_link_options(${CU_WASM_ALGO} PRIVATE "-Wl,--export=${_sym}")
+endforeach()
+
 if(CU_WASM_ALGO STREQUAL "brotli")
     # Brotli ships as three archives, not one.
     target_link_libraries(${CU_WASM_ALGO} PRIVATE brotlienc brotlidec brotlicommon)
@@ -138,8 +161,13 @@ else()
     message(WARNING "wasm-strip not found; .wasm will retain debug info (~3x larger)")
 endif()
 if(WASM_OPT)
+    # -Oz (optimize for size) rather than -O3: with the export allow-list in
+    # place, wasm-ld GC leaves a pile of now-unreferenced codec functions that
+    # only this final pass can DCE. -Oz's DCE is identical to -O3's; it just
+    # additionally prefers size over speed on the code that survives. Perf is
+    # validated against baseline-wasm via the benchmark suite.
     list(APPEND _CU_STAGE_CMDS
-        COMMAND ${WASM_OPT} -O3
+        COMMAND ${WASM_OPT} -Oz
             --enable-bulk-memory --enable-sign-ext
             --enable-nontrapping-float-to-int --enable-mutable-globals
             ${CU_WASM_OUT} -o ${CU_WASM_OUT}.opt
