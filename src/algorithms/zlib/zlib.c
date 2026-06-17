@@ -355,16 +355,21 @@ static void zlib_dstream_destroy(void* state) {
 
 const cu_algorithm_vtbl_t cu_zlib_vtbl = {
     .name                      = "zlib",
+    /* Direction split (#7): see zstd.c for the CU_OMIT_* rationale. */
+#ifndef CU_OMIT_COMPRESS
     .compress_bound            = zlib_compress_bound,
     .compress                  = zlib_compress,
-    .decompress                = zlib_decompress,
-    .decompress_size_hint      = zlib_decompress_size_hint,
     .compress_stream_create    = zlib_cstream_create,
     .compress_stream_write     = zlib_cstream_write,
     .compress_stream_finish    = zlib_cstream_finish,
     .compress_stream_destroy   = zlib_cstream_destroy,
+#endif
+#ifndef CU_OMIT_DECOMPRESS
+    .decompress                = zlib_decompress,
+    .decompress_size_hint      = zlib_decompress_size_hint,
     .decompress_stream_create  = zlib_dstream_create,
     .decompress_stream_write   = zlib_dstream_write,
     .decompress_stream_finish  = zlib_dstream_finish,
     .decompress_stream_destroy = zlib_dstream_destroy,
+#endif
 };

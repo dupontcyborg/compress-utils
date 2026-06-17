@@ -129,3 +129,31 @@ describe("per-algo .wasm size budgets", () => {
         });
     }
 });
+
+describe("direction-variant .wasm size budgets", () => {
+    // decompress-only / compress-only builds (CU_WASM_DIR). The decode budgets
+    // are the regression gate that matters most — if the encoder ever leaks
+    // back into a decode-only module (e.g. a codec vtable stops honoring
+    // CU_OMIT_COMPRESS), the size jumps obviously past these caps. ~10% over
+    // current; current decode KB: zstd 90, brotli 183, lz4 35, bz2 54, xz 81,
+    // zlib 49 — encode KB: zstd 346, brotli 431, lz4 96, bz2 65, xz 100, zlib 58.
+    const VARIANT_KB: Record<string, { decompress: number; compress: number }> = {
+        zstd: { decompress: 100, compress: 380 },
+        brotli: { decompress: 205, compress: 470 },
+        zlib: { decompress: 58, compress: 68 },
+        bz2: { decompress: 62, compress: 75 },
+        lz4: { decompress: 45, compress: 108 },
+        xz: { decompress: 92, compress: 112 },
+    };
+
+    for (const algo of ALL_ALGOS) {
+        for (const dir of ["decompress", "compress"] as const) {
+            const cap = VARIANT_KB[algo]![dir];
+            it(`${algo}/${dir}/${algo}.wasm ≤ ${cap} KB`, async () => {
+                const p = path.join(PKG_ROOT, `dist/algorithms/${algo}/${dir}/${algo}.wasm`);
+                const buf = await readFile(p);
+                expect(buf.byteLength / 1024).toBeLessThan(cap);
+            });
+        }
+    }
+});

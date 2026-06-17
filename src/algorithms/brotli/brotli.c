@@ -376,16 +376,21 @@ static void brotli_dstream_destroy(void* state) {
 
 const cu_algorithm_vtbl_t cu_brotli_vtbl = {
     .name                      = "brotli",
+    /* Direction split (#7): see zstd.c for the CU_OMIT_* rationale. */
+#ifndef CU_OMIT_COMPRESS
     .compress_bound            = brotli_compress_bound,
     .compress                  = brotli_compress,
-    .decompress                = brotli_decompress,
-    .decompress_size_hint      = brotli_decompress_size_hint,
     .compress_stream_create    = brotli_cstream_create,
     .compress_stream_write     = brotli_cstream_write,
     .compress_stream_finish    = brotli_cstream_finish,
     .compress_stream_destroy   = brotli_cstream_destroy,
+#endif
+#ifndef CU_OMIT_DECOMPRESS
+    .decompress                = brotli_decompress,
+    .decompress_size_hint      = brotli_decompress_size_hint,
     .decompress_stream_create  = brotli_dstream_create,
     .decompress_stream_write   = brotli_dstream_write,
     .decompress_stream_finish  = brotli_dstream_finish,
     .decompress_stream_destroy = brotli_dstream_destroy,
+#endif
 };

@@ -34,9 +34,15 @@ set(CU_WASM_ALGOS "${_CU_WASM_DEFAULT}" CACHE STRING
     "Which algorithms to build as .wasm modules (subset of: ${CU_WASM_ALGOS_ALL})")
 set(CU_WASM_BUILD_TYPE Release CACHE STRING
     "CMAKE_BUILD_TYPE for the wasm cross-compile (independent of the parent)")
+set(CU_WASM_DIR "both;decompress;compress" CACHE STRING
+    "Direction variants to build per algo (subset of: both compress decompress)")
 
 set(_CU_WASM_TOOLCHAIN ${CMAKE_SOURCE_DIR}/cmake/toolchains/zig-wasm.cmake)
 set(_CU_WASM_SRC ${CMAKE_SOURCE_DIR}/bindings/wasm)
+
+# CU_WASM_DIR is a list; CMAKE_ARGS treats ';' as its own element separator, so
+# re-encode with '|' and tell ExternalProject to split on that in the child.
+string(REPLACE ";" "|" _CU_WASM_DIR_ARG "${CU_WASM_DIR}")
 
 add_custom_target(compress_utils_wasm)
 
@@ -58,9 +64,11 @@ foreach(ALGO IN LISTS CU_WASM_ALGOS)
         BINARY_DIR       ${_PREFIX}/build
         INSTALL_COMMAND  ""
         CMAKE_GENERATOR  "${CMAKE_GENERATOR}"
+        LIST_SEPARATOR   "|"
         CMAKE_ARGS
             -DCMAKE_TOOLCHAIN_FILE=${_CU_WASM_TOOLCHAIN}
             -DCU_WASM_ALGO=${ALGO}
+            -DCU_WASM_DIR=${_CU_WASM_DIR_ARG}
             # Default wasm to Release even when the parent is Debug — DWARF
             # in .wasm balloons artifact size 6x and isn't useful in a
             # browser context. Override with -DCU_WASM_BUILD_TYPE=Debug.
