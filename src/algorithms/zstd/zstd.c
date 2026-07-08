@@ -517,18 +517,30 @@ static void zstd_dstream_destroy(void* state) {
  * Vtable
  * ============================================================================ */
 
+/*
+ * Direction split (WASM size opt #7): CU_OMIT_COMPRESS / CU_OMIT_DECOMPRESS
+ * leave the unused direction's vtable slots NULL. Those static functions then
+ * have no referrer, so LTO + wasm-ld GC drop them and their upstream codec
+ * closure (e.g. the whole zstd encoder for a decompress-only module). The vtbl
+ * struct layout is unchanged — compress_utils.c sees NULL and never dispatches
+ * there because that direction's cu_* entry points aren't exported either.
+ */
 const cu_algorithm_vtbl_t cu_zstd_vtbl = {
     .name                     = "zstd",
+#ifndef CU_OMIT_COMPRESS
     .compress_bound           = zstd_compress_bound,
     .compress                 = zstd_compress,
-    .decompress               = zstd_decompress,
-    .decompress_size_hint     = zstd_decompress_size_hint,
     .compress_stream_create   = zstd_cstream_create,
     .compress_stream_write    = zstd_cstream_write,
     .compress_stream_finish   = zstd_cstream_finish,
     .compress_stream_destroy  = zstd_cstream_destroy,
+#endif
+#ifndef CU_OMIT_DECOMPRESS
+    .decompress               = zstd_decompress,
+    .decompress_size_hint     = zstd_decompress_size_hint,
     .decompress_stream_create = zstd_dstream_create,
     .decompress_stream_write  = zstd_dstream_write,
     .decompress_stream_finish = zstd_dstream_finish,
     .decompress_stream_destroy = zstd_dstream_destroy,
+#endif
 };

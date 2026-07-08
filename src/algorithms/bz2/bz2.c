@@ -372,16 +372,21 @@ static void bz2_dstream_destroy(void* state) {
 
 const cu_algorithm_vtbl_t cu_bz2_vtbl = {
     .name                      = "bz2",
+    /* Direction split (#7): see zstd.c for the CU_OMIT_* rationale. */
+#ifndef CU_OMIT_COMPRESS
     .compress_bound            = bz2_compress_bound,
     .compress                  = bz2_compress,
-    .decompress                = bz2_decompress,
-    .decompress_size_hint      = bz2_decompress_size_hint,
     .compress_stream_create    = bz2_cstream_create,
     .compress_stream_write     = bz2_cstream_write,
     .compress_stream_finish    = bz2_cstream_finish,
     .compress_stream_destroy   = bz2_cstream_destroy,
+#endif
+#ifndef CU_OMIT_DECOMPRESS
+    .decompress                = bz2_decompress,
+    .decompress_size_hint      = bz2_decompress_size_hint,
     .decompress_stream_create  = bz2_dstream_create,
     .decompress_stream_write   = bz2_dstream_write,
     .decompress_stream_finish  = bz2_dstream_finish,
     .decompress_stream_destroy = bz2_dstream_destroy,
+#endif
 };

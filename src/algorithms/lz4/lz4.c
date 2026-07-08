@@ -515,16 +515,21 @@ static void lz4_dstream_destroy(void* state) {
 
 const cu_algorithm_vtbl_t cu_lz4_vtbl = {
     .name                      = "lz4",
+    /* Direction split (#7): see zstd.c for the CU_OMIT_* rationale. */
+#ifndef CU_OMIT_COMPRESS
     .compress_bound            = lz4_compress_bound,
     .compress                  = lz4_compress,
-    .decompress                = lz4_decompress,
-    .decompress_size_hint      = lz4_decompress_size_hint,
     .compress_stream_create    = lz4_cstream_create,
     .compress_stream_write     = lz4_cstream_write,
     .compress_stream_finish    = lz4_cstream_finish,
     .compress_stream_destroy   = lz4_cstream_destroy,
+#endif
+#ifndef CU_OMIT_DECOMPRESS
+    .decompress                = lz4_decompress,
+    .decompress_size_hint      = lz4_decompress_size_hint,
     .decompress_stream_create  = lz4_dstream_create,
     .decompress_stream_write   = lz4_dstream_write,
     .decompress_stream_finish  = lz4_dstream_finish,
     .decompress_stream_destroy = lz4_dstream_destroy,
+#endif
 };

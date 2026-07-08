@@ -104,15 +104,20 @@ describe("tree-shaking: per-algo subpath isolation", () => {
 });
 
 describe("per-algo .wasm size budgets", () => {
-    // These caps are generous — set so a regression is obvious without
-    // failing on routine codec drift. Tighten when we do the size pass.
+    // Tightened after the WASM size pass (docs/wasm-size.md #1–#3 + brotli
+    // EARLY static-init). Each cap is ~8–12% over the current artifact —
+    // enough headroom for routine codec drift, tight enough that a real
+    // regression trips it (e.g. --export-dynamic returning would blow zstd
+    // past 440; brotli falling back to BROTLI_STATIC_INIT=NONE jumps it to
+    // ~712, well past 520). Current sizes: zlib 78, bz2 92, xz 132, lz4 108,
+    // zstd 406, brotli 471 KB.
     const BUDGET_KB: Record<string, number> = {
-        zlib: 120,
-        bz2: 140,
-        xz: 200,
-        lz4: 200,
-        zstd: 700,
-        brotli: 850,
+        zlib: 88,
+        bz2: 102,
+        xz: 145,
+        lz4: 120,
+        zstd: 440,
+        brotli: 520,
     };
 
     for (const algo of ALL_ALGOS) {
@@ -122,5 +127,33 @@ describe("per-algo .wasm size budgets", () => {
             const kb = buf.byteLength / 1024;
             expect(kb).toBeLessThan(BUDGET_KB[algo]!);
         });
+    }
+});
+
+describe("direction-variant .wasm size budgets", () => {
+    // decompress-only / compress-only builds (CU_WASM_DIR). The decode budgets
+    // are the regression gate that matters most — if the encoder ever leaks
+    // back into a decode-only module (e.g. a codec vtable stops honoring
+    // CU_OMIT_COMPRESS), the size jumps obviously past these caps. ~10% over
+    // current; current decode KB: zstd 90, brotli 183, lz4 35, bz2 54, xz 81,
+    // zlib 49 — encode KB: zstd 346, brotli 431, lz4 96, bz2 65, xz 100, zlib 58.
+    const VARIANT_KB: Record<string, { decompress: number; compress: number }> = {
+        zstd: { decompress: 100, compress: 380 },
+        brotli: { decompress: 205, compress: 470 },
+        zlib: { decompress: 58, compress: 68 },
+        bz2: { decompress: 62, compress: 75 },
+        lz4: { decompress: 45, compress: 108 },
+        xz: { decompress: 92, compress: 112 },
+    };
+
+    for (const algo of ALL_ALGOS) {
+        for (const dir of ["decompress", "compress"] as const) {
+            const cap = VARIANT_KB[algo]![dir];
+            it(`${algo}/${dir}/${algo}.wasm ≤ ${cap} KB`, async () => {
+                const p = path.join(PKG_ROOT, `dist/algorithms/${algo}/${dir}/${algo}.wasm`);
+                const buf = await readFile(p);
+                expect(buf.byteLength / 1024).toBeLessThan(cap);
+            });
+        }
     }
 });

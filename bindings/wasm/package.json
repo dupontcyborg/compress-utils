@@ -35,11 +35,23 @@
   },
   "exports": {
     "./zstd": "./dist/algorithms/zstd/index.js",
+    "./zstd/decompress": "./dist/algorithms/zstd/decompress/index.js",
+    "./zstd/compress": "./dist/algorithms/zstd/compress/index.js",
     "./brotli": "./dist/algorithms/brotli/index.js",
+    "./brotli/decompress": "./dist/algorithms/brotli/decompress/index.js",
+    "./brotli/compress": "./dist/algorithms/brotli/compress/index.js",
     "./zlib": "./dist/algorithms/zlib/index.js",
+    "./zlib/decompress": "./dist/algorithms/zlib/decompress/index.js",
+    "./zlib/compress": "./dist/algorithms/zlib/compress/index.js",
     "./bz2": "./dist/algorithms/bz2/index.js",
+    "./bz2/decompress": "./dist/algorithms/bz2/decompress/index.js",
+    "./bz2/compress": "./dist/algorithms/bz2/compress/index.js",
     "./lz4": "./dist/algorithms/lz4/index.js",
-    "./xz": "./dist/algorithms/xz/index.js"
+    "./lz4/decompress": "./dist/algorithms/lz4/decompress/index.js",
+    "./lz4/compress": "./dist/algorithms/lz4/compress/index.js",
+    "./xz": "./dist/algorithms/xz/index.js",
+    "./xz/decompress": "./dist/algorithms/xz/decompress/index.js",
+    "./xz/compress": "./dist/algorithms/xz/compress/index.js"
   },
   "imports": {
     "#resolver": {
@@ -62,6 +74,7 @@
     "build": "npm run build:wasm && npm run build:ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:size": "vitest run tests/bundle.test.ts",
     "test:browser": "playwright test",
     "test:deno": "deno run --allow-read --allow-env tests-runtime/deno-smoke.ts",
     "test:bun": "bun test --bun tests/",

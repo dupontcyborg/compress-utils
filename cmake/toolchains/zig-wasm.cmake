@@ -29,12 +29,18 @@ set(CU_WASM_TARGET "wasm32-wasi")
 set(CMAKE_C_FLAGS_INIT          "-target ${CU_WASM_TARGET}")
 set(CMAKE_CXX_FLAGS_INIT        "-target ${CU_WASM_TARGET}")
 
-# Reactor model: module exports its API but doesn't expect a `main`.
-# --export-dynamic surfaces every default-visibility symbol; combined with
-# the hidden-by-default visibility CMake sets globally this becomes
-# "every CU_API symbol is exported."
+# Reactor model: module exports its API but doesn't expect a `main`. The
+# linker still synthesizes and exports `_initialize` (libc ctors) and the
+# `memory` in this mode, which is all the JS loader needs beyond our ABI.
+#
+# We deliberately do NOT pass `-Wl,--export-dynamic`. That flag roots every
+# default-visibility symbol as a wasm export, and the upstream codec archives
+# (libzstd.a, brotli, …) are built in their own CMake subprojects that don't
+# inherit our hidden-visibility preset — so their entire public API ends up
+# rooted, defeating wasm-ld GC and wasm-opt DCE. The explicit `--export=`
+# allow-list of the cu_* ABI lives in bindings/wasm/CMakeLists.txt instead.
 set(CMAKE_EXE_LINKER_FLAGS_INIT
-    "-target ${CU_WASM_TARGET} -mexec-model=reactor -Wl,--export-dynamic")
+    "-target ${CU_WASM_TARGET} -mexec-model=reactor")
 
 # WASI is a bare runtime — TRY_COMPILE can't link an executable that runs
 # anywhere, so use a static lib for the probe.
