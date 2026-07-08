@@ -92,6 +92,10 @@ jobs:
           npm install
           npm run build:ts
 
+      - name: Enforce .wasm size budgets
+        working-directory: bindings/wasm
+        run: npm run test:size
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

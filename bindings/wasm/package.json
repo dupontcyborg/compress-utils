@@ -74,6 +74,7 @@
     "build": "npm run build:wasm && npm run build:ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:size": "vitest run tests/bundle.test.ts",
     "test:browser": "playwright test",
     "test:deno": "deno run --allow-read --allow-env tests-runtime/deno-smoke.ts",
     "test:bun": "bun test --bun tests/",
