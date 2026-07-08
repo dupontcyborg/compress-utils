@@ -1,0 +1,34 @@
+{
+  "seed": 12648430,
+  "target_bytes": 1500000,
+  "datasets": [
+    {
+      "id": "text",
+      "file": "data/text.bin",
+      "bytes": 1500000,
+      "sha256": "06fd987a6ddf748e414cb44bf5e9aeadb6258bd9cbc811f219640a9228bac0f3",
+      "description": "Natural-language-like prose (highly compressible)"
+    },
+    {
+      "id": "json",
+      "file": "data/json.bin",
+      "bytes": 1500000,
+      "sha256": "308611bfb6b4b2f10db7c306b72fc86cedf191c9544a1ba875a0b46ec11506d2",
+      "description": "Structured JSON records (log/API shaped)"
+    },
+    {
+      "id": "binary",
+      "file": "data/binary.bin",
+      "bytes": 1500000,
+      "sha256": "3dfc71987113431a1feeb3d301e049a14c81bc91eb53bb7dc55fa10dc5804bfe",
+      "description": "Columnar binary: smooth + noisy numeric fields"
+    },
+    {
+      "id": "random",
+      "file": "data/random.bin",
+      "bytes": 1500000,
+      "sha256": "847ee767ba7a188ef621db4ac5a77706388b70ffffbc1e172472b144e46ff601",
+      "description": "Incompressible random bytes (already-compressed proxy)"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Generated/fetched corpus payloads. Synthetic is reproducible from
+# generate.py; fetched corpora are pinned by corpus/fetched.lock.json (tracked).
+corpus/data/
+corpus/cache/
+
+# Compiled drivers.
+drivers/c/bench
+drivers/c/bench_baseline
+
+# Run outputs. Commit baselines explicitly with `git add -f`.
+results/
