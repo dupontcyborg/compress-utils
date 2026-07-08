@@ -99,9 +99,11 @@ option(INCLUDE_ZLIB   "Include zlib compression algorithm"   ON)
 option(INCLUDE_BZ2    "Include bzip2 compression algorithm"  ON)
 option(INCLUDE_LZ4    "Include LZ4 compression algorithm"    ON)
 option(INCLUDE_XZ     "Include XZ/LZMA compression algorithm" ON)
+option(INCLUDE_SNAPPY "Include Snappy compression algorithm" ON)
 
 if(NOT INCLUDE_ZSTD AND NOT INCLUDE_BROTLI AND NOT INCLUDE_ZLIB
-        AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ)
+        AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ
+        AND NOT INCLUDE_SNAPPY)
     message(FATAL_ERROR "No algorithms included. Enable at least one INCLUDE_<ALGO>.")
 endif()
 
@@ -162,6 +164,24 @@ if(INCLUDE_XZ)
     list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/xz/xz.c)
     list(APPEND CU_TARGET_LIBS xz_library)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_XZ LZMA_API_STATIC)
+endif()
+if(INCLUDE_SNAPPY)
+    message(STATUS "Including Snappy")
+    add_subdirectory(algorithms/snappy)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/snappy/snappy.c)
+    list(APPEND CU_TARGET_LIBS snappy_library)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_SNAPPY)
+    # Snappy is C++; its static archive references the C++ runtime. Our
+    # library, tests, and fuzz targets link with the C driver, which does not
+    # pull in libstdc++/libc++ automatically — add it explicitly. MSVC embeds
+    # the dependency in the objects, so nothing extra is needed there.
+    if(NOT MSVC)
+        if(APPLE)
+            list(APPEND CU_TARGET_LIBS c++)
+        else()
+            list(APPEND CU_TARGET_LIBS stdc++)
+        endif()
+    endif()
 endif()
 
 # Platform link deps.
@@ -242,6 +262,9 @@ if(INCLUDE_LZ4)
 endif()
 if(INCLUDE_XZ)
     add_dependencies(compress_utils_obj xz_external xz_library)
+endif()
+if(INCLUDE_SNAPPY)
+    add_dependencies(compress_utils_obj snappy_external snappy_library)
 endif()
 
 ######### INSTALL #########

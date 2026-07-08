@@ -31,6 +31,9 @@ extern const cu_algorithm_vtbl_t cu_lz4_vtbl;
 #ifdef INCLUDE_XZ
 extern const cu_algorithm_vtbl_t cu_xz_vtbl;
 #endif
+#ifdef INCLUDE_SNAPPY
+extern const cu_algorithm_vtbl_t cu_snappy_vtbl;
+#endif
 
 const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
     switch (algo) {
@@ -52,6 +55,9 @@ const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
 #ifdef INCLUDE_XZ
         case CU_ALGO_XZ:     return &cu_xz_vtbl;
         case CU_ALGO_LZMA:   return &cu_xz_vtbl;  /* alias */
+#endif
+#ifdef INCLUDE_SNAPPY
+        case CU_ALGO_SNAPPY: return &cu_snappy_vtbl;
 #endif
         default:             return NULL;
     }
