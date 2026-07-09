@@ -1,7 +1,7 @@
 # compress-utils
 
 <p align="center">
-  <img src="https://img.shields.io/badge/algorithms-7-green?style=flat" alt="Algorithms"/>
+  <img src="https://img.shields.io/badge/algorithms-8-green?style=flat" alt="Algorithms"/>
   <img src="https://img.shields.io/badge/languages-5-yellow?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils" alt="Code Size"/>
 </p>
 
-A unified, high-performance interface for seven compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy** — exposed identically across multiple languages.
+A unified, high-performance interface for eight compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, gzip** — exposed identically across multiple languages.
 
 ```
                       ┌─────────────────────────────┐
@@ -20,11 +20,11 @@ A unified, high-performance interface for seven compression algorithms — **Zst
                                      │
                       ┌──────────────▼──────────────┐
                       │   compress-utils C ABI      │
-                      │  (one library, seven algos) │
+                      │  (one library, eight algos) │
                       └──────────────┬──────────────┘
                                      │
-            ┌───────┬───────┬───────┬┴──────┬───────┬───────┐
-          zstd   brotli   zlib     bz2     lz4     xz    snappy
+         ┌───────┬───────┬───────┬───┴───┬───────┬───────┬───────┐
+       zstd   brotli   zlib    gzip     bz2     lz4     xz    snappy
 ```
 
 The C library is the canonical surface. Every other binding is a thin shim — same allocation model, same error codes, same streaming protocol. Add a binding for any language that speaks C ABI; the work is mostly making the language's idioms (strings, exceptions, generators) feel natural on top of a uniform substrate.
@@ -48,7 +48,8 @@ For now each binding's README has its own installation + quickstart. A cross-cut
 |----------------------------------------------------|------------------------|---------------------------------|
 | [Zstandard](https://github.com/facebook/zstd)      | High speed, high ratio | ZSTD frame with content size    |
 | [Brotli](https://github.com/google/brotli)         | Web-optimized          | Raw Brotli stream               |
-| [zlib](https://github.com/madler/zlib)             | Ubiquitous (gzip-compatible) | zlib wrapper (RFC 1950)   |
+| [zlib](https://github.com/madler/zlib)             | Ubiquitous             | zlib wrapper (RFC 1950)         |
+| [gzip](https://www.gnu.org/software/gzip/)         | Ubiquitous (.gz files) | gzip stream (RFC 1952)          |
 | [bzip2](https://sourceware.org/bzip2)              | High ratio             | bzip2 stream                    |
 | [LZ4](https://github.com/lz4/lz4)                  | Highest speed          | LZ4 frame (interoperable with `lz4` CLI / `.lz4` files) |
 | [XZ / LZMA](https://github.com/tukaani-project/xz) | Highest ratio          | XZ stream with CRC64            |
@@ -77,7 +78,7 @@ powershell -File build.ps1  # Windows
 
 The default build produces:
 
-- `dist/c/lib/libcompress_utils.{dylib,so,dll}` — the shared C library, self-contained (all seven algorithms baked in).
+- `dist/c/lib/libcompress_utils.{dylib,so,dll}` — the shared C library, self-contained (all eight algorithms baked in).
 - `dist/c/include/compress_utils.h` — the public C header.
 - `dist/cpp/include/compress_utils.hpp` — the header-only C++ binding.
 - `bindings/python/compress_utils/` — the importable Python package, including auto-generated `.pyi` type stubs.

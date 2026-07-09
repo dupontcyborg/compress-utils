@@ -100,6 +100,7 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
 
 - [X] `brotli`
 - [X] `bzip2`
+- [X] `gzip`
 - [X] `lz4`
 - [X] `snappy` — raw Snappy block format; C++ upstream (google/snappy). Added 2026-07 across C/C++/Python/WASM + benchmarks + interop (vs python-snappy).
 - [X] `xz/lzma`
