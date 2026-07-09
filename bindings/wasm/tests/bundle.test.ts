@@ -22,7 +22,7 @@ import { writeFile, mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const ALL_ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"] as const;
+const ALL_ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"] as const;
 const PKG_ROOT = path.resolve(__dirname, "..");
 
 interface BundleResult {
@@ -58,6 +58,7 @@ async function bundleConsumer(consumerSrc: string): Promise<BundleResult> {
             "compress-utils/lz4": path.join(PKG_ROOT, "dist/algorithms/lz4/index.js"),
             "compress-utils/xz": path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
             "compress-utils/snappy": path.join(PKG_ROOT, "dist/algorithms/snappy/index.js"),
+            "compress-utils/gzip": path.join(PKG_ROOT, "dist/algorithms/gzip/index.js"),
         },
         logLevel: "silent",
     });
@@ -118,6 +119,7 @@ describe("per-algo .wasm size budgets", () => {
         xz: 145,
         lz4: 120,
         snappy: 60,
+        gzip: 90,
         zstd: 440,
         brotli: 520,
     };
@@ -147,6 +149,7 @@ describe("direction-variant .wasm size budgets", () => {
         lz4: { decompress: 45, compress: 108 },
         xz: { decompress: 92, compress: 112 },
         snappy: { decompress: 52, compress: 48 },
+        gzip: { decompress: 60, compress: 70 },
     };
 
     for (const algo of ALL_ALGOS) {

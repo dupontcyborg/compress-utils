@@ -14,7 +14,7 @@
 
 include(ExternalProject)
 
-set(CU_WASM_ALGOS_ALL zstd brotli zlib bz2 lz4 xz snappy)
+set(CU_WASM_ALGOS_ALL zstd brotli zlib bz2 lz4 xz snappy gzip)
 
 # Default the WASM algo set to whatever the parent CMake configure has
 # enabled via INCLUDE_<ALGO>. Users can still pin a smaller subset

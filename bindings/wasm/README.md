@@ -5,7 +5,7 @@
 [![types: built-in](https://img.shields.io/badge/types-built--in-blue.svg)](https://www.npmjs.com/package/compress-utils)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified WebAssembly bindings for seven compression algorithms: Brotli, bzip2, LZ4, XZ/LZMA, zlib, Zstandard, and Snappy. Same API for every algorithm, in every JavaScript runtime, with tree-shakeable imports so bundlers ship only what you use.
+Unified WebAssembly bindings for eight compression algorithms: Brotli, bzip2, LZ4, XZ/LZMA, zlib, Zstandard, Snappy, and gzip. Same API for every algorithm, in every JavaScript runtime, with tree-shakeable imports so bundlers ship only what you use.
 
 ## Installation
 
@@ -48,7 +48,7 @@ const compressed = await compress(input, { level: 9 });
 const restored   = await decompress(compressed);
 ```
 
-Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`. Identical surface across all seven. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm` — see [Bundle size](#bundle-size).
+Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`, `/gzip`. Identical surface across all eight. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm` — see [Bundle size](#bundle-size).
 
 ### Web Streams
 
@@ -85,6 +85,7 @@ If `using` isn't available in your toolchain, call `cs.destroy()` explicitly —
 | Zstandard | `compress-utils/zstd`    | ZSTD frame with content size               |
 | Brotli    | `compress-utils/brotli`  | raw Brotli stream                          |
 | Snappy    | `compress-utils/snappy`  | Raw Snappy block                           |
+| gzip      | `compress-utils/gzip`    | gzip stream (RFC 1952)                     |
 
 Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively. For per-module `.wasm` sizes (and the smaller decode-only / encode-only builds), see **[Bundle size](#bundle-size)**.
 
@@ -115,6 +116,7 @@ Comparison of the gzipped sizes:
 | xz     | 62K   | 43K    | 51K            |
 | zlib   | 33K   | 25K    | 26K             |
 | snappy | 36K   | 32K    | 28K             |
+| gzip   | 80K   | 52K    | 60K             |
 
 The `.wasm` is the bulk of what ships; the JS glue is a few KB, shared, and tree-shaken to the methods you import.
 
