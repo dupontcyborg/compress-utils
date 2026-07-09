@@ -1,337 +1,129 @@
-# Compress Utils - C++ API
+# compress-utils — C++ API
 
-`compress-utils` aims to simplify data compression by offering a unified interface for various algorithms and languages, while maintaining best-in-class performance. 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-These docs cover the C++ binding (not really a binding, per se, as the original library is written in C++).
+Unified C++ interface for seven compression algorithms — Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
 
-The API is simple and universal across all [available algorithms](/README.md#built-in-compression-algorithms). In C++, there are two flavors:
+The binding is a **header-only** RAII wrapper (`bindings/cpp/include/compress_utils.hpp`) over the C ABI in [`include/compress_utils.h`](../../include/compress_utils.h). There is no separate C++ library to build — include the header and link the C library. It requires **C++20** (for `std::span`).
 
-- [Object-Oriented (OOP)](#oop-api)
-- [Functional](#functional-api)
-
-## Table of Contents
+## Table of contents
 
 - [Installation](#installation)
-- [Available Algorithms](#available-algorithms)
-- [OOP API](#oop-api)
-    - [Setup](#setup)
-        - [Includes](#includes)
-        - [Selecting Algorithm](#selecting-algorithm)
-        - [Creating a Compressor Object](#creating-a-compressor-object)
-    - [Compression](#compression)
-        - [From a Vector](#from-a-vector)
-        - [From a Pointer](#from-a-pointer)
-    - [Decompression](#decompression)
-        - [From a Vector](#from-a-vector-1)
-        - [From a Pointer](#from-a-pointer-1)
-- [Functional API](#functional-api)
-    - [Setup](#setup-1)
-        - [Includes](#includes-1)
-        - [Selecting Algorithm](#selecting-algorithm-1)
-    - [Compression](#compression-1)
-        - [From a Vector](#from-a-vector-2)
-        - [From a Pointer](#from-a-pointer-2)
-    - [Decompression](#decompression-1)
-        - [From a Vector](#from-a-vector-3)
-        - [From a Pointer](#from-a-pointer-3)
+- [Quick start](#quick-start)
+- [Supported algorithms](#supported-algorithms)
 - [Streaming API](#streaming-api)
-    - [Compression Streaming](#compression-streaming)
-    - [Decompression Streaming](#decompression-streaming)
-        
+- [Introspection & limits](#introspection--limits)
+- [Error handling](#error-handling)
+
 ## Installation
 
-_TBD_
-## Available Algorithms
+Build the C library and consume this header. With CMake, link the interface target:
 
-The following compression algorithms are available (depending on your build configuration):
-
-- **brotli**
-- **lzma**
-- **xz**
-- **zlib**
-- **zstd**
-
-To check which algorithms are available in your installation, you check the `algorithms.hpp` header:
-
-```cpp
-/**
- * @brief Enum class that defines the available compression algorithms
- */
-enum class Algorithm {
-    BROTLI,
-    LZMA,
-    XZ,
-    ZLIB,
-    ZSTD
-};
+```cmake
+add_subdirectory(compress-utils)          # provides compress_utils + compress_utils_cpp
+target_link_libraries(your_app PRIVATE compress_utils_cpp)
 ```
 
-## OOP API
+`compress_utils_cpp` is an `INTERFACE` target: it adds the include path, links the
+`compress_utils` C library, and requires C++20. If you build outside CMake, add
+`bindings/cpp/include` and `include/` to your include path and link
+`-lcompress_utils`.
 
-### Setup
+## Quick start
 
-#### Includes
-
-To use the OOP API, include the main header:
-
-```cpp
-#include "compress_utils.hpp"
-```
-
-#### Selecting Algorithm
-
-Before constructing the `Compressor` class, you must select a compression algorithm from the `Algorithms` enum:
+Everything lives in namespace `cu` and is reached through a single header:
 
 ```cpp
-// Select algorithm
-compress_utils::Algorithm algorithm = compress_utils::Algorithms::ZSTD;
+#include <compress_utils.hpp>
+#include <span>
+#include <vector>
+
+std::vector<std::uint8_t> data = /* ... */;
+
+// One-shot. level is 1 (fastest) .. 10 (smallest); default 5.
+std::vector<std::uint8_t> compressed = cu::compress(cu::Algorithm::Zstd, data, 5);
+std::vector<std::uint8_t> restored   = cu::decompress(cu::Algorithm::Zstd, compressed);
 ```
 
-#### Creating a Compressor Object
-
-To create a `Compressor` object, simply pass the algorithm:
+`compress` / `decompress` take a `std::span<const std::uint8_t>`, so they bind to a
+`std::vector`, a C array, or a raw pointer + size without copying:
 
 ```cpp
-// Create Compressor object
-compress_utils::Compressor compressor(algorithm);
+std::span<const std::uint8_t> view(ptr, size);
+auto compressed = cu::compress(cu::Algorithm::Zstd, view);
 ```
 
-For conciseness, this can also be done inline with algorithm selection:
+## Supported algorithms
 
-```cpp
-// Create Compressor object
-compress_utils::Compressor compressor(compress_utils::Algorithms::ZSTD);
-```
+`cu::Algorithm` selects the codec. All expose the same 1–10 level scale (mapped to
+each codec's native range; codecs with no levels ignore it).
 
-### Compression
+| Algorithm | Enum                    | Wire format produced                                   |
+|-----------|-------------------------|--------------------------------------------------------|
+| Zstandard | `cu::Algorithm::Zstd`   | ZSTD frame with content size                            |
+| Brotli    | `cu::Algorithm::Brotli` | Raw Brotli stream                                       |
+| zlib      | `cu::Algorithm::Zlib`   | zlib wrapper (RFC 1950)                                 |
+| bzip2     | `cu::Algorithm::Bz2`    | bzip2 stream                                            |
+| LZ4       | `cu::Algorithm::Lz4`    | LZ4 frame (compatible with the `lz4` CLI / `.lz4`)      |
+| XZ/LZMA   | `cu::Algorithm::Xz`     | XZ stream with CRC64 (`cu::Algorithm::Lzma` is an alias)|
+| Snappy    | `cu::Algorithm::Snappy` | Raw Snappy block (interoperable with reference snappy)  |
 
-#### From a Vector
-
-To compress data from a `std::vector<uint8_t>` you can call `Compress()` via:
-
-```cpp
-// Compress data from a vector
-std::vector<uint8_t> compressed_data = compressor.Compress(data);
-```
-
-You can also set a compression level, between 1-10:
-
-```cpp
-// Compress data with a compression level (1-10)
-int level = 5;
-std::vector<uint8_t> compressed_data = compressor.Compress(data, level);
-```
-
-#### From a Pointer
-
-You can also compress data from a pointer & size integer, to avoid copying the original data if it's not in a `std::vector`:
-
-```cpp
-// Compress data from a pointer & size
-std::vector<uint8_t> compressed_data = compressor.Compress(data_ptr, data_size);
-```
-
-Similarly, you can also set a compression level:
-
-```cpp
-// Compress data from a pointer & size with a compression level (1-10)
-int level = 5;
-std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
-```
-
-### Decompression
-
-#### From a Vector
-
-To decompress data from a `std::vector<uint8_t>` you can call `Decompress()` via:
-
-```cpp
-// Decompress data
-std::vector<uint8_t> decompressed_data = compressor.Decompress(compressed_data);
-```
-
-#### From a Pointer
-
-Decompression is also available by passing a pointer and size:
-
-```cpp
-// Decompress data from a pointer & size
-std::vector<uint8_t> compressed_data = compressor.Decompress(data_ptr, data_size);
-```
-
-## Functional API
-
-### Setup
-
-#### Includes
-
-To use the functional API, include the functional header:
-
-```cpp
-#include "compress_utils_func.hpp"
-```
-
-#### Selecting Algorithm
-
-Before calling `Compress()` or `Decompress()`, you must select a compression algorithm from the `Algorithms` enum:
-
-```cpp
-// Select algorithm
-compress_utils::Algorithm algorithm = compress_utils::Algorithms::ZSTD;
-```
-
-### Compression
-
-#### From a Vector
-
-To compress data from a `std::vector<uint8_t>` you can call `Compress()` via:
-
-```cpp
-// Compress data from a vector
-std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm);
-```
-
-You can also set a compression level, between 1-10:
-
-```cpp
-// Compress data from a vector with a compression level (1-10)
-int level = 5;
-std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
-```
-
-#### From a Pointer
-
-You can also compress data from a pointer & size integer, to avoid copying the original data if it's not in a `std::vector`:
-
-```cpp
-// Compress data from a pointer & size
-std::vector<uint8_t> compressed_data = compress_utils::Compress(data_ptr, data_size, algorithm);
-```
-
-Similarly, you can also set a compression level:
-
-```cpp
-// Compress data from a pointer & size with a compression level (1-10)
-int level = 5;
-std::vector<uint8_t> compressed_data = compress_utils::Compress(data, algorithm, level);
-```
-
-### Decompression
-
-#### From a Vector
-
-To decompress data from a `std::vector<uint8_t>` you can call `Decompress()` via:
-
-```cpp
-// Decompress data from a vector
-std::vector<uint8_t> decompressed_data = compress_utils::Decompress(compressed_data, algorithm);
-```
-
-#### From a Pointer
-
-Decompression is also available by passing a pointer and size:
-
-```cpp
-// Decompress data from a pointer & size
-std::vector<uint8_t> compressed_data = compress_utils::Decompress(data_ptr, data_size, algorithm);
-```
+Use `cu::is_available(algo)` to check whether a codec was compiled into the build.
 
 ## Streaming API
 
-For processing large data in chunks or when data arrives incrementally (e.g., from a network stream or large file), use the streaming API. This is more memory-efficient than loading entire datasets at once.
-
-### Compression Streaming
-
-To use the streaming header, include:
-
-```cpp
-#include "compress_utils_stream.hpp"
-```
-
-#### Basic Usage
+For data that arrives incrementally or doesn't fit in memory, use the RAII stream
+classes. `write()` and `finish()` each return a `std::vector<std::uint8_t>` — the
+binding runs the C ABI's "fill buffer, drain" loop internally, so you never see
+`BUF_TOO_SMALL`.
 
 ```cpp
-// Create a compression stream
-compress_utils::Algorithm algorithm = compress_utils::Algorithm::ZSTD;
-int level = 3;  // Compression level: 1 (fastest) to 10 (smallest)
-compress_utils::CompressStream stream(algorithm, level);
-
-// Compress data in chunks
-std::vector<uint8_t> all_compressed_data;
-
-for (const auto& chunk : data_chunks) {
-    // Process each chunk
-    std::vector<uint8_t> compressed_chunk = stream.Compress(chunk);
-    all_compressed_data.insert(all_compressed_data.end(),
-                               compressed_chunk.begin(),
-                               compressed_chunk.end());
+// Compression
+cu::CompressStream cs(cu::Algorithm::Zstd, 5);   // level optional (default 5)
+std::vector<std::uint8_t> out;
+for (std::span<const std::uint8_t> chunk : chunks) {
+    auto piece = cs.write(chunk);
+    out.insert(out.end(), piece.begin(), piece.end());
 }
+auto tail = cs.finish();                          // flush — required
+out.insert(out.end(), tail.begin(), tail.end());
 
-// Finalize compression (important!)
-std::vector<uint8_t> final_chunk = stream.Finish();
-all_compressed_data.insert(all_compressed_data.end(),
-                           final_chunk.begin(),
-                           final_chunk.end());
+// Decompression
+cu::DecompressStream ds(cu::Algorithm::Zstd);
+auto body = ds.write(out);
+auto rest = ds.finish();
+body.insert(body.end(), rest.begin(), rest.end());
 ```
 
-#### Using std::span
+Notes:
+- Always call `finish()` to flush trailing data; `DecompressStream::finish()` also
+  verifies the input ended on a frame boundary (throws `cu::Error` with
+  `CU_ERR_TRUNCATED` otherwise).
+- Streams are movable but not copyable; they free their C handle on destruction.
+- Snappy's raw block format isn't incrementally codable, so its streams buffer the
+  whole input and encode on `finish()` — output stays byte-identical to the
+  one-shot path, but memory scales with input size.
+
+## Introspection & limits
 
 ```cpp
-// Compress from a span (no copy)
-std::span<const uint8_t> chunk_span(data_ptr, chunk_size);
-std::vector<uint8_t> compressed_chunk = stream.Compress(chunk_span);
+std::string v   = cu::version();                    // e.g. "0.7.1"
+bool        ok  = cu::is_available(cu::Algorithm::Zstd);
+std::string nm  = cu::algorithm_name(cu::Algorithm::Zstd);   // "zstd"
+
+// Bound one-shot decompression output (default 1 GiB; 0 = unbounded).
+cu::set_max_decompressed_size(256 * 1024 * 1024);
 ```
 
-#### Stream State
+## Error handling
+
+Every failure throws `cu::Error` (derived from `std::runtime_error`). It carries the
+underlying C status code via `.code()`:
 
 ```cpp
-// Check if stream has been finalized
-bool finished = stream.IsFinished();
-
-// Get the algorithm being used
-compress_utils::Algorithm algo = stream.GetAlgorithm();
-```
-
-### Decompression Streaming
-
-```cpp
-// Create a decompression stream
-compress_utils::DecompressStream stream(algorithm);
-
-// Decompress data in chunks
-std::vector<uint8_t> all_decompressed_data;
-
-for (const auto& compressed_chunk : compressed_chunks) {
-    std::vector<uint8_t> decompressed_chunk = stream.Decompress(compressed_chunk);
-    all_decompressed_data.insert(all_decompressed_data.end(),
-                                 decompressed_chunk.begin(),
-                                 decompressed_chunk.end());
+try {
+    auto restored = cu::decompress(cu::Algorithm::Zstd, maybe_corrupt);
+} catch (const cu::Error& e) {
+    std::fprintf(stderr, "decompress failed (%d): %s\n", e.code(), e.what());
 }
-
-// Finalize decompression (important!)
-std::vector<uint8_t> final_chunk = stream.Finish();
-all_decompressed_data.insert(all_decompressed_data.end(),
-                             final_chunk.begin(),
-                             final_chunk.end());
 ```
-
-#### Move Semantics
-
-Both `CompressStream` and `DecompressStream` support move semantics for efficient resource management:
-
-```cpp
-// Move constructor
-compress_utils::CompressStream stream1(algorithm, level);
-compress_utils::CompressStream stream2 = std::move(stream1);
-
-// Move assignment
-compress_utils::DecompressStream stream3(algorithm);
-stream3 = std::move(stream2);
-```
-
-**Key points about streaming:**
-- Always call `Finish()` when done to flush any remaining buffered data
-- After calling `Finish()`, calling `Compress()` or `Decompress()` will throw an exception
-- Use `IsFinished()` to check stream state
-- Streams are movable but not copyable
-- Ideal for processing files that don't fit in memory, network streams, or real-time data
