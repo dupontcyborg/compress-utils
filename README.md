@@ -57,6 +57,12 @@ For now each binding's README has its own installation + quickstart. A cross-cut
 
 All algorithms expose the same API surface and the same level scale (`1` fastest → `10` smallest). The library maps each user level to the algorithm's native range so you don't need to remember that ZSTD goes 1–22 and zlib goes 1–9.
 
+## Benchmarks
+
+![throughput by language and algorithm](benchmarks/assets/lang-comparison.png)
+
+Full methodology, per-corpus Pareto plots, and how to reproduce are in [benchmarks/README.md](benchmarks/README.md).
+
 ## Building
 
 ### Prerequisites

@@ -21,21 +21,22 @@ are not done yet — see TODO.md.
 
 ![throughput by language and algorithm](assets/lang-comparison.png)
 
-The same six codecs across the three language bindings, measured back-to-back in
+All eight codecs across the three language bindings, measured back-to-back in
 one interleaved run (Silesia-mini, level 6, one-shot). Compression **ratio is
-identical** across languages — only throughput differs:
+identical** across languages (within 0.5%) — only throughput differs:
 
 - **Python ≈ native C.** The binding is the C core via pybind11, so compress is
   ~1.0× and decompress ~1.0–1.4× (overhead only shows on the fastest decoders).
-- **WASM ~1.2–1.3× slower to compress, ~1.1–1.8× to decompress.** zstd decode is
-  the worst case (native SIMD tricks); lz4 decode is nearly free (memory-bound).
+- **WASM ~1.2–1.7× slower to compress, ~1.0–1.85× to decompress.** zstd/brotli
+  decode are the worst cases (native SIMD tricks); lz4 decode is nearly free
+  (memory-bound).
 
 Regenerate with `python3 benchmarks/plot_langs.py` after a 3-way run.
 
 ## Quick start
 
 ```sh
-./build.sh --release                 # produces dist/c/ + algorithms/dist/ (drivers link them)
+./build.sh --languages=c,cpp,python,wasm --cores=8   # Release by default; produces dist/ + packages the drivers link
 python3 benchmarks/runner.py         # runs the matrix, writes results/<…>.json
 python3 benchmarks/report.py         # prints a table + writes results/plots/*.png
 ```
