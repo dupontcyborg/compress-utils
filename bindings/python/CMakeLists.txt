@@ -62,16 +62,19 @@ execute_process(
     OUTPUT_QUIET ERROR_QUIET
 )
 if(_stubgen_check EQUAL 0)
+    # Best-effort via a helper script: it PREPENDS the binding dir to
+    # PYTHONPATH (rather than clobbering it) so stubgen stays importable under
+    # pip's build-isolation overlay, and it never fails the build — the
+    # committed .pyi is the source of truth. See run_stubgen.cmake.
     add_custom_command(TARGET ${PYTHON_MODULE_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PYTHONPATH=${PYTHON_BINDING_DIR}"
-            ${Python3_EXECUTABLE} -m pybind11_stubgen
-                compress_utils.compress_utils_py
-                -o ${CMAKE_CURRENT_BINARY_DIR}/stubgen_out
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_BINARY_DIR}/stubgen_out/compress_utils/compress_utils_py.pyi
-            ${PYTHON_PACKAGE_DIR}/compress_utils_py.pyi
-        COMMENT "Generating compress_utils_py.pyi via pybind11-stubgen"
+        COMMAND ${CMAKE_COMMAND}
+            -DPYEXE=${Python3_EXECUTABLE}
+            -DBINDING_DIR=${PYTHON_BINDING_DIR}
+            -DMODULE=compress_utils.compress_utils_py
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/stubgen_out
+            -DDEST=${PYTHON_PACKAGE_DIR}/compress_utils_py.pyi
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_stubgen.cmake
+        COMMENT "Generating compress_utils_py.pyi via pybind11-stubgen (best-effort)"
         VERBATIM
     )
 else()

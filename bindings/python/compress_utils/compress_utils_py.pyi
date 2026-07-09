@@ -3,7 +3,6 @@ Python bindings for compress-utils library (C-core).
 """
 from __future__ import annotations
 import typing
-import typing_extensions
 __all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'gzip', 'is_available', 'lz4', 'lzma', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
 class Algorithm:
     """
