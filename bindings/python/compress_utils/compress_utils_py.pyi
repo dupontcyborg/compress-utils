@@ -4,7 +4,7 @@ Python bindings for compress-utils library (C-core).
 from __future__ import annotations
 import typing
 import typing_extensions
-__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'is_available', 'lz4', 'lzma', 'set_max_decompressed_size', 'version', 'xz', 'zlib', 'zstd']
+__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'is_available', 'lz4', 'lzma', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
 class Algorithm:
     """
     Members:
@@ -22,12 +22,15 @@ class Algorithm:
       xz
     
       lzma
+    
+      snappy
     """
-    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>}
+    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>, 'snappy': <Algorithm.snappy: 7>}
     brotli: typing.ClassVar[Algorithm]  # value = <Algorithm.brotli: 1>
     bz2: typing.ClassVar[Algorithm]  # value = <Algorithm.bz2: 3>
     lz4: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4: 4>
     lzma: typing.ClassVar[Algorithm]  # value = <Algorithm.lzma: 6>
+    snappy: typing.ClassVar[Algorithm]  # value = <Algorithm.snappy: 7>
     xz: typing.ClassVar[Algorithm]  # value = <Algorithm.xz: 5>
     zlib: typing.ClassVar[Algorithm]  # value = <Algorithm.zlib: 2>
     zstd: typing.ClassVar[Algorithm]  # value = <Algorithm.zstd: 0>
@@ -97,6 +100,7 @@ brotli: Algorithm  # value = <Algorithm.brotli: 1>
 bz2: Algorithm  # value = <Algorithm.bz2: 3>
 lz4: Algorithm  # value = <Algorithm.lz4: 4>
 lzma: Algorithm  # value = <Algorithm.lzma: 6>
+snappy: Algorithm  # value = <Algorithm.snappy: 7>
 xz: Algorithm  # value = <Algorithm.xz: 5>
 zlib: Algorithm  # value = <Algorithm.zlib: 2>
 zstd: Algorithm  # value = <Algorithm.zstd: 0>

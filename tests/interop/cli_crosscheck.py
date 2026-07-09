@@ -29,6 +29,11 @@ run anywhere; it only fails on a genuine round-trip mismatch. Exit code:
 `zlib` has no entry: our zlib algorithm emits a raw RFC-1950 zlib stream,
 which no standard CLI reads (`gzip` is RFC-1952, a different container).
 That format is covered by the stdlib `zlib` channel in test_interop.py.
+
+`snappy` has no entry either: our snappy algorithm emits the raw Snappy
+block format, and there's no ubiquitous CLI that reads it (`snzip` and
+friends use the Snappy *framing* format, a different container). It's
+covered against the independent `python-snappy` library in test_interop.py.
 """
 
 import shutil

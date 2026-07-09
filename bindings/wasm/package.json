@@ -1,7 +1,7 @@
 {
   "name": "compress-utils",
   "version": "0.7.0",
-  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz - all tree-shakeable.",
+  "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz, snappy - all tree-shakeable.",
   "type": "module",
   "sideEffects": false,
   "repository": {
@@ -27,7 +27,8 @@
     "bzip2",
     "lz4",
     "xz",
-    "lzma"
+    "lzma",
+    "snappy"
   ],
   "publishConfig": {
     "access": "public",
@@ -51,7 +52,10 @@
     "./lz4/compress": "./dist/algorithms/lz4/compress/index.js",
     "./xz": "./dist/algorithms/xz/index.js",
     "./xz/decompress": "./dist/algorithms/xz/decompress/index.js",
-    "./xz/compress": "./dist/algorithms/xz/compress/index.js"
+    "./xz/compress": "./dist/algorithms/xz/compress/index.js",
+    "./snappy": "./dist/algorithms/snappy/index.js",
+    "./snappy/decompress": "./dist/algorithms/snappy/decompress/index.js",
+    "./snappy/compress": "./dist/algorithms/snappy/compress/index.js"
   },
   "imports": {
     "#resolver": {

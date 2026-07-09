@@ -4,8 +4,8 @@ Internal doc for contributors. Not published to npm (the user-facing `README.md`
 
 ## Status
 
-All six algorithms (`zstd`, `brotli`, `zlib`, `bz2`, `lz4`, `xz`) build
-end-to-end. CI runs the runtime matrix (Node 20 + 22, Bun, Deno) plus
+All seven algorithms (`zstd`, `brotli`, `zlib`, `bz2`, `lz4`, `xz`,
+`snappy`) build end-to-end. CI runs the runtime matrix (Node 20 + 22, Bun, Deno) plus
 Playwright (Chromium + Firefox + WebKit) on every PR that touches WASM
 paths, every push to `main`, and every `v*` tag.
 
@@ -13,6 +13,7 @@ Per-algo artifact sizes (post `wasm-strip` + `wasm-opt -O3`):
 
 | algo | size |
 |---|---|
+| snappy | 36 KB |
 | zlib | 80 KB |
 | bz2 | 95 KB |
 | xz | 135 KB |
@@ -112,8 +113,9 @@ call (codec internal allocations) — so we re-read
 
 ## Per-codec build quirks
 
-These are the fixes we paid for during the initial six-algo bring-up.
-Reference for the day we touch any of them again.
+These are the fixes we paid for during the initial six-algo bring-up
+(plus snappy, added later). Reference for the day we touch any of them
+again.
 
 - **brotli** — `BUILD_COMMAND` overridden to skip the `brotli` CLI
   target (uses `chown` / `setresuid`, not in WASI). Builds only
@@ -128,6 +130,13 @@ Reference for the day we touch any of them again.
   during `_initialize`.
 - **zstd** — install step copies `zstd_errors.h` alongside `zstd.h`
   (v1.5.7 needs it).
+- **snappy** — the only C++ codec, so the wasm project enables `CXX`
+  and the snappy target sets `LINKER_LANGUAGE CXX` (it links with the
+  C++ driver) so the zig toolchain pulls in `libc++` for `wasm32-wasi`.
+  Also: the raw Snappy block format isn't incrementally codable, so the
+  streaming API buffers the whole input and runs the one-shot codec on
+  `finish()` — memory scales with input size, unlike the
+  natively-streaming codecs.
 
 ## Why Zig (and not Emscripten)
 

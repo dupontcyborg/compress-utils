@@ -25,5 +25,6 @@ test("all six algorithms round-trip in browser", async ({ page }) => {
         bz2: "ok",
         lz4: "ok",
         xz: "ok",
+        snappy: "ok",
     });
 });

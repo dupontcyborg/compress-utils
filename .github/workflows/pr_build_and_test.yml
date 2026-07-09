@@ -29,9 +29,10 @@ jobs:
         python-version: "3.13"
 
     - name: Install Python Dependencies
-      # zstandard/brotli/lz4 are the canonical references for the interop
-      # suite (test_interop_py); without them those algorithms self-skip.
-      run: pip install pybind11 pytest zstandard brotli lz4
+      # zstandard/brotli/lz4/python-snappy are the canonical references for
+      # the interop suite (test_interop_py); without them those algorithms
+      # self-skip.
+      run: pip install pybind11 pytest zstandard brotli lz4 python-snappy
 
     - name: Install codec CLIs for interop cross-check (Linux)
       if: runner.os == 'Linux'

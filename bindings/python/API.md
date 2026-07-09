@@ -48,7 +48,10 @@ pip install compress_utils
 The following compression algorithms are available (depending on your build configuration):
 
 - **brotli**
+- **bz2**
+- **lz4**
 - **lzma**
+- **snappy**
 - **xz**
 - **zlib**
 - **zstd**
@@ -202,7 +205,10 @@ for alg in Algorithm:
 
 ```
 Algorithm.brotli
+Algorithm.bz2
+Algorithm.lz4
 Algorithm.lzma
+Algorithm.snappy
 Algorithm.xz
 Algorithm.zlib
 Algorithm.zstd

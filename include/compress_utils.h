@@ -80,7 +80,8 @@ typedef enum {
     CU_ALGO_BZ2    = 3,
     CU_ALGO_LZ4    = 4,
     CU_ALGO_XZ     = 5,
-    CU_ALGO_LZMA   = 6  /* alias for XZ; produces .xz frames */
+    CU_ALGO_LZMA   = 6, /* alias for XZ; produces .xz frames */
+    CU_ALGO_SNAPPY = 7
 } cu_algorithm_t;
 
 /*

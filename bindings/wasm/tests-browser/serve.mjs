@@ -28,10 +28,11 @@ import * as zlib   from "compress-utils/zlib";
 import * as bz2    from "compress-utils/bz2";
 import * as lz4    from "compress-utils/lz4";
 import * as xz     from "compress-utils/xz";
+import * as snappy from "compress-utils/snappy";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const algos = { zstd, brotli, zlib, bz2, lz4, xz };
+const algos = { zstd, brotli, zlib, bz2, lz4, xz, snappy };
 
 async function main() {
     const results = {};
@@ -70,6 +71,7 @@ await esbuild.build({
         "compress-utils/bz2":    path.join(PKG_ROOT, "dist/algorithms/bz2/index.js"),
         "compress-utils/lz4":    path.join(PKG_ROOT, "dist/algorithms/lz4/index.js"),
         "compress-utils/xz":     path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
+        "compress-utils/snappy": path.join(PKG_ROOT, "dist/algorithms/snappy/index.js"),
     },
     logLevel: "info",
 });
@@ -86,7 +88,7 @@ await writeFile(path.join(OUT, "index.html"), INDEX_HTML, "utf8");
 // pattern Vite/webpack5 understand natively); for this self-hosted test
 // just copy the .wasm files alongside the bundle so the runtime URL
 // resolves to a served file.
-for (const algo of ["zstd", "brotli", "zlib", "bz2", "lz4", "xz"]) {
+for (const algo of ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"]) {
     await copyFile(
         path.join(PKG_ROOT, `dist/algorithms/${algo}/${algo}.wasm`),
         path.join(OUT, `${algo}.wasm`),

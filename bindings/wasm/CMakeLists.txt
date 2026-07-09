@@ -19,7 +19,10 @@
 # built for wasm32-wasi alongside ours, once, and shared by all variants.
 
 cmake_minimum_required(VERSION 3.17)
-project(compress_utils_wasm C)
+# CXX is enabled because Snappy is a C++ codec; its wasm archive links the
+# libc++ that the zig toolchain ships for wasm32-wasi. The C-only algorithms
+# never touch the C++ compiler.
+project(compress_utils_wasm C CXX)
 
 if(NOT CU_WASM_TOOLCHAIN)
     message(FATAL_ERROR
@@ -28,9 +31,9 @@ if(NOT CU_WASM_TOOLCHAIN)
 endif()
 
 set(CU_WASM_ALGO "zstd" CACHE STRING
-    "Algorithm to compile into this .wasm (zstd|brotli|zlib|bz2|lz4|xz)")
+    "Algorithm to compile into this .wasm (zstd|brotli|zlib|bz2|lz4|xz|snappy)")
 
-set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz)
+set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz snappy)
 if(NOT CU_WASM_ALGO IN_LIST _CU_VALID_ALGOS)
     message(FATAL_ERROR
         "CU_WASM_ALGO='${CU_WASM_ALGO}' is not one of: ${_CU_VALID_ALGOS}")
@@ -178,6 +181,12 @@ function(cu_add_wasm_variant DIR)
     else()
         target_link_libraries(${_tgt} PRIVATE ${CU_WASM_ALGO}_library)
         add_dependencies(${_tgt} ${CU_WASM_ALGO}_external)
+    endif()
+
+    # Snappy is C++; link with the C++ driver so the zig toolchain pulls in
+    # libc++ for wasm32-wasi. The sources are C, so LTO stays coherent.
+    if(CU_WASM_ALGO STREQUAL "snappy")
+        set_target_properties(${_tgt} PROPERTIES LINKER_LANGUAGE CXX)
     endif()
 
     # Strip the .wasm suffix that CMake/WASI sets by default, then re-add it

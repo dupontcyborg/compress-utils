@@ -37,6 +37,7 @@
 static const cu_algorithm_t ALL_ALGOS[] = {
     CU_ALGO_ZSTD, CU_ALGO_BROTLI, CU_ALGO_ZLIB,
     CU_ALGO_BZ2,  CU_ALGO_LZ4,    CU_ALGO_XZ,
+    CU_ALGO_SNAPPY,
 };
 #define N_ALGOS (sizeof(ALL_ALGOS) / sizeof(ALL_ALGOS[0]))
 

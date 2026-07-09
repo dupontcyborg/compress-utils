@@ -24,6 +24,7 @@ const algos = [
     { name: "bz2", url: new URL("bz2/index.js", PKG) },
     { name: "lz4", url: new URL("lz4/index.js", PKG) },
     { name: "xz", url: new URL("xz/index.js", PKG) },
+    { name: "snappy", url: new URL("snappy/index.js", PKG) },
 ];
 
 const enc = new TextEncoder();

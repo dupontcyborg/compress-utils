@@ -17,7 +17,7 @@ endif()
 
 file(READ "${_CU_CODEC_MANIFEST}" _CU_CODEC_VERSIONS)
 
-foreach(_name zstd brotli zlib bz2 lz4 xz)
+foreach(_name zstd brotli zlib bz2 lz4 xz snappy)
     string(JSON _url ERROR_VARIABLE _err GET "${_CU_CODEC_VERSIONS}" ${_name} url)
     if(_err)
         message(FATAL_ERROR "codec-versions.json: missing '${_name}.url' (${_err})")
