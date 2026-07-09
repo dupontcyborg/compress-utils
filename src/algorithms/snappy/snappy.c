@@ -8,6 +8,15 @@
  * reference C++ snappy::Compress(). It is NOT the Snappy *framing* format
  * (the `.sz` stream format used by CLIs / streaming libraries).
  *
+ * Raw-block-only is a deliberate decision (2026-07-08): it's the format
+ * Snappy's ecosystem embeds (Parquet pages, Kafka messages, Cassandra, RPC),
+ * and it carries the uncompressed length so cu_decompress_size_hint works.
+ * The framing format is intentionally NOT supported here — libsnappy's C API
+ * is raw-block only, so framing would have to be hand-written (chunking +
+ * masked CRC-32C) and would be a *separate* codec (CU_ALGO_SNAPPY_FRAMED),
+ * not a mode of this one. It's a non-breaking addition if `.sz` interop is
+ * ever needed; see TODO.md (Algorithms) and docs/adding-an-algorithm.md.
+ *
  * Size hint: the raw block format leads with a varint of the uncompressed
  * length, so cu_decompress_size_hint always succeeds (via
  * snappy_uncompressed_length).

@@ -20,6 +20,7 @@ against an *independent* reference implementation:
     | bz2       | `bz2` (stdlib)             | yes (system libbz2)        |
     | lz4       | `lz4.frame` (PyPI)         | yes (own liblz4)           |
     | xz        | `lzma` (stdlib)            | yes (system liblzma)       |
+    | snappy    | `snappy` (python-snappy)   | yes (own libsnappy)        |
 
 For each (algorithm, payload) we assert:
     outbound: cu.compress(x)        -> canonical.decompress(...) == x
@@ -44,6 +45,7 @@ canonical decoder chosen here must match that format exactly:
   - bz2    : bzip2 stream                  -> bz2.decompress
   - lz4    : LZ4 frame (.lz4) w/ checksum  -> lz4.frame.decompress
   - xz     : .xz stream w/ CRC64           -> lzma.decompress (FORMAT_XZ default)
+  - snappy : raw Snappy block              -> snappy.decompress (NOT framed .sz)
 """
 
 import unittest
@@ -122,6 +124,17 @@ def _xz_ref():
     return (lzma.compress, lzma.decompress)
 
 
+def _snappy_ref():
+    try:
+        import snappy  # python-snappy
+    except ImportError:
+        return None
+    # Plain snappy.compress/decompress use the raw block format (a varint
+    # length prefix + the compressed stream) — the same format we emit.
+    # NOT snappy.framed / hadoop_snappy, which are stream-framing formats.
+    return (snappy.compress, snappy.decompress)
+
+
 REFERENCES = {
     "zstd":   _zstd_ref,
     "brotli": _brotli_ref,
@@ -129,6 +142,7 @@ REFERENCES = {
     "bz2":    _bz2_ref,
     "lz4":    _lz4_ref,
     "xz":     _xz_ref,
+    "snappy": _snappy_ref,
 }
 
 

@@ -45,6 +45,7 @@ static cu::Algorithm parse_algorithm(const py::object& obj) {
         if (s == "lz4")                        return cu::Algorithm::Lz4;
         if (s == "xz")                         return cu::Algorithm::Xz;
         if (s == "lzma")                       return cu::Algorithm::Lzma;
+        if (s == "snappy")                     return cu::Algorithm::Snappy;
         throw std::invalid_argument("Unknown algorithm: " + s);
     }
     /* Accept the Algorithm enum and bare int. */
@@ -79,6 +80,7 @@ PYBIND11_MODULE(compress_utils_py, m) {
         .value("lz4",    cu::Algorithm::Lz4)
         .value("xz",     cu::Algorithm::Xz)
         .value("lzma",   cu::Algorithm::Lzma)
+        .value("snappy", cu::Algorithm::Snappy)
         .export_values();
 
     m.def("version",      &cu::version);
