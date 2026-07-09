@@ -3,7 +3,7 @@
 # Surface preserved from the legacy binding:
 #   compress(data, algorithm, level=5)
 #   decompress(data, algorithm)
-#   Algorithm (enum with lowercase members: zstd, brotli, zlib, bz2, lz4, xz, lzma, snappy)
+#   Algorithm (enum with lowercase members: zstd, brotli, zlib, bz2, lz4, xz, lzma, snappy, gzip)
 #   CompressStream / DecompressStream
 #
 # Removed (was a smell — wrapper around free functions with no cached state):

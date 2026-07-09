@@ -21,6 +21,7 @@ against an *independent* reference implementation:
     | lz4       | `lz4.frame` (PyPI)         | yes (own liblz4)           |
     | xz        | `lzma` (stdlib)            | yes (system liblzma)       |
     | snappy    | `snappy` (python-snappy)   | yes (own libsnappy)        |
+    | gzip      | `gzip` (stdlib)            | yes (system zlib)          |
 
 For each (algorithm, payload) we assert:
     outbound: cu.compress(x)        -> canonical.decompress(...) == x
@@ -46,6 +47,7 @@ canonical decoder chosen here must match that format exactly:
   - lz4    : LZ4 frame (.lz4) w/ checksum  -> lz4.frame.decompress
   - xz     : .xz stream w/ CRC64           -> lzma.decompress (FORMAT_XZ default)
   - snappy : raw Snappy block              -> snappy.decompress (NOT framed .sz)
+  - gzip   : gzip stream (RFC 1952)        -> gzip.decompress (NOT raw zlib/RFC 1950)
 """
 
 import unittest
@@ -135,6 +137,13 @@ def _snappy_ref():
     return (snappy.compress, snappy.decompress)
 
 
+def _gzip_ref():
+    import gzip  # stdlib
+    # gzip.compress/decompress use the gzip container (RFC 1952) — the same
+    # format we emit — as opposed to zlib.compress (RFC 1950 wrapper).
+    return (gzip.compress, gzip.decompress)
+
+
 REFERENCES = {
     "zstd":   _zstd_ref,
     "brotli": _brotli_ref,
@@ -143,6 +152,7 @@ REFERENCES = {
     "lz4":    _lz4_ref,
     "xz":     _xz_ref,
     "snappy": _snappy_ref,
+    "gzip":   _gzip_ref,
 }
 
 

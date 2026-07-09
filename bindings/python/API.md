@@ -49,6 +49,7 @@ The following compression algorithms are available (depending on your build conf
 
 - **brotli**
 - **bz2**
+- **gzip**
 - **lz4**
 - **lzma**
 - **snappy**
@@ -206,6 +207,7 @@ for alg in Algorithm:
 ```
 Algorithm.brotli
 Algorithm.bz2
+Algorithm.gzip
 Algorithm.lz4
 Algorithm.lzma
 Algorithm.snappy

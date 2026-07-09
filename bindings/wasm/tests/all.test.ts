@@ -17,6 +17,7 @@ import * as bz2 from "compress-utils/bz2";
 import * as lz4 from "compress-utils/lz4";
 import * as xz from "compress-utils/xz";
 import * as snappy from "compress-utils/snappy";
+import * as gzip from "compress-utils/gzip";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -44,6 +45,7 @@ const algos: [string, AlgoModule][] = [
     ["lz4", lz4],
     ["xz", xz],
     ["snappy", snappy],
+    ["gzip", gzip],
 ];
 
 for (const [name, m] of algos) {

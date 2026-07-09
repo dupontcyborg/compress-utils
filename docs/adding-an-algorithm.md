@@ -96,6 +96,33 @@ the C driver, which won't pull in libstdc++/libc++ automatically:
   `LINKER_LANGUAGE CXX` on the target for this algo so the zig toolchain links
   libc++ for `wasm32-wasi`.
 
+### If the codec is a variant of an existing one (like gzip / zlib)
+
+Some "codecs" are the same underlying library in a different wire format — gzip
+is zlib's DEFLATE with the RFC 1952 wrapper (windowBits 31 vs 15). Don't fetch a
+second copy of the upstream or duplicate the implementation:
+
+- **Share the code.** Factor the common machinery into a header the two `.c`
+  files include, parameterized by the differing knob. gzip/zlib do this via
+  `src/algorithms/zlib/deflate_backend.h`: every streaming/drain function is
+  shared `static`, and each codec's `<algo>.c` supplies a few one-line wrappers
+  that bake in its windowBits plus a vtable. `gzip.c` includes it with
+  `#include "../zlib/deflate_backend.h"`.
+- **Share the upstream (native).** In the root `CMakeLists.txt`, build the
+  upstream once if *either* codec is enabled
+  (`if(INCLUDE_ZLIB OR INCLUDE_GZIP)`), link the shared imported library
+  (`zlib_library`) from both, and add the same `add_dependencies(...)`. The
+  variant contributes only its `.c` source + `INCLUDE_<ALGO>` define — no second
+  `add_subdirectory`, no second fetch.
+- **WASM still needs its own `algorithms/<algo>/CMakeLists.txt`.** The per-algo
+  wasm build configures one codec in isolation and links `${ALGO}_library`, so
+  the variant needs a CMakeLists that produces that target. It can reuse the
+  base codec's `<BASE>_URL` / `<BASE>_TAG` (see `algorithms/gzip/CMakeLists.txt`,
+  which fetches zlib via `ZLIB_URL`) — so it stays out of `codec-versions.json`.
+- **Don't double-count upstreams in docs.** A variant adds an *algorithm* but
+  not an *upstream library* — bump algorithm counts, leave
+  "N upstream libraries" / ACKNOWLEDGMENTS untouched.
+
 ## Step 2 — tests (C)
 
 - [ ] **`tests/test_compress_utils.c`** — add `CU_ALGO_<ALGO>` to `ALL_ALGOS`.

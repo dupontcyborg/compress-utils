@@ -31,9 +31,9 @@ if(NOT CU_WASM_TOOLCHAIN)
 endif()
 
 set(CU_WASM_ALGO "zstd" CACHE STRING
-    "Algorithm to compile into this .wasm (zstd|brotli|zlib|bz2|lz4|xz|snappy)")
+    "Algorithm to compile into this .wasm (zstd|brotli|zlib|bz2|lz4|xz|snappy|gzip)")
 
-set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz snappy)
+set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz snappy gzip)
 if(NOT CU_WASM_ALGO IN_LIST _CU_VALID_ALGOS)
     message(FATAL_ERROR
         "CU_WASM_ALGO='${CU_WASM_ALGO}' is not one of: ${_CU_VALID_ALGOS}")

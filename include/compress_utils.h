@@ -81,7 +81,8 @@ typedef enum {
     CU_ALGO_LZ4    = 4,
     CU_ALGO_XZ     = 5,
     CU_ALGO_LZMA   = 6, /* alias for XZ; produces .xz frames */
-    CU_ALGO_SNAPPY = 7
+    CU_ALGO_SNAPPY = 7,
+    CU_ALGO_GZIP   = 8  /* DEFLATE with the gzip wrapper (RFC 1952) */
 } cu_algorithm_t;
 
 /*

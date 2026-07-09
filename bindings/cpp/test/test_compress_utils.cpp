@@ -27,7 +27,7 @@
 static constexpr cu::Algorithm ALL[] = {
     cu::Algorithm::Zstd, cu::Algorithm::Brotli, cu::Algorithm::Zlib,
     cu::Algorithm::Bz2,  cu::Algorithm::Lz4,    cu::Algorithm::Xz,
-    cu::Algorithm::Snappy,
+    cu::Algorithm::Snappy, cu::Algorithm::Gzip,
 };
 
 static std::vector<std::uint8_t> sample(std::size_t n) {

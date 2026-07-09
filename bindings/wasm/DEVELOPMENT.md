@@ -4,8 +4,8 @@ Internal doc for contributors. Not published to npm (the user-facing `README.md`
 
 ## Status
 
-All seven algorithms (`zstd`, `brotli`, `zlib`, `bz2`, `lz4`, `xz`,
-`snappy`) build end-to-end. CI runs the runtime matrix (Node 20 + 22, Bun, Deno) plus
+All eight algorithms (`zstd`, `brotli`, `zlib`, `bz2`, `lz4`, `xz`,
+`snappy`, `gzip`) build end-to-end. CI runs the runtime matrix (Node 20 + 22, Bun, Deno) plus
 Playwright (Chromium + Firefox + WebKit) on every PR that touches WASM
 paths, every push to `main`, and every `v*` tag.
 
@@ -15,6 +15,7 @@ Per-algo artifact sizes (post `wasm-strip` + `wasm-opt -O3`):
 |---|---|
 | snappy | 36 KB |
 | zlib | 80 KB |
+| gzip | 80 KB |
 | bz2 | 95 KB |
 | xz | 135 KB |
 | lz4 | 140 KB |
@@ -137,6 +138,11 @@ again.
   streaming API buffers the whole input and runs the one-shot codec on
   `finish()` — memory scales with input size, unlike the
   natively-streaming codecs.
+- **gzip** — same libz as the `zlib` codec; the only difference is
+  `windowBits 31` to select the gzip (RFC 1952) wrapper instead of the
+  zlib (RFC 1950) one. It reuses the zlib upstream — its
+  `algorithms/gzip/CMakeLists.txt` fetches zlib for the isolated wasm
+  build, so the same `libzlibstatic.a` naming sniff (see **zlib**) applies.
 
 ## Why Zig (and not Emscripten)
 

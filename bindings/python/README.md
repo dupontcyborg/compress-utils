@@ -5,7 +5,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/compress-utils.svg)](https://pypi.org/project/compress-utils/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified Python interface for seven compression algorithms — Brotli, bzip2, LZ4, XZ/LZMA, zlib, Zstandard, and Snappy — backed by a single high-performance C library. Same API for every algorithm.
+Unified Python interface for eight compression algorithms — Brotli, bzip2, LZ4, XZ/LZMA, zlib, Zstandard, Snappy, and gzip — backed by a single high-performance C library. Same API for every algorithm.
 
 ## Installation
 
@@ -57,11 +57,12 @@ restored = ds.decompress(compressed) + ds.finish()
 |-----------|-------------------------|------------------------------------------------|
 | Zstandard | `"zstd"`                | Wire format: ZSTD frame with content size.     |
 | Brotli    | `"brotli"`              | Wire format: raw Brotli stream.                |
-| zlib      | `"zlib"` (also `"gzip"`) | Wire format: zlib wrapper (RFC 1950).         |
+| zlib      | `"zlib"`                | Wire format: zlib wrapper (RFC 1950).         |
 | bzip2     | `"bz2"` (also `"bzip2"`) | bzip2 stream.                                  |
 | LZ4       | `"lz4"`                 | LZ4 **frame** format (compatible with `lz4` CLI / `.lz4` files). |
 | XZ/LZMA   | `"xz"` (also `"lzma"`)  | XZ stream with CRC64.                          |
 | Snappy    | `"snappy"`              | Raw Snappy block format.                       |
+| gzip      | `"gzip"`                | gzip stream (RFC 1952; .gz files, `gzip` CLI). |
 
 `cu.is_available(name_or_enum)` returns `True` for algorithms compiled into the installed wheel.
 

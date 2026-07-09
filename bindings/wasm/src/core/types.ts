@@ -14,6 +14,7 @@ export const enum Algorithm {
     Xz = 5,
     Lzma = 6,
     Snappy = 7,
+    Gzip = 8,
 }
 
 /** @internal */
@@ -35,7 +36,7 @@ export const enum Status {
 }
 
 /** Canonical lower-case algorithm names. */
-export type AlgorithmName = "zstd" | "brotli" | "zlib" | "bz2" | "lz4" | "xz" | "snappy";
+export type AlgorithmName = "zstd" | "brotli" | "zlib" | "bz2" | "lz4" | "xz" | "snappy" | "gzip";
 
 /** Thrown for any non-Ok status. Carries the raw status code and algo name. */
 export class CompressError extends Error {
