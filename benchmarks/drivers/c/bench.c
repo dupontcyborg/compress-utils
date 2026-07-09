@@ -125,6 +125,7 @@ static const bench_codec_t CODECS[] = {
     CU_CODEC("bz2", CU_ALGO_BZ2),
     CU_CODEC("lz4", CU_ALGO_LZ4),
     CU_CODEC("xz", CU_ALGO_XZ),
+    CU_CODEC("snappy", CU_ALGO_SNAPPY),
 };
 static const size_t N_CODECS = sizeof(CODECS) / sizeof(CODECS[0]);
 

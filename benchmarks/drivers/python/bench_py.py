@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "bindings" / "python"))
 import compress_utils as cu  # noqa: E402
 
-ALGOS = {"zstd", "brotli", "zlib", "bz2", "lz4", "xz"}
+ALGOS = {"zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"}
 SAMPLES = int(os.environ.get("BENCH_SAMPLES") or 5)
 WARMUP = int(os.environ.get("BENCH_WARMUP") or 1)
 CHUNK = int(os.environ.get("BENCH_CHUNK") or 64 * 1024)
