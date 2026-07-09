@@ -40,7 +40,8 @@ static cu::Algorithm parse_algorithm(const py::object& obj) {
         std::string s = lower_trim(obj.cast<std::string>());
         if (s == "zstd")                       return cu::Algorithm::Zstd;
         if (s == "brotli")                     return cu::Algorithm::Brotli;
-        if (s == "zlib" || s == "gzip")        return cu::Algorithm::Zlib;
+        if (s == "zlib")                       return cu::Algorithm::Zlib;
+        if (s == "gzip")                       return cu::Algorithm::Gzip;
         if (s == "bz2"  || s == "bzip2")       return cu::Algorithm::Bz2;
         if (s == "lz4")                        return cu::Algorithm::Lz4;
         if (s == "xz")                         return cu::Algorithm::Xz;
@@ -81,6 +82,7 @@ PYBIND11_MODULE(compress_utils_py, m) {
         .value("xz",     cu::Algorithm::Xz)
         .value("lzma",   cu::Algorithm::Lzma)
         .value("snappy", cu::Algorithm::Snappy)
+        .value("gzip",   cu::Algorithm::Gzip)
         .export_values();
 
     m.def("version",      &cu::version);
