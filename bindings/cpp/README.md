@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified C++ interface for seven compression algorithms — Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
+Unified C++ interface for eight compression algorithms — Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, and gzip — over a single high-performance C core. Same API for every algorithm.
 
 The binding is a **header-only** RAII wrapper (`bindings/cpp/include/compress_utils.hpp`) over the C ABI in [`include/compress_utils.h`](../../include/compress_utils.h). There is no separate C++ library to build — include the header and link the C library. It requires **C++20** (for `std::span`).
 
@@ -67,6 +67,7 @@ each codec's native range; codecs with no levels ignore it).
 | LZ4       | `cu::Algorithm::Lz4`    | LZ4 frame (compatible with the `lz4` CLI / `.lz4`)      |
 | XZ/LZMA   | `cu::Algorithm::Xz`     | XZ stream with CRC64 (`cu::Algorithm::Lzma` is an alias)|
 | Snappy    | `cu::Algorithm::Snappy` | Raw Snappy block (interoperable with reference snappy)  |
+| gzip      | `cu::Algorithm::Gzip`   | gzip stream (RFC 1952)                                  |
 
 Use `cu::is_available(algo)` to check whether a codec was compiled into the build.
 
