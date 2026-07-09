@@ -76,7 +76,7 @@
   - [X] Add C bindings for streaming (compress_stream_*/decompress_stream_* functions)
   - [X] Add streaming unit tests (C++, C, and Python)
   - [X] Fix move semantics tests for streaming API (was a test bug, not implementation bug)
-- [ ] Cross-language performance testbench
+- [X] Cross-language performance testbench
 - [ ] Standalone CLI executable
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
 - [ ] Async/multi-threaded compression support
@@ -95,12 +95,20 @@
 
 ## Algorithms
 
+See [docs/adding-an-algorithm.md](docs/adding-an-algorithm.md) for the
+end-to-end checklist (C core → build → bindings → tests → benchmarks → docs).
+
 - [X] `brotli`
 - [X] `bzip2`
 - [X] `lz4`
+- [X] `snappy` — raw Snappy block format; C++ upstream (google/snappy). Added 2026-07 across C/C++/Python/WASM + benchmarks + interop (vs python-snappy).
 - [X] `xz/lzma`
 - [X] `zlib`
 - [X] `zstd`
+- [ ] `snappy-framed` (deferred — add only on demand). **Decision (2026-07-08): support the raw Snappy block format only; do NOT add the framing (`.sz`) format now.**
+  - Rationale: Snappy's ecosystem embeds the *raw block* format (Parquet pages, Kafka messages, Cassandra, RPC; the default of python-snappy `compress`/Go `snappy.Encode`). Raw block also carries the uncompressed length, so `cu_decompress_size_hint` works. Its only downside — streaming buffers the whole input — is immaterial for a ~64 KB-block codec.
+  - Cost of adding framing: libsnappy's C API is raw-block only, so the framing format (stream-identifier chunk, ≤64 KB data chunks, masked CRC-32C, uncompressed-chunk fallback) would be **hand-written by us** (~250–300 LOC + a CRC-32C impl + its own fuzz corpus). It's a *separate* codec (one wire format per enum slot + cross-API symmetry), doubling the surface (enum value, vtable, 6 WASM artifacts, subpath exports, table/test/benchmark/interop rows) and cutting against the "one way to do each thing" ABI principle.
+  - What it would buy: `.sz`/snzip file interop, native bounded-memory streaming, and a CLI cross-check channel. Add as a distinct `CU_ALGO_SNAPPY_FRAMED` codec (non-breaking) if a concrete `.sz` use case appears. See [docs/adding-an-algorithm.md](docs/adding-an-algorithm.md).
 
 ## Core Language Migration: C++ → C (decided 2026-05-10)
 

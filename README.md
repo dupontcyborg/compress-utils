@@ -1,7 +1,7 @@
 # compress-utils
 
 <p align="center">
-  <img src="https://img.shields.io/badge/algorithms-6-green?style=flat" alt="Algorithms"/>
+  <img src="https://img.shields.io/badge/algorithms-7-green?style=flat" alt="Algorithms"/>
   <img src="https://img.shields.io/badge/languages-5-yellow?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils" alt="Code Size"/>
 </p>
 
-A unified, high-performance interface for six compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA** — exposed identically across multiple languages.
+A unified, high-performance interface for seven compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy** — exposed identically across multiple languages.
 
 ```
                       ┌─────────────────────────────┐
@@ -20,11 +20,11 @@ A unified, high-performance interface for six compression algorithms — **Zstan
                                      │
                       ┌──────────────▼──────────────┐
                       │   compress-utils C ABI      │
-                      │  (one library, six algos)   │
+                      │  (one library, seven algos) │
                       └──────────────┬──────────────┘
                                      │
-                ┌───────┬───────┬────┴────┬───────┬──────┐
-              zstd   brotli   zlib     bz2     lz4    xz
+            ┌───────┬───────┬───────┬┴──────┬───────┬───────┐
+          zstd   brotli   zlib     bz2     lz4     xz    snappy
 ```
 
 The C library is the canonical surface. Every other binding is a thin shim — same allocation model, same error codes, same streaming protocol. Add a binding for any language that speaks C ABI; the work is mostly making the language's idioms (strings, exceptions, generators) feel natural on top of a uniform substrate.
@@ -52,6 +52,7 @@ For now each binding's README has its own installation + quickstart. A cross-cut
 | [bzip2](https://sourceware.org/bzip2)              | High ratio             | bzip2 stream                    |
 | [LZ4](https://github.com/lz4/lz4)                  | Highest speed          | LZ4 frame (interoperable with `lz4` CLI / `.lz4` files) |
 | [XZ / LZMA](https://github.com/tukaani-project/xz) | Highest ratio          | XZ stream with CRC64            |
+| [Snappy](https://github.com/google/snappy)         | Very high speed, low ratio | Raw Snappy block (interoperable with reference snappy / python-snappy) |
 
 All algorithms expose the same API surface and the same level scale (`1` fastest → `10` smallest). The library maps each user level to the algorithm's native range so you don't need to remember that ZSTD goes 1–22 and zlib goes 1–9.
 
@@ -76,7 +77,7 @@ powershell -File build.ps1  # Windows
 
 The default build produces:
 
-- `dist/c/lib/libcompress_utils.{dylib,so,dll}` — the shared C library, self-contained (all six algorithms baked in).
+- `dist/c/lib/libcompress_utils.{dylib,so,dll}` — the shared C library, self-contained (all seven algorithms baked in).
 - `dist/c/include/compress_utils.h` — the public C header.
 - `dist/cpp/include/compress_utils.hpp` — the header-only C++ binding.
 - `bindings/python/compress_utils/` — the importable Python package, including auto-generated `.pyi` type stubs.
@@ -129,7 +130,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-This project wraps six battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 ---
 
