@@ -7,9 +7,10 @@ This is a second, independent interop channel alongside the Python-library
 interop tests (bindings/python/tests/test_interop.py). Where that suite
 checks our output against PyPI/stdlib decoders, this one checks it against
 the actual reference *binaries* everyone uses — `zstd`, `xz`, `lz4`,
-`bzip2`, `brotli` — exercising the on-disk file formats (`.zst`, `.xz`,
-`.lz4`, `.bz2`, `.br`). It's the channel that would have caught the legacy
-LZ4 wire-format bug: the `lz4` CLI is *the* canonical LZ4-frame consumer.
+`bzip2`, `brotli`, `gzip` — exercising the on-disk file formats (`.zst`,
+`.xz`, `.lz4`, `.bz2`, `.br`, `.gz`). It's the channel that would have caught
+the legacy LZ4 wire-format bug: the `lz4` CLI is *the* canonical LZ4-frame
+consumer.
 
 It drives "our side" through the installed `compress_utils` Python binding
 (the project ships no standalone CLI yet — see TODO.md). Set PYTHONPATH to
@@ -57,6 +58,7 @@ TOOLS = {
     "lz4":    (["lz4", "-dc"],    ["lz4", "-q", "-c"]),
     "bz2":    (["bzip2", "-dc"],  ["bzip2", "-c"]),
     "brotli": (["brotli", "-dc"], ["brotli", "-c"]),
+    "gzip":   (["gzip", "-dc"],   ["gzip", "-c"]),
 }
 
 # A mix of sizes; binary bytes catch framing/escaping bugs, and the large

@@ -33,7 +33,7 @@ import bench_common as bc  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent / "corpus"))
 import corpora  # noqa: E402
 
-ALL_ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"]
+ALL_ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"]
 DEFAULT_LEVELS = [1, 3, 6, 9]
 
 DRIVER_DIR = bc.BENCH_ROOT / "drivers" / "c"

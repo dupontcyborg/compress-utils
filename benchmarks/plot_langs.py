@@ -25,7 +25,7 @@ ASSETS = BENCH / "assets"
 LANGS = ["c", "wasm", "python"]
 LABELS = {"c": "C / C++", "wasm": "WASM", "python": "Python"}
 COLORS = {"c": "#4c72b0", "wasm": "#dd8452", "python": "#55a868"}
-ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"]
+ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"]
 
 
 def main() -> None:

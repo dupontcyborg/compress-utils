@@ -24,7 +24,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../../..");
 const DIST = resolve(REPO, "bindings/wasm/dist/algorithms");
 
-const ALGOS = new Set(["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"]);
+const ALGOS = new Set(["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"]);
 
 const SAMPLES = Number(process.env.BENCH_SAMPLES) || 5;
 const WARMUP = Number(process.env.BENCH_WARMUP) || 1;
