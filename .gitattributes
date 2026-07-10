@@ -31,3 +31,6 @@ bindings/wasm/vitest.config.ts linguist-vendored
 
 # Benchmarks
 benchmarks/** linguist-vendored
+
+# Third-party vendored libraries
+third_party/** linguist-vendored

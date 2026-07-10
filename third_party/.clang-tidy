@@ -1,0 +1,6 @@
+# Vendored upstream sources — don't lint them. The closest .clang-tidy to a file
+# wins; disabling all checks here keeps clang-tidy/clangd from flagging upstream
+# code (naming, portability, etc.) that we don't own and won't change.
+Checks: '-*'
+InheritParentConfig: false
+HeaderFilterRegex: '$^'

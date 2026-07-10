@@ -17,6 +17,7 @@ BUILD_DIR="build"
 CLEAN_BUILD=false
 SKIP_TESTS=false
 SKIP_SYNC=false
+REVENDOR=false
 BUILD_MODE="Release"
 CORES=1
 ALGORITHMS=()
@@ -30,6 +31,8 @@ Options:
   --clean                    Clean every build directory + dist/ before building.
   --skip-tests               Skip ctest / language-binding test suites.
   --skip-sync                Skip the codec-version sync step (use with care).
+  --revendor                 Regenerate third_party/ from codec-versions.json
+                             (downloads the pinned tags) before building.
   --debug                    Build in Debug instead of Release.
   --algorithms=LIST          Comma-separated list. Default: all.
                              Available: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)
@@ -54,6 +57,7 @@ while [[ "$#" -gt 0 ]]; do
         --clean)        CLEAN_BUILD=true ;;
         --skip-tests)   SKIP_TESTS=true ;;
         --skip-sync)    SKIP_SYNC=true ;;
+        --revendor)     REVENDOR=true ;;
         --debug)        BUILD_MODE="Debug" ;;
         --algorithms=*) IFS=',' read -ra ALGORITHMS <<< "${1#*=}" ;;
         --languages=*)  IFS=',' read -ra LANGUAGES  <<< "${1#*=}" ;;
@@ -108,6 +112,21 @@ if ! $SKIP_SYNC; then
         python3 tools/sync-codecs.py
     else
         echo "note: skipping codec sync (tools/sync-codecs.py or python3 missing)" >&2
+    fi
+fi
+
+# ---------- revendor ----------------------------------------------------------
+# Optional: regenerate third_party/ from the pinned tags in codec-versions.json.
+# Not part of a normal build — the vendored tree is committed and consumed
+# directly. Use after bumping a codec version.
+
+if $REVENDOR; then
+    if [[ -f tools/vendor-codecs.py ]] && command -v python3 >/dev/null 2>&1; then
+        echo ">>> Re-vendoring upstream codec sources into third_party/"
+        python3 tools/vendor-codecs.py
+    else
+        echo "error: --revendor needs tools/vendor-codecs.py and python3" >&2
+        exit 1
     fi
 fi
 

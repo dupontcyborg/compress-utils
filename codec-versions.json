@@ -3,7 +3,7 @@
   "zstd":   { "url": "https://github.com/facebook/zstd.git",       "tag": "v1.5.7" },
   "brotli": { "url": "https://github.com/google/brotli.git",       "tag": "v1.2.0" },
   "zlib":   { "url": "https://github.com/madler/zlib.git",         "tag": "v1.3.1" },
-  "bz2":    { "url": "https://gitlab.com/bzip2/bzip2.git",         "tag": "66c46b8c9436613fd81bc5d03f63a61933a4dcc3" },
+  "bz2":    { "url": "https://gitlab.com/bzip2/bzip2.git",         "tag": "bzip2-1.0.8" },
   "lz4":    { "url": "https://github.com/lz4/lz4.git",             "tag": "v1.10.0" },
   "xz":     { "url": "https://github.com/tukaani-project/xz.git",  "tag": "v5.6.3" },
   "snappy": { "url": "https://github.com/google/snappy.git",       "tag": "1.2.2" }

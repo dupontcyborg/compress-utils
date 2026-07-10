@@ -15,10 +15,22 @@ for `snappy` / `SNAPPY` to see every touch point in one commit.
 include/compress_utils.h     cu_algorithm_t enum + public ABI (the contract)
 src/algorithms/<algo>/<algo>.c   the vtable: one-shot + streaming, one file
 src/registry.c               maps the enum value → the vtable
-algorithms/<algo>/CMakeLists.txt  fetches + builds the upstream library
 codec-versions.json          pins the upstream git URL + tag
+tools/vendor-codecs.py       curation spec: which sources/headers/defines to vendor
+third_party/<algo>/          the vendored, pre-configured upstream sources (committed)
+third_party/manifest.json    generated: per-codec sources + include dirs + defines
+algorithms/<algo>/CMakeLists.txt  one line: cu_add_vendored_codec(<algo>)
 CMakeLists.txt (root)        INCLUDE_<ALGO> option + wiring
 ```
+
+**Upstream sources are vendored, not fetched.** Instead of an
+`ExternalProject_Add` that git-clones and configures each codec at build time,
+the curated upstream sources live in `third_party/<algo>/` with a portable,
+compile-time config (no configure step). `tools/vendor-codecs.py` produces that
+tree from the pinned tags and `cmake/Vendor.cmake` builds `<algo>_library` from
+the manifest. See [`third_party/VENDOR.md`](../third_party/VENDOR.md). This is
+what lets the Go/Rust/Zig/Swift bindings compile the codecs directly with their
+own toolchains — no CMake, no network.
 
 A codec is a `cu_algorithm_vtbl_t` (see
 [`src/algorithm_registry.h`](../src/algorithm_registry.h)): four one-shot
@@ -57,31 +69,40 @@ ignore it.
 ## Step 1 — the C core
 
 - [ ] **`codec-versions.json`** — add `"<algo>": { "url": ..., "tag": ... }`.
-      Single source of truth for the upstream fetch.
-- [ ] **`cmake/CodecVersions.cmake`** — add `<algo>` to the `foreach(_name ...)`
-      loop so `<ALGO>_URL` / `<ALGO>_TAG` get exported.
+      Single source of truth for the upstream version.
 - [ ] **`include/compress_utils.h`** — add `CU_ALGO_<ALGO> = <n>` to
       `cu_algorithm_t`. Append; never renumber existing values (ABI stability).
 - [ ] **`src/algorithms/<algo>/<algo>.c`** — implement the vtable. Copy the
       closest existing codec (a native-streaming one like `zlib.c`, or the
-      buffer-all `snappy.c` for block-only formats). Export
-      `const cu_algorithm_vtbl_t cu_<algo>_vtbl`. Guard the two direction
-      halves with `#ifndef CU_OMIT_COMPRESS` / `#ifndef CU_OMIT_DECOMPRESS` —
-      the WASM direction-split builds define these to drop a direction's code.
+      buffer-all `snappy.c` for block-only formats). Include the upstream header
+      in the natural style (`#include <zstd.h>` — the vendored include dir is on
+      the path). Export `const cu_algorithm_vtbl_t cu_<algo>_vtbl`. Guard the two
+      direction halves with `#ifndef CU_OMIT_COMPRESS` / `#ifndef
+      CU_OMIT_DECOMPRESS` — the WASM direction-split builds define these to drop
+      a direction's code.
 - [ ] **`src/registry.c`** — add an `extern` decl and a
       `case CU_ALGO_<ALGO>: return &cu_<algo>_vtbl;`, both under
       `#ifdef INCLUDE_<ALGO>`.
-- [ ] **`algorithms/<algo>/CMakeLists.txt`** — `ExternalProject_Add` that
-      fetches and builds the upstream static lib, then copies the archive to
-      `dist/lib/` and the C header(s) to `dist/include/<algo>/`. Copy the
-      nearest analogue (`zstd`'s if the upstream uses CMake). Forward
-      `CMAKE_TOOLCHAIN_FILE` (for the wasm/aarch64 cross-builds) and
-      `CMAKE_OSX_ARCHITECTURES`.
+- [ ] **`tools/vendor-codecs.py`** — add a `SPECS["<algo>"]` entry: the source
+      dirs/files to curate, header dirs, `include_dirs`, the portable `defines`,
+      and `cxx`. Derive the exact compiled source set from upstream's build
+      (`ar t` on the static archive is ground truth). If the upstream needs a
+      generated config header (like zlib/snappy), hand-author a portable one and
+      list it in `CONFIG_FILES` so the tool preserves it. See
+      [`third_party/VENDOR.md`](../third_party/VENDOR.md).
+- [ ] **Vendor it** — run `tools/vendor-codecs.py` (or `--from-checkout` to
+      curate from an existing build). This populates `third_party/<algo>/` and
+      `third_party/manifest.json`. Commit both.
+- [ ] **`algorithms/<algo>/CMakeLists.txt`** — one line:
+      `cu_add_vendored_codec(<algo>)` (add `PUBLIC_DEFINES <X>` for any
+      header-visible define the vtable also needs, as xz does with
+      `LZMA_API_STATIC`). Builds `<algo>_library` from the manifest.
 - [ ] **`CMakeLists.txt` (root)** — add the `INCLUDE_<ALGO>` option, include it
       in the "no algorithms" guard, and add the `if(INCLUDE_<ALGO>)` block that
       does `add_subdirectory`, appends the `.c` to `CU_CORE_SOURCES`, appends
-      the imported lib to `CU_TARGET_LIBS`, appends `INCLUDE_<ALGO>` to
-      `CU_TARGET_DEFINITIONS`, and adds the `add_dependencies(...)` line.
+      `<algo>_library` to `CU_TARGET_LIBS`, and appends `INCLUDE_<ALGO>` to
+      `CU_TARGET_DEFINITIONS`. (No `add_dependencies` — the codec lib is an
+      ordinary in-tree target now.)
 
 ### If the upstream is C++ (like Snappy)
 
@@ -108,17 +129,19 @@ second copy of the upstream or duplicate the implementation:
   shared `static`, and each codec's `<algo>.c` supplies a few one-line wrappers
   that bake in its windowBits plus a vtable. `gzip.c` includes it with
   `#include "../zlib/deflate_backend.h"`.
-- **Share the upstream (native).** In the root `CMakeLists.txt`, build the
-  upstream once if *either* codec is enabled
-  (`if(INCLUDE_ZLIB OR INCLUDE_GZIP)`), link the shared imported library
-  (`zlib_library`) from both, and add the same `add_dependencies(...)`. The
-  variant contributes only its `.c` source + `INCLUDE_<ALGO>` define — no second
-  `add_subdirectory`, no second fetch.
+- **Share the vendored sources (native).** In the root `CMakeLists.txt`, build
+  the base library once if *either* codec is enabled
+  (`if(INCLUDE_ZLIB OR INCLUDE_GZIP)` → `add_subdirectory(algorithms/zlib)` →
+  `zlib_library`) and link it from both. The variant contributes only its `.c`
+  source + `INCLUDE_<ALGO>` define — no second `add_subdirectory`, and it needs
+  no `third_party/` tree or manifest entry of its own.
 - **WASM still needs its own `algorithms/<algo>/CMakeLists.txt`.** The per-algo
   wasm build configures one codec in isolation and links `${ALGO}_library`, so
-  the variant needs a CMakeLists that produces that target. It can reuse the
-  base codec's `<BASE>_URL` / `<BASE>_TAG` (see `algorithms/gzip/CMakeLists.txt`,
-  which fetches zlib via `ZLIB_URL`) — so it stays out of `codec-versions.json`.
+  the variant needs a CMakeLists that produces that target. It builds from the
+  base codec's vendored sources via the `MANIFEST_KEY` argument — see
+  `algorithms/gzip/CMakeLists.txt`, which is just
+  `cu_add_vendored_codec(gzip MANIFEST_KEY zlib)` — so it stays out of both
+  `codec-versions.json` and `third_party/manifest.json`.
 - **Don't double-count upstreams in docs.** A variant adds an *algorithm* but
   not an *upstream library* — bump algorithm counts, leave
   "N upstream libraries" / ACKNOWLEDGMENTS untouched.

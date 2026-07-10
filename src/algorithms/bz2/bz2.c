@@ -14,7 +14,7 @@
 #include "compress_utils.h"
 #include "utils/levels.h"
 
-#include "bz2/bzlib.h"
+#include <bzlib.h>
 
 #include <stddef.h>
 #include <stdint.h>

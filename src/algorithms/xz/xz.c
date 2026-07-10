@@ -16,7 +16,7 @@
 #include "compress_utils.h"
 #include "utils/levels.h"
 
-#include "xz/lzma.h"
+#include <lzma.h>
 
 #include <stddef.h>
 #include <stdint.h>

@@ -37,7 +37,7 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 
-#include "snappy/snappy-c.h"
+#include <snappy-c.h>
 
 #include <stddef.h>
 #include <stdint.h>

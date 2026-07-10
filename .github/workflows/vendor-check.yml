@@ -1,0 +1,41 @@
+name: Vendored codec drift check
+
+# Verifies the committed third_party/ tree matches third_party/manifest.json by
+# recomputing each codec's SHA-256 tree hash. Catches a vendored source edited
+# without re-running tools/vendor-codecs.py, or a hand-tampered manifest — the
+# vendored sources are the supply chain, so this is the integrity gate.
+#
+# Runs only when the vendoring surface changes (fast, offline, no build).
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "third_party/**"
+      - "codec-versions.json"
+      - "tools/vendor-codecs.py"
+      - "cmake/Vendor.cmake"
+  push:
+    branches: ["main"]
+    paths:
+      - "third_party/**"
+      - "tools/vendor-codecs.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify vendored tree matches manifest checksums
+        run: python3 tools/vendor-codecs.py --check

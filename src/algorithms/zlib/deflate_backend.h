@@ -20,7 +20,7 @@
 #include "compress_utils.h"
 #include "utils/levels.h"
 
-#include "zlib/zlib.h"
+#include <zlib.h>
 
 #include <stddef.h>
 #include <stdint.h>
