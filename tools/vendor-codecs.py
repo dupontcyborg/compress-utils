@@ -42,6 +42,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -214,9 +215,10 @@ CHECKOUT_TMPL = "algorithms/{codec}/build/src/{codec}_external"
 # GitHub/GitLab release tarball URL patterns, derived from codec-versions.json.
 def tarball_url(url: str, tag: str) -> str:
     u = url.removesuffix(".git")
-    if "github.com" in u:
+    host = (urllib.parse.urlparse(u).hostname or "").lower()
+    if host == "github.com":
         return f"{u}/archive/refs/tags/{tag}.tar.gz"
-    if "gitlab.com" in u:
+    if host == "gitlab.com":
         name = u.rsplit("/", 1)[-1]
         return f"{u}/-/archive/{tag}/{name}-{tag}.tar.gz"
     raise SystemExit(f"unknown forge for {url}; add a tarball pattern")

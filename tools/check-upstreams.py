@@ -45,9 +45,13 @@ def parse_ver(tag: str):
     return tuple(int(p) for p in m.group(1).split("."))
 
 
+def _host(url: str) -> str:
+    return (urllib.parse.urlparse(url).hostname or "").lower()
+
+
 def _get_json(url: str, token: str | None):
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    if token and "api.github.com" in url:
+    if token and _host(url) == "api.github.com":
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 (trusted forges)
         return json.load(r)
@@ -55,15 +59,19 @@ def _get_json(url: str, token: str | None):
 
 def fetch_tags(url: str, token: str | None) -> list[str]:
     base = url.removesuffix(".git")
-    if "github.com" in base:
-        owner, repo = base.split("github.com/")[1].split("/")[:2]
+    # Owner/repo path from the URL itself (parsed, not substring-matched, so a
+    # host name can't appear in an unexpected position).
+    path = urllib.parse.urlparse(base).path.strip("/")
+    host = _host(base)
+    if host == "github.com":
+        owner, repo = path.split("/")[:2]
         data = _get_json(
             f"https://api.github.com/repos/{owner}/{repo}/tags?per_page=100", token)
         return [t["name"] for t in data]
-    if "gitlab.com" in base:
-        path = urllib.parse.quote(base.split("gitlab.com/")[1], safe="")
+    if host == "gitlab.com":
+        proj = urllib.parse.quote(path, safe="")
         data = _get_json(
-            f"https://gitlab.com/api/v4/projects/{path}/repository/tags?per_page=100",
+            f"https://gitlab.com/api/v4/projects/{proj}/repository/tags?per_page=100",
             token)
         return [t["name"] for t in data]
     raise ValueError(f"unknown forge: {url}")
