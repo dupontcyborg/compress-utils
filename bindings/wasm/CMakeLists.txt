@@ -54,11 +54,13 @@ string(TOUPPER ${CU_WASM_ALGO} _CU_ALGO_UPPER)
 
 set(CU_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
-# Load the codec-versions.json manifest. The wasm child CMake project
-# isn't a subdir of the root, so we have to include this explicitly —
-# otherwise ${<ALGO>_URL} / ${<ALGO>_TAG} expand to empty in the algo
-# subprojects we add_subdirectory below.
-include(${CU_REPO_ROOT}/cmake/CodecVersions.cmake)
+# The codec library builder. cu_add_vendored_codec() (called by each
+# algorithms/<algo>/CMakeLists.txt below) compiles the vendored sources in
+# third_party/ for wasm32-wasi via this project's toolchain — no fetch, no
+# per-target configure. Vendor.cmake reads third_party/ relative to
+# CU_REPO_ROOT (set above), since this child project's CMAKE_SOURCE_DIR is the
+# wasm dir, not the repo root.
+include(${CU_REPO_ROOT}/cmake/Vendor.cmake)
 
 # Match the root build's optimization shape.
 set(CMAKE_C_STANDARD 11)
@@ -71,13 +73,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -flto")
 
-# --- Upstream codec via the existing subproject -----------------------------
-# CU_ALGO_STAGING_DIR tells the algorithm subproject where to fetch and
-# stage its upstream library. We use a path under CMAKE_BINARY_DIR so the
-# wasm cross-compile's artifacts don't collide with a native build's
-# source-tree cache at ${CMAKE_SOURCE_DIR}/algorithms/dist. Built once and
-# linked by every direction variant below.
-set(CU_ALGO_STAGING_DIR "${CMAKE_BINARY_DIR}/algorithms")
+# --- Codec library from the vendored sources --------------------------------
+# The algorithm subproject calls cu_add_vendored_codec() to build
+# <algo>_library from third_party/ with this project's wasm toolchain. Built
+# once here and linked by every direction variant below. Config is
+# compile-time-portable, so wasm32-wasi needs no separate configure.
 add_subdirectory(
     ${CU_REPO_ROOT}/algorithms/${CU_WASM_ALGO}
     ${CMAKE_BINARY_DIR}/algorithm
@@ -133,10 +133,10 @@ function(cu_add_wasm_variant DIR)
         ${CU_REPO_ROOT}/src/algorithms/${CU_WASM_ALGO}/${CU_WASM_ALGO}.c
         ${CU_REPO_ROOT}/src/wasm_runtime.c
     )
+    # Codec headers come from the linked <algo>_library's PUBLIC include dirs.
     target_include_directories(${_tgt} PRIVATE
         ${CU_REPO_ROOT}/include
         ${CU_REPO_ROOT}/src
-        ${CU_ALGO_STAGING_DIR}/dist/include
     )
     # Only the chosen algorithm's INCLUDE_<X> is defined → registry.c switch
     # only compiles in this one case.
@@ -174,14 +174,10 @@ function(cu_add_wasm_variant DIR)
         target_compile_definitions(${_tgt} PRIVATE CU_OMIT_DECOMPRESS)
     endif()
 
-    if(CU_WASM_ALGO STREQUAL "brotli")
-        # Brotli ships as three archives, not one.
-        target_link_libraries(${_tgt} PRIVATE brotlienc brotlidec brotlicommon)
-        add_dependencies(${_tgt} brotli_external)
-    else()
-        target_link_libraries(${_tgt} PRIVATE ${CU_WASM_ALGO}_library)
-        add_dependencies(${_tgt} ${CU_WASM_ALGO}_external)
-    endif()
+    # One vendored static lib per codec (brotli's enc/dec/common are combined
+    # into brotli_library). CMake orders the build via the link dependency —
+    # there are no ExternalProject fetch steps to depend on anymore.
+    target_link_libraries(${_tgt} PRIVATE ${CU_WASM_ALGO}_library)
 
     # Snappy is C++; link with the C++ driver so the zig toolchain pulls in
     # libc++ for wasm32-wasi. The sources are C, so LTO stays coherent.

@@ -28,7 +28,7 @@
 #include "compress_utils.h"
 #include "utils/levels.h"
 
-#include "zstd/zstd.h"
+#include <zstd.h>
 
 #include <stddef.h>
 #include <stdint.h>

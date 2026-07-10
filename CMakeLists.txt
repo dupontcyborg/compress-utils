@@ -17,10 +17,9 @@ set(DEFAULT_VERSION "0.1.0")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitVersion.cmake)
 get_version_from_git(PROJECT_VERSION_FROM_GIT ${DEFAULT_VERSION})
 
-# Load codec-versions.json. Exposes <ALGO>_URL / <ALGO>_TAG variables for
-# the per-algorithm ExternalProject_Add calls. Single source of truth
-# shared with tools/sync-codecs.py (which feeds bindings/zig/build.zig.zon).
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/CodecVersions.cmake)
+# Upstream codec versions live in codec-versions.json. The build no longer
+# reads it (sources are vendored under third_party/ — see cmake/Vendor.cmake);
+# it is consumed only by tools/vendor-codecs.py when re-vendoring.
 
 project(compress-utils
     VERSION ${PROJECT_VERSION_FROM_GIT}
@@ -120,10 +119,14 @@ set(CU_CORE_SOURCES
 set(CU_TARGET_DEFINITIONS "")
 set(CU_TARGET_LIBS "")
 
-# Algorithm fetch + per-algorithm vtable source. Each enabled algorithm
-# pulls in the upstream library (still via the existing algorithms/<algo>/
-# CMakeLists.txt that uses ExternalProject_Add) and adds its .c file to
-# the core sources.
+# Vendored codec builder. Each algorithms/<algo>/CMakeLists.txt calls
+# cu_add_vendored_codec() to build <algo>_library from the curated sources in
+# third_party/ (no ExternalProject fetch, no per-codec configure). See
+# cmake/Vendor.cmake and third_party/VENDOR.md.
+include(cmake/Vendor.cmake)
+
+# Per-algorithm vtable source + codec library. Each enabled algorithm adds its
+# .c vtable file to the core sources and its <algo>_library to CU_TARGET_LIBS.
 if(INCLUDE_ZSTD)
     message(STATUS "Including ZSTD")
     add_subdirectory(algorithms/zstd)
@@ -135,7 +138,7 @@ if(INCLUDE_BROTLI)
     message(STATUS "Including Brotli")
     add_subdirectory(algorithms/brotli)
     list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/brotli/brotli.c)
-    list(APPEND CU_TARGET_LIBS brotlienc brotlidec brotlicommon)
+    list(APPEND CU_TARGET_LIBS brotli_library)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_BROTLI)
 endif()
 # zlib and gzip are the same upstream library (libz) — gzip just drives it with
@@ -233,7 +236,6 @@ target_include_directories(compress_utils_obj
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_SOURCE_DIR}/algorithms/dist/include
 )
 target_compile_definitions(compress_utils_obj PRIVATE
     ${CU_TARGET_DEFINITIONS}
@@ -242,9 +244,13 @@ target_compile_definitions(compress_utils_obj PRIVATE
     # any prerelease suffix (0.7.0-rc.1, 0.7.0-rc.1-3-gabcd, etc.).
     CU_BUILD_VERSION="${PROJECT_VERSION_FROM_GIT}"
 )
-# INTERFACE link deps propagate to consumers (the shared lib, Python
-# module, tests) so they all pick up the algorithm static archives.
-target_link_libraries(compress_utils_obj INTERFACE ${CU_TARGET_LIBS})
+# PUBLIC so the object library's own vtable sources compile with each codec's
+# include dirs + defines (the <algo>_library targets carry them as usage
+# requirements), and so consumers linking the object library inherit them too.
+# The vendored codec headers live in third_party/ (committed), so no build-order
+# dependency is needed to compile our sources — only to link, which
+# target_link_libraries orders automatically.
+target_link_libraries(compress_utils_obj PUBLIC ${CU_TARGET_LIBS})
 
 add_library(compress_utils SHARED $<TARGET_OBJECTS:compress_utils_obj>)
 target_include_directories(compress_utils
@@ -254,30 +260,11 @@ target_include_directories(compress_utils
 )
 target_link_libraries(compress_utils PRIVATE ${CU_TARGET_LIBS})
 
-# Algorithm subprojects use ExternalProject_Add and need the fetch to
-# complete before our sources compile.
-if(INCLUDE_ZSTD)
-    add_dependencies(compress_utils_obj zstd_external zstd_library)
-endif()
-if(INCLUDE_BROTLI)
-    add_dependencies(compress_utils_obj brotli_external brotlienc brotlidec brotlicommon)
-endif()
-if(INCLUDE_ZLIB OR INCLUDE_GZIP)
-    # Both codecs consume the same libz built by algorithms/zlib.
-    add_dependencies(compress_utils_obj zlib_external zlib_library)
-endif()
-if(INCLUDE_BZ2)
-    add_dependencies(compress_utils_obj bz2_external bz2_library)
-endif()
-if(INCLUDE_LZ4)
-    add_dependencies(compress_utils_obj lz4_external lz4_library)
-endif()
-if(INCLUDE_XZ)
-    add_dependencies(compress_utils_obj xz_external xz_library)
-endif()
-if(INCLUDE_SNAPPY)
-    add_dependencies(compress_utils_obj snappy_external snappy_library)
-endif()
+# No add_dependencies() for codec builds: the <algo>_library targets are
+# ordinary in-tree static libraries now (built from third_party/), so CMake
+# orders their compilation and linking automatically via target_link_libraries.
+# The former zstd_external/brotli_external/... ExternalProject fetch steps are
+# gone entirely.
 
 ######### INSTALL #########
 
