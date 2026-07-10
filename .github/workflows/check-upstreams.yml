@@ -1,0 +1,54 @@
+name: Check upstream codec versions
+
+# Weekly (and on-demand) check for upstream codec releases newer than the tags
+# pinned in codec-versions.json. When any are behind, opens or updates a single
+# tracking issue — a human then bumps the tag, runs `./build.sh --revendor`,
+# rebuilds/tests, and commits the refreshed third_party/. Deliberately does not
+# open a PR: a new upstream version can change the compiled source set or config
+# needs, so re-vendoring warrants human review.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check upstreams
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tools/check-upstreams.py
+
+      - name: Open or update tracking issue
+        if: steps.check.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.check.outputs.report_file }}
+          TITLE: "Upstream codec updates available"
+        run: |
+          # One rolling issue: update it if already open (exact-title match),
+          # otherwise create a new one.
+          existing=$(gh issue list --state open --limit 200 --json number,title \
+              --jq "[.[] | select(.title == env.TITLE) | .number] | first // empty")
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$TITLE" --body-file "$REPORT"
+            echo "Updated issue #$existing"
+          else
+            gh issue create --title "$TITLE" --body-file "$REPORT"
+          fi
