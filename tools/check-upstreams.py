@@ -29,17 +29,20 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 VERSIONS = REPO / "codec-versions.json"
 
-# Match version tags with an optional non-numeric prefix ("v", "bzip2-", ...):
-# v1.5.7, 1.2.2, bzip2-1.1.0. Groups capture major/minor/patch.
-_VER_RE = re.compile(r"^[A-Za-z._-]*?v?(\d+)\.(\d+)(?:\.(\d+))?$")
+# Grab the full trailing dotted-number version (2+ components), regardless of
+# prefix — handles v1.5.7, 1.2.2, bzip2-1.0.8 (prefix has a digit), and lz4's
+# historical 4-component tags like v1.8.1.2. Parsed as a full int tuple so
+# (1,10,0) > (1,8,1,2) compares correctly. A commit hash has no dotted-number
+# tail, so it yields no match and is treated as "not a version".
+_VER_RE = re.compile(r"(\d+(?:\.\d+)+)$")
 _PRERELEASE_RE = re.compile(r"(?i)(rc|alpha|beta|dev|pre|next|test)")
 
 
 def parse_ver(tag: str):
-    m = _VER_RE.match(tag.strip())
+    m = _VER_RE.search(tag.strip())
     if not m:
         return None
-    return tuple(int(x or 0) for x in m.groups())
+    return tuple(int(p) for p in m.group(1).split("."))
 
 
 def _get_json(url: str, token: str | None):

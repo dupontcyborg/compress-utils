@@ -202,9 +202,8 @@ SPECS: dict[str, dict] = {
 CONFIG_FILES = {
     "zlib": ["zconf.h"],
     "snappy": ["config.h", "snappy-stubs-public.h"],
-    # bzip2 generates bz_version.h (just a version string) from bz_version.h.in
-    # at configure time; the value is target-independent, so we commit it.
-    "bz2": ["bz_version.h"],
+    # bz2 (1.0.8) needs no generated config — its version string is inline in
+    # bzlib.c, so there is nothing to hand-author.
 }
 
 # gzip is zlib in a different wire format; it has no upstream of its own and no
