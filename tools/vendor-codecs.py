@@ -155,15 +155,20 @@ SPECS: dict[str, dict] = {
             "src/liblzma/lz", "src/liblzma/rangecoder", "src/liblzma/lzma",
             "src/liblzma/delta", "src/liblzma/simple", "src/common",
         ],
-        # Uniform, target-agnostic define set. Deterministic feature toggles
-        # (encoders/decoders/checks/match-finders) plus C11-universal macros and
-        # clang/gcc builtins present on every target we compile for. Platform
-        # macros (HAVE_ARM64_CRC32, HAVE_CLOCK_*, *_SYSCTL/SYSCONF, _GNU_SOURCE)
-        # are dropped: liblzma falls back to portable generic paths.
+        # Uniform, target-agnostic define set: deterministic feature toggles
+        # (encoders/decoders/checks/match-finders) plus C11-universal header
+        # macros. Compiler-specific knobs are intentionally NOT set so liblzma
+        # picks its own portable fallback per compiler:
+        #   - HAVE___BUILTIN_BSWAPXX / HAVE___BUILTIN_ASSUME_ALIGNED /
+        #     HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR are gcc/clang-only. MSVC has no
+        #     __builtin_bswap* (link error) or __attribute__((constructor)), so
+        #     without them tuklib falls to its _MSC_VER byteswap path and skips
+        #     the ctor; gcc/clang use a portable manual byteswap (byte-swapping
+        #     isn't a hot path for us).
+        #   - Platform macros (HAVE_ARM64_CRC32, HAVE_CLOCK_*, *_SYSCTL/SYSCONF,
+        #     _GNU_SOURCE) are dropped for the portable generic paths.
         "defines": [
             "HAVE_STDBOOL_H", "HAVE__BOOL", "HAVE_STDINT_H", "HAVE_INTTYPES_H",
-            "HAVE___BUILTIN_BSWAPXX", "HAVE___BUILTIN_ASSUME_ALIGNED",
-            "HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR",
             "TUKLIB_FAST_UNALIGNED_ACCESS", "TUKLIB_SYMBOL_PREFIX=lzma_",
             "HAVE_ENCODERS", "HAVE_DECODERS",
             "HAVE_ENCODER_LZMA1", "HAVE_ENCODER_LZMA2", "HAVE_ENCODER_DELTA",
