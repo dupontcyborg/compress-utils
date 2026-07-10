@@ -89,12 +89,13 @@ SPECS: dict[str, dict] = {
         "header_dirs": ["c/common", "c/enc", "c/dec"],
         "header_dirs_rec": ["c/include"],
         "include_dirs": ["c/include"],
-        # BROTLI_STATIC_INIT_EARLY (=1): compute the large lookup/dictionary
-        # tables at load time via a constructor instead of embedding them. Cuts
-        # the binary ~240 KB (critical for the wasm size budget) and is portable
-        # — the wasm reactor's _initialize runs the constructor. Uniform across
-        # targets; excludes the lazy .cc variant (see source glob rules).
-        "defines": ["BROTLI_STATIC_INIT=1"],
+        # No uniform defines. BROTLI_STATIC_INIT_EARLY (compute tables at load
+        # instead of embedding them, ~240 KB smaller) is needed only for the
+        # wasm size budget and relies on a constructor MSVC can't parse — so it
+        # is applied to the wasm build alone (see bindings/wasm/CMakeLists.txt),
+        # not here. Native keeps brotli's default (embedded tables), which every
+        # compiler accepts.
+        "defines": [],
         "cxx": False,
     },
     "zlib": {
@@ -402,6 +403,17 @@ def main() -> int:
     # Recompute hashes for config headers now that they're on disk.
     MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     print(f"wrote {MANIFEST.relative_to(REPO)}")
+
+    # Hand-authored config headers are preserved across re-vendors, so a version
+    # bump does NOT refresh them — they can silently drift from upstream. Remind
+    # the maintainer to diff them against the new upstream template.
+    preserved = [(c, f) for c in codecs for f in CONFIG_FILES.get(c, [])]
+    if preserved:
+        print("\nNOTE: these hand-authored config headers were preserved, NOT "
+              "refreshed from upstream — if you just bumped a version, review "
+              "each against the new upstream template:")
+        for c, f in preserved:
+            print(f"  third_party/{c}/{f}")
     return 0
 
 

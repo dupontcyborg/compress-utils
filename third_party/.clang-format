@@ -1,0 +1,4 @@
+# Vendored upstream sources — never reformat them. The closest .clang-format to
+# a file wins, so this disables formatting for everything under third_party/.
+DisableFormat: true
+SortIncludes: Never

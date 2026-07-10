@@ -83,6 +83,15 @@ add_subdirectory(
     ${CMAKE_BINARY_DIR}/algorithm
 )
 
+# Brotli embeds large lookup/dictionary tables by default. On wasm we compute
+# them at load (BROTLI_STATIC_INIT_EARLY) to meet the .wasm size budget (~240 KB
+# smaller). That path uses a load-time constructor, which the wasm reactor's
+# _initialize runs and the clang toolchain supports — but MSVC cannot parse it,
+# so it is applied only to the wasm build, not the shared manifest.
+if(CU_WASM_ALGO STREQUAL "brotli")
+    target_compile_definitions(brotli_library PRIVATE BROTLI_STATIC_INIT=1)
+endif()
+
 # --- Export allow-list groups -----------------------------------------------
 # The toolchain dropped `-Wl,--export-dynamic`, so by default nothing but the
 # reactor `_initialize` + `memory` is exported and wasm-ld GCs everything the

@@ -3,9 +3,7 @@
     "brotli": {
       "config_headers": [],
       "cxx": false,
-      "defines": [
-        "BROTLI_STATIC_INIT=1"
-      ],
+      "defines": [],
       "include_dirs": [
         "c/include"
       ],
@@ -282,7 +280,7 @@
         "zutil.c"
       ],
       "tag": "v1.3.1",
-      "tree_sha256": "06cfff54df3e92792ee50c12c5fee7a747dadb7594210ce151f8686b59b34179",
+      "tree_sha256": "9ab5aab5b8db0c655e97434c26ced7054a5351edd029bb06b99bcd7965f5d47f",
       "url": "https://github.com/madler/zlib.git"
     },
     "zstd": {

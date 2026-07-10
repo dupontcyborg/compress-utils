@@ -40,11 +40,20 @@ The upstream configure step produces target-specific headers. We replace it
 with portable, compile-time-detected headers that are correct for every target
 (x86-64, arm64, wasm32, Windows). `vendor-codecs.py` never overwrites these:
 
-- `zlib/zconf.h` — upstream's generated header; verified identical across
-  native and wasm32-wasi, so committed as-is.
+- `zlib/zconf.h` — a portability-patched copy of upstream's header. Upstream
+  ships no header that works everywhere: the CMake-generated one hard-codes
+  `#define Z_HAVE_UNISTD_H` (breaks MSVC, which has no `<unistd.h>`), while the
+  pristine `zconf.h.in` leaves it off (breaks compiling zlib's `gz*.c` on POSIX,
+  which need `<unistd.h>`). Our copy detects `<unistd.h>` at compile time via
+  `__has_include`, so one header is correct on every target and toolchain.
 - `snappy/config.h`, `snappy/snappy-stubs-public.h` — hand-authored; SIMD,
   endianness, and platform knobs resolve via `__has_builtin` / `__ARM_NEON` /
   `__SSSE3__` / `__BYTE_ORDER__` / `_WIN32` at compile time.
+
+> These files are **preserved** across re-vendors (`vendor-codecs.py` never
+> overwrites them) — which also means a version bump does **not** refresh them.
+> After bumping a codec, diff each against the new upstream template. The tool
+> prints a reminder listing them.
 
 xz/liblzma needs no config header — its `HAVE_*` knobs are passed as uniform
 `-D` defines (see the `xz` entry in `manifest.json`); platform-specific macros

@@ -8,7 +8,17 @@
 #ifndef ZCONF_H
 #define ZCONF_H
 /* #undef Z_PREFIX */
-#define Z_HAVE_UNISTD_H
+/* compress-utils: the upstream configure hard-codes `#define Z_HAVE_UNISTD_H`
+ * based on the build host, which is wrong when the vendored header is reused on
+ * a platform without <unistd.h> (MSVC). Detect it at compile time instead so
+ * one committed zconf.h is correct on every target. */
+#if defined(__has_include)
+#  if __has_include(<unistd.h>)
+#    define Z_HAVE_UNISTD_H
+#  endif
+#elif !defined(_WIN32)
+#  define Z_HAVE_UNISTD_H
+#endif
 
 /*
  * If you *really* need a unique prefix for all types and library functions,
