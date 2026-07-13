@@ -32,5 +32,16 @@ bindings/wasm/vitest.config.ts linguist-vendored
 # Benchmarks
 benchmarks/** linguist-vendored
 
+# Build/codegen & maintenance tooling
+tools/** linguist-vendored
+
+# WASM binding boilerplate
+bindings/wasm/src/**/index.ts linguist-vendored
+bindings/wasm/src/core/resolve-*.ts linguist-vendored
+
+# Generated cgo codec sources
+bindings/go/*_cgen.c linguist-vendored
+bindings/go/*_cgen.h linguist-vendored
+
 # Third-party vendored libraries
 third_party/** linguist-vendored
