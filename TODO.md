@@ -95,7 +95,7 @@
 
 - [X] `c++` (Main Lib)
 - [X] `c`
-- [ ] `go`
+- [X] `go` — cgo, compiles vendored third_party/ from source (no prebuilt lib). Added 2026-07. Root go.mod; generated cgo shims (tools/gen-go-cgo.py); stdlib interop tests. See docs/adding-a-language.md.
 - [ ] `java`
 - [ ] `js/ts` (WebAssembly via Emscripten)
 - [X] `python` (3.10 - 3.14)
@@ -233,7 +233,7 @@ Adding a new algorithm = drop in `src/algorithms/<algo>/<algo>.c` exporting `cu_
 #### Phase 6 — Post-migration (unlocks the binding roadmap)
 
 - [x] **Fuzz harness** added (`tests/fuzz/fuzz_decompress.c`, `-DENABLE_FUZZ=ON`, libFuzzer + ASan + UBSan). Found and fixed an XZ memlimit OOM on first run. Per-algorithm corpora + CI integration still TODO.
-- [ ] **Go binding** via cgo. Direct consumer of the C ABI.
+- [x] **Go binding** via cgo — compiles the vendored `third_party/` sources from source (root `go.mod` so `third_party/` is in-module; generated cgo shims via `tools/gen-go-cgo.py`; `io.Reader`/`io.Writer` streaming; stdlib interop). `go get` works with only a C compiler. Added 2026-07.
 - [ ] **Rust binding** via `bindgen` over the C header.
 - [ ] **Swift, Java, Zig** bindings — all consume the same C ABI.
 - [ ] **Consolidate the WASM build into `build.zig` (drop the CMake wasm sub-build).**

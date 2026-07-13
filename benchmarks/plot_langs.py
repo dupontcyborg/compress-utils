@@ -22,9 +22,12 @@ from pathlib import Path
 BENCH = Path(__file__).resolve().parent
 ASSETS = BENCH / "assets"
 
-LANGS = ["c", "wasm", "python"]
-LABELS = {"c": "C / C++", "wasm": "WASM", "python": "Python"}
-COLORS = {"c": "#4c72b0", "wasm": "#dd8452", "python": "#55a868"}
+LANGS = ["c", "wasm", "python", "go"]
+# The "wasm" record lang is the WASM package, consumed from JS/TS — labelled as
+# such. Colors follow what people expect: Go's gopher light-blue, a darker blue
+# for Python, red for C/C++, and JS/TS on gold (a third blue would be unreadable).
+LABELS = {"c": "C / C++", "wasm": "JS / TS", "python": "Python", "go": "Go"}
+COLORS = {"c": "#d62728", "wasm": "#dd8452", "python": "#1f4e9c", "go": "#00add8"}
 ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"]
 
 
@@ -50,11 +53,14 @@ def main() -> None:
                 and r["level"] == args.level and r["mode"] == args.mode]
         return statistics.median(vals) if vals else 0.0
 
+    # Only plot languages actually present, so bar groups center correctly
+    # whether the run had 3 langs or 4.
+    langs = [l for l in LANGS if any(r["lang"] == l for r in recs)]
     x = range(len(ALGOS))
-    w = 0.26
+    w = 0.8 / len(langs)
     fig, (ax_c, ax_d) = plt.subplots(1, 2, figsize=(13, 5))
-    for i, lang in enumerate(LANGS):
-        off = (i - 1) * w
+    for i, lang in enumerate(langs):
+        off = (i - (len(langs) - 1) / 2) * w
         ax_c.bar([j + off for j in x], [med(lang, a, "compress_mbps") for a in ALGOS],
                  w, label=LABELS[lang], color=COLORS[lang])
         ax_d.bar([j + off for j in x], [med(lang, a, "decompress_mbps") for a in ALGOS],
@@ -63,7 +69,7 @@ def main() -> None:
         ax.set_yscale("log")
         ax.set_xticks(list(x))
         ax.set_xticklabels(ALGOS)
-        ax.set_ylabel("throughput — MB/s (log scale)")
+        ax.set_ylabel("throughput in MB/s")
         ax.set_title(title)
         ax.legend(fontsize=9)
         ax.grid(True, axis="y", alpha=0.25)

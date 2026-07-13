@@ -37,7 +37,7 @@ Options:
   --algorithms=LIST          Comma-separated list. Default: all.
                              Available: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)
   --languages=LIST           Comma-separated list. Default: c, cpp, python.
-                             Available: c, cpp (c++), python, wasm, zig
+                             Available: c, cpp (c++), python, wasm, zig, go
   --cores=N                  Parallel build cores. Default: 1.
   -h, --help                 Show this help.
 
@@ -83,6 +83,7 @@ WANT_CPP=false
 WANT_PYTHON=false
 WANT_WASM=false
 WANT_ZIG=false
+WANT_GO=false
 
 for lang in "${LANGUAGES[@]}"; do
     case "$lang" in
@@ -91,6 +92,7 @@ for lang in "${LANGUAGES[@]}"; do
         python|py)      WANT_PYTHON=true ;;
         wasm|js|ts)     WANT_WASM=true ;;
         zig)            WANT_ZIG=true ;;
+        go|golang)      WANT_GO=true ;;
         *)              echo "Unknown language: $lang" >&2; usage 1 ;;
     esac
 done
@@ -239,6 +241,33 @@ EOF
         zig build test -Doptimize="$ZIG_OPTIMIZE"
     fi
     popd >/dev/null
+fi
+
+# ---------- Go path -----------------------------------------------------------
+# The Go binding compiles the vendored third_party/ sources via cgo — no CMake,
+# no prebuilt lib. The go.mod is at the repo root (so third_party is in-module),
+# and the generated cgo shims under bindings/go/ are committed. We only verify
+# they match the manifest here; `go build` compiles everything from source.
+
+if $WANT_GO; then
+    echo ""
+    echo ">>> Go build path"
+
+    if ! command -v go >/dev/null 2>&1; then
+        echo "error: 'go' not found on PATH (need >= 1.21 for the Go binding)" >&2
+        exit 1
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        echo ">>> Checking generated cgo shims are in sync with the manifest"
+        python3 tools/gen-go-cgo.py --check
+    fi
+
+    CGO_ENABLED=1 go build ./bindings/go/
+    if ! $SKIP_TESTS; then
+        echo ">>> Running go test"
+        CGO_ENABLED=1 go test ./bindings/go/
+    fi
 fi
 
 # ---------- size summary ------------------------------------------------------

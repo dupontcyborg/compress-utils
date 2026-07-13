@@ -129,11 +129,25 @@ def build_python() -> list[str]:
     return [sys.executable, str(script)]
 
 
+def build_go() -> list[str]:
+    """The Go driver is `go build`-compiled from the binding, which compiles the
+    C core from source via cgo — so no prebuilt library is needed, only a C
+    toolchain and the Go tool. The compiled binary is cached and reused."""
+    src = bc.BENCH_ROOT / "drivers" / "go" / "bench_go.go"
+    out = bc.BENCH_ROOT / "drivers" / "go" / "bench_go"
+    if not (out.exists() and out.stat().st_mtime >= src.stat().st_mtime):
+        print(f"[runner] compiling {out.name} (cgo build of the Go binding; first run is slow)")
+        subprocess.run(["go", "build", "-o", str(out), str(src)],
+                       cwd=str(bc.REPO_ROOT), check=True)
+    return [str(out)]
+
+
 DRIVERS = {
     "c": build_c,
     "c-baseline": build_c_baseline,
     "wasm": build_wasm,
     "python": build_python,
+    "go": build_go,
 }
 
 

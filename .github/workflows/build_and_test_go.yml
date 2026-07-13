@@ -1,0 +1,61 @@
+name: Build and Test Go
+
+# The Go binding compiles the vendored third_party/ sources via cgo (no prebuilt
+# lib, no CMake). Two guarantees this workflow enforces:
+#   1. the committed cgo shims (bindings/go/cu_gen_*.c) match the manifest, and
+#   2. the binding builds + round-trips on every supported platform.
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["bindings/go/**", "go.mod", "src/**", "include/**",
+            "third_party/**", "tools/gen-go-cgo.py"]
+  pull_request:
+    branches: ["main"]
+    paths: ["bindings/go/**", "go.mod", "src/**", "include/**",
+            "third_party/**", "tools/gen-go-cgo.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap, offline: the generated cgo shims must match third_party/manifest.json.
+  # Catches a codec bump or hand-edit that didn't re-run tools/gen-go-cgo.py.
+  shim-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Verify cgo shims match the manifest
+        run: python3 tools/gen-go-cgo.py --check
+
+  test:
+    needs: shim-drift
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # cgo needs a C toolchain; Linux (gcc) and macOS (clang) have one out of
+        # the box. Windows cgo needs an explicit mingw setup — deferred (tracked
+        # in TODO.md), matching the binding's current support surface.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+        run: go build ./bindings/go/
+      - name: Vet
+        env:
+          CGO_ENABLED: "1"
+        run: go vet ./bindings/go/
+      - name: Test
+        env:
+          CGO_ENABLED: "1"
+        run: go test -v ./bindings/go/

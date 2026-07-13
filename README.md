@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/algorithms-8-green?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-5-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/badge/languages-6-yellow?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
@@ -14,20 +14,17 @@
 A unified, high-performance interface for eight compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, gzip** — exposed identically across multiple languages.
 
 ```
-                      ┌─────────────────────────────┐
-   Your application → │  C / C++ / Python / JS / TS │
-                      └──────────────┬──────────────┘
-                                     │
-                      ┌──────────────▼──────────────┐
-                      │   compress-utils C ABI      │
-                      │  (one library, eight algos) │
-                      └──────────────┬──────────────┘
-                                     │
-         ┌───────┬───────┬───────┬───┴───┬───────┬───────┬───────┐
-       zstd   brotli   zlib    gzip     bz2     lz4     xz    snappy
+              ┌───────────────────────────────────┐
+   Your app → │  C / C++ / Go / JS / Python / TS  │
+              └─────────────────┬─────────────────┘
+                                │
+                      ┌─────────▼──────────┐
+                      │   compress-utils   │
+                      └─────────┬──────────┘
+                                │
+    ┌───────┬───────┬───────┬───┴───┬───────┬───────┬───────┐
+  zstd   brotli   zlib    gzip     bz2     lz4     xz    snappy
 ```
-
-The C library is the canonical surface. Every other binding is a thin shim — same allocation model, same error codes, same streaming protocol. Add a binding for any language that speaks C ABI; the work is mostly making the language's idioms (strings, exceptions, generators) feel natural on top of a uniform substrate.
 
 ## Supported languages
 
@@ -35,12 +32,11 @@ The C library is the canonical surface. Every other binding is a thin shim — s
 |----------|------------------------------------------------------|-----------------------------------------------|
 | **C**    | Build from source | [include/compress_utils.h](include/compress_utils.h) |
 | **C++**  | Build from source | [bindings/cpp/README.md](bindings/cpp/README.md) |
+| **Go** | `go get github.com/dupontcyborg/compress-utils/bindings/go` | [bindings/go/README.md](bindings/go/README.md) |
+| **JavaScript** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
 | **Python** | `pip install compress-utils` | [bindings/python/README.md](bindings/python/README.md) |
-| **JavaScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
-| **TypeScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
-| Go, Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
-
-For now each binding's README has its own installation + quickstart. A cross-cutting `docs/` is planned for architecture, allocation model, and per-algorithm notes — tracked in [TODO.md](TODO.md#documentation-plan-planned-2026-05-11).
+| **TypeScript** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
+| Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
 
 ## Supported algorithms
 
@@ -90,7 +86,5 @@ MIT — see [LICENSE](LICENSE).
 ## Acknowledgments
 
 This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
-
----
 
 Built by [Nico Dupont](https://nico.codes).

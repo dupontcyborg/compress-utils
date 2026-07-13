@@ -6,6 +6,7 @@ corpus/cache/
 # Compiled drivers.
 drivers/c/bench
 drivers/c/bench_baseline
+drivers/go/bench_go
 
 # Run outputs. Commit baselines explicitly with `git add -f`.
 results/
