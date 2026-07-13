@@ -1,0 +1,52 @@
+name: Binding version drift check
+
+# Verifies the committed version fallbacks (the C header's CU_VERSION_* macros,
+# bindings/wasm/package.json, and CMakeLists.txt's DEFAULT_VERSION) match the
+# git tag. The Go and WASM bindings compile/ship from these committed values —
+# there is no CMake or git at `go get` / npm-install time — so a stale value
+# means customers get the wrong reported version. tools/sync-versions.py keeps
+# them honest; this is the gate that catches a forgotten sync.
+#
+#   * On a release tag push: assert every committed value == the pushed tag.
+#   * On a PR touching the version surface: assert every value == the latest
+#     tag (they should still reflect the last release between tags).
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "include/compress_utils.h"
+      - "bindings/wasm/package.json"
+      - "CMakeLists.txt"
+      - "tools/sync-versions.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags so `git describe` can resolve the version.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify committed versions match the tag
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            # Release: pin to the exact tag being pushed.
+            python3 tools/sync-versions.py --check "${GITHUB_REF_NAME#v}"
+          else
+            # PR: derive from the latest tag.
+            python3 tools/sync-versions.py --check
+          fi

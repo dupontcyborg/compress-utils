@@ -1,6 +1,6 @@
 {
   "name": "compress-utils",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "WASM compression bindings for zstd, brotli, zlib, bz2, lz4, xz, snappy, gzip - all tree-shakeable.",
   "type": "module",
   "sideEffects": false,
