@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/algorithms-8-green?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-5-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/badge/languages-6-yellow?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
@@ -38,7 +38,8 @@ The C library is the canonical surface. Every other binding is a thin shim — s
 | **Python** | `pip install compress-utils` | [bindings/python/README.md](bindings/python/README.md) |
 | **JavaScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
 | **TypeScript (WASM)** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
-| Go, Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
+| **Go** | `go get github.com/dupontcyborg/compress-utils/bindings/go` | [bindings/go/README.md](bindings/go/README.md) |
+| Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
 
 For now each binding's README has its own installation + quickstart. A cross-cutting `docs/` is planned for architecture, allocation model, and per-algorithm notes — tracked in [TODO.md](TODO.md#documentation-plan-planned-2026-05-11).
 
