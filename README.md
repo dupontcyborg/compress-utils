@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/algorithms-8-green?style=flat" alt="Algorithms"/>
-  <img src="https://img.shields.io/badge/languages-6-yellow?style=flat" alt="Languages"/>
+  <img src="https://img.shields.io/badge/languages-7-green?style=flat" alt="Languages"/>
   <img src="https://img.shields.io/github/license/dupontcyborg/compress-utils" alt="License"/>
 </p>
 <p align="center">
@@ -14,9 +14,9 @@
 A unified, high-performance interface for eight compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, gzip** — exposed identically across multiple languages.
 
 ```
-              ┌───────────────────────────────────┐
-   Your app → │  C / C++ / Go / JS / Python / TS  │
-              └─────────────────┬─────────────────┘
+           ┌──────────────────────────────────────────┐
+Your app → │  C / C++ / Go / JS / Python / TS / Rust  │
+           └────────────────────┬─────────────────────┘
                                 │
                       ┌─────────▼──────────┐
                       │   compress-utils   │
@@ -30,13 +30,14 @@ A unified, high-performance interface for eight compression algorithms — **Zst
 
 | Language | Install                                              | Docs                                          |
 |----------|------------------------------------------------------|-----------------------------------------------|
-| **C**    | Build from source | [include/compress_utils.h](include/compress_utils.h) |
-| **C++**  | Build from source | [bindings/cpp/README.md](bindings/cpp/README.md) |
-| **Go** | `go get github.com/dupontcyborg/compress-utils/bindings/go` | [bindings/go/README.md](bindings/go/README.md) |
-| **JavaScript** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
-| **Python** | `pip install compress-utils` | [bindings/python/README.md](bindings/python/README.md) |
-| **TypeScript** | `npm install compress-utils` | [bindings/wasm/README.md](bindings/wasm/README.md) |
-| Rust, Swift, Java | _Planned — all consume the C ABI directly_ |  |
+| **C**    | Build from source | [C Docs](include/compress_utils.h) |
+| **C++**  | Build from source | [C++ Docs](bindings/cpp/README.md) |
+| **Go** | `go get github.com/dupontcyborg/compress-utils/bindings/go` | [Go Docs](bindings/go/README.md) |
+| **JavaScript** | `npm install compress-utils` | [JS Docs](bindings/wasm/README.md) |
+| **Python** | `pip install compress-utils` | [Python Docs](bindings/python/README.md) |
+| **Rust** | `cargo add compress-utils` | [Rust Docs](bindings/rust/README.md) |
+| **TypeScript** | `npm install compress-utils` | [TS Docs](bindings/wasm/README.md) |
+| Swift, Java | _Planned_ |  |
 
 ## Supported algorithms
 

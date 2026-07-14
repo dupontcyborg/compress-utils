@@ -72,10 +72,17 @@ with its *own* toolchain:
   codec's macros and `#include`s the real file by relative path. The shims are
   committed (so `go get` needs no generator — just a C compiler) and CI
   drift-checks them against the manifest.
-- **Rust** → the `cc` crate in `build.rs` reads the manifest and adds the
-  sources + include dirs + per-file defines directly (no shims — `cc` supports
-  per-file flags). Prefer downloading a prebuilt lib from a GitHub release with a
-  `vendored` source fallback (idiomatic for `-sys` crates).
+- **Rust** (added 2026-07) → the `cc` crate in `build.rs` reads the manifest and
+  compiles each codec in its own `cc::Build` (per-Build defines, so no shims —
+  unlike Go, `cc` isolates the conflicting `XXH_NAMESPACE` etc.). Vendored-from-
+  source only, like every `-sys`-style crate: a prebuilt-download path was
+  prototyped and dropped — it tripled the dependency graph (a TLS/HTTP stack) to
+  skip a ~1 s Cargo-cached compile and broke offline/docs.rs builds. (The clean
+  static `.a` is still published to Releases, for C/C++/FFI consumers — just not
+  fetched by the crate.) FFI is hand-written (no bindgen). `build.rs` injects
+  `CU_BUILD_VERSION` from `CARGO_PKG_VERSION`, so — unlike Go — the source build
+  reports the right version without touching the header macros (sync-versions
+  still keeps `Cargo.toml` itself in step).
 - **Zig** → `build.zig` `addCSourceFiles` with the manifest's sources/flags;
   `zig cc` also cross-compiles.
 - **Swift** → a SwiftPM C target with `path:`/`cSettings` pointing at
