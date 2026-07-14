@@ -38,15 +38,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # cgo needs a C toolchain; Linux (gcc) and macOS (clang) have one out of
-        # the box. Windows cgo needs an explicit mingw setup — deferred (tracked
-        # in TODO.md), matching the binding's current support surface.
-        os: [ubuntu-latest, macos-latest]
+        # cgo needs a C toolchain: Linux (gcc) and macOS (clang) have one out of
+        # the box. On Windows cgo requires gcc/clang (it cannot use MSVC), and
+        # the binding's `#cgo windows LDFLAGS: -lstdc++` targets MinGW — the
+        # windows-latest image ships MinGW-w64 (gcc) on PATH, which cgo picks up.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
+      - name: Show C compiler (cgo toolchain)
+        run: gcc --version
       - name: Build
         env:
           CGO_ENABLED: "1"

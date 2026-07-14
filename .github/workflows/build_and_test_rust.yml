@@ -1,0 +1,53 @@
+name: Build and Test Rust
+
+# The Rust crate compiles the vendored third_party/ sources from source via the
+# `cc` crate in build.rs — no prebuilt lib, no network, works offline/on docs.rs.
+# This workflow proves it builds + passes on every supported platform, plus fmt
+# and clippy. The Cargo.toml is at the repo root (so third_party is inside the
+# crate); real code lives under bindings/rust/.
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["bindings/rust/**", "Cargo.toml", "src/**", "include/**",
+            "third_party/**"]
+  pull_request:
+    branches: ["main"]
+    paths: ["bindings/rust/**", "Cargo.toml", "src/**", "include/**",
+            "third_party/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap, offline: formatting + lints.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # Compile the C core + codecs from vendored source with `cc`. Needs only a
+  # C/C++ compiler — gcc/clang on Linux/macOS, MSVC on Windows (the same compiler
+  # the CMake C/C++ workflow already builds these sources with).
+  test:
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test
