@@ -37,7 +37,7 @@ Options:
   --algorithms=LIST          Comma-separated list. Default: all.
                              Available: brotli, bz2 (bzip2), lz4, zstd, zlib, xz (lzma)
   --languages=LIST           Comma-separated list. Default: c, cpp, python.
-                             Available: c, cpp (c++), python, wasm, zig, go
+                             Available: c, cpp (c++), python, wasm, zig, go, rust
   --cores=N                  Parallel build cores. Default: 1.
   -h, --help                 Show this help.
 
@@ -84,6 +84,7 @@ WANT_PYTHON=false
 WANT_WASM=false
 WANT_ZIG=false
 WANT_GO=false
+WANT_RUST=false
 
 for lang in "${LANGUAGES[@]}"; do
     case "$lang" in
@@ -93,6 +94,7 @@ for lang in "${LANGUAGES[@]}"; do
         wasm|js|ts)     WANT_WASM=true ;;
         zig)            WANT_ZIG=true ;;
         go|golang)      WANT_GO=true ;;
+        rust|rs)        WANT_RUST=true ;;
         *)              echo "Unknown language: $lang" >&2; usage 1 ;;
     esac
 done
@@ -267,6 +269,24 @@ if $WANT_GO; then
     if ! $SKIP_TESTS; then
         echo ">>> Running go test"
         CGO_ENABLED=1 go test ./bindings/go/
+    fi
+fi
+
+# ---------- Rust path ---------------------------------------------------------
+
+if $WANT_RUST; then
+    echo ""
+    echo ">>> Rust build path (vendored source build)"
+
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "error: 'cargo' not found on PATH (need the Rust toolchain)" >&2
+        exit 1
+    fi
+
+    cargo build
+    if ! $SKIP_TESTS; then
+        echo ">>> Running cargo test"
+        cargo test
     fi
 fi
 
