@@ -26,7 +26,7 @@ jobs:
           clean: true
 
       - name: Configure CMake (C + C++ bindings, Python off)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_STATIC_LIB=ON
 
       - name: Build
         run: cmake --build build --config Release -j 4
@@ -46,14 +46,24 @@ jobs:
             macOS)   OS_TAG=macos ;;
             Windows) OS_TAG=windows ;;
           esac
+          # Arch tag for the prebuilt static-lib asset (the Rust build.rs matches
+          # on <os>-<arch>). RUNNER_ARCH is X64/ARM64 on every runner.
+          case "${RUNNER_ARCH}" in
+            X64)   ARCH=x86_64 ;;
+            ARM64) ARCH=aarch64 ;;
+            *)     ARCH=$(uname -m) ;;
+          esac
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION=${GITHUB_REF_NAME#v}
             NAME="compress-utils-${OS_TAG}-${VERSION}"
+            LIBNAME="libcompress-utils-${OS_TAG}-${ARCH}-${VERSION}"
           else
             NAME="compress-utils-${OS_TAG}"
+            LIBNAME="libcompress-utils-${OS_TAG}-${ARCH}"
           fi
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "os_tag=${OS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "libname=${LIBNAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package C + C++ bindings
         shell: bash
@@ -71,6 +81,26 @@ jobs:
             tar -czf "${STAGE}.tar.gz" "${STAGE}"
           fi
 
+      - name: Package prebuilt static library (header + self-contained .a)
+        shell: bash
+        run: |
+          # Minimal, self-contained asset the Rust binding (build.rs --features
+          # prebuilt) downloads: the C header + the bundled static archive only.
+          # Kept separate from the dev tarball so the download stays small.
+          cd dist
+          STAGE="${{ steps.archive.outputs.libname }}"
+          mkdir -p "${STAGE}/include" "${STAGE}/lib"
+          cp c/include/compress_utils.h "${STAGE}/include/"
+          # Static archive: libcompress_utils_static.a (Unix) / .lib (Windows).
+          cp c/lib/libcompress_utils_static.a "${STAGE}/lib/" 2>/dev/null || true
+          cp c/lib/compress_utils_static.lib  "${STAGE}/lib/" 2>/dev/null || true
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -Command "Compress-Archive -Path '${STAGE}' -DestinationPath '${STAGE}.zip'"
+          else
+            # COPYFILE_DISABLE keeps macOS from injecting ._ AppleDouble sidecars.
+            COPYFILE_DISABLE=1 tar -czf "${STAGE}.tar.gz" "${STAGE}"
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +108,15 @@ jobs:
           path: |
             dist/${{ steps.archive.outputs.name }}.tar.gz
             dist/${{ steps.archive.outputs.name }}.zip
+          if-no-files-found: error
+
+      - name: Upload prebuilt static-lib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.archive.outputs.libname }}
+          path: |
+            dist/${{ steps.archive.outputs.libname }}.tar.gz
+            dist/${{ steps.archive.outputs.libname }}.zip
           if-no-files-found: error
 
   release:
@@ -99,10 +138,23 @@ jobs:
           find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
           ls -la release/
 
+      - name: Generate SHA-256 checksums
+        run: |
+          # Plain checksums file for anyone verifying a downloaded asset by hand
+          # (the dev tarballs and the prebuilt static libs). Not machine-consumed
+          # by any binding.
+          cd release
+          # Sum only the archives (avoid globbing SHA256SUMS into itself).
+          sha256sum *.tar.gz *.zip 2>/dev/null > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*
+          files: |
+            release/*.tar.gz
+            release/*.zip
+            release/SHA256SUMS
           generate_release_notes: false
           fail_on_unmatched_files: true
           draft: false
