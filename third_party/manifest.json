@@ -100,7 +100,7 @@
         "snappy.c"
       ],
       "tag": "fef67ac6effb40c83fb5e37eaf243381fa056f9b",
-      "tree_sha256": "",
+      "tree_sha256": "6d29584511dba10afc43c424bb75b59677a3c70ae6acaada8861af7d2ead71e4",
       "url": "https://github.com/andikleen/snappy-c.git"
     },
     "xz": {

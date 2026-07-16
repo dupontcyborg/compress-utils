@@ -57,7 +57,21 @@ static inline void cu_st64(void *p, u64 v) { memcpy(p, &v, 8); }
     _Generic((p), u16 *: cu_st16, u32 *: cu_st32)((p), (v))
 #define put_unaligned64(v, p) cu_st64((void *)(p), (u64)(v))
 
-/* ---- little-endian helpers ---- */
+/* ---- little-endian helpers ----
+ *
+ * CRITICAL: snappy.c gates its byte-extraction (`is_little_endian()`,
+ * `GetUint32AtOffset`) and its fast match-finder on the macro `__LITTLE_ENDIAN__`.
+ * clang predefines it on LE targets, but GCC and MSVC do NOT — and if it's
+ * absent, `is_little_endian()` returns false and the encoder uses the big-endian
+ * shift on a little-endian machine, producing a corrupt match finder (false
+ * matches → output the reference decoder rejects). Upstream's compat.h defined
+ * it via <endian.h>; we define it portably here. Do NOT remove. */
+#if !defined(__LITTLE_ENDIAN__)
+#  if !defined(__BYTE_ORDER__) || (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#    define __LITTLE_ENDIAN__ 1  /* GCC/MSVC LE targets; clang already sets it */
+#  endif
+#endif
+
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 static inline u32 cu_le32toh(u32 x) {
     return ((x & 0xFFu) << 24) | ((x & 0xFF00u) << 8) |
