@@ -11,7 +11,7 @@
 cmake_minimum_required(VERSION 3.17)
 
 # Default version (used when git tag is not available)
-set(DEFAULT_VERSION "0.7.1")
+set(DEFAULT_VERSION "0.8.0")
 
 # Include git version extraction module
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GitVersion.cmake)
