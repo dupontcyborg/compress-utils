@@ -10,13 +10,11 @@ package compressutils
 // generated + committed; regenerate with tools/gen-go-cgo.py.
 //
 // Runtime link flags only (kept here, not generated, because they are platform
-// runtime deps rather than manifest-derived):
-//   - snappy is C++, so its objects need the C++ standard library.
-//   - brotli/xz/zlib pull log2/pow/etc. from libm on glibc (bundled in libSystem
-//     on macOS; provided by the CRT on Windows).
-#cgo linux   LDFLAGS: -lstdc++ -lm
-#cgo darwin  LDFLAGS: -lc++
-#cgo windows LDFLAGS: -lstdc++
+// runtime deps rather than manifest-derived). The library is pure C now — snappy
+// switched from google/snappy (C++) to the andikleen C port, so NO C++ standard
+// library is needed. The only remaining dep is libm on glibc (brotli/xz/zlib
+// pull log2/pow/etc.); macOS bundles it in libSystem and Windows in the CRT.
+#cgo linux LDFLAGS: -lm
 
 #include <stdlib.h>
 #include "compress_utils.h"

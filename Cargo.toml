@@ -24,9 +24,7 @@ include = [
     "src/**/*.h",
     "third_party/manifest.json",
     "third_party/**/*.c",
-    "third_party/**/*.cc",
     "third_party/**/*.h",
-    "third_party/**/*.hpp",
     "third_party/**/*.inc",
     "LICENSE",
 ]

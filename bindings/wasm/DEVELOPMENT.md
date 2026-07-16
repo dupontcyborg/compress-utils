@@ -131,13 +131,13 @@ again.
   during `_initialize`.
 - **zstd** — install step copies `zstd_errors.h` alongside `zstd.h`
   (v1.5.7 needs it).
-- **snappy** — the only C++ codec, so the wasm project enables `CXX`
-  and the snappy target sets `LINKER_LANGUAGE CXX` (it links with the
-  C++ driver) so the zig toolchain pulls in `libc++` for `wasm32-wasi`.
-  Also: the raw Snappy block format isn't incrementally codable, so the
-  streaming API buffers the whole input and runs the one-shot codec on
-  `finish()` — memory scales with input size, unlike the
-  natively-streaming codecs.
+- **snappy** — the pure-C `andikleen/snappy-c` port (NOT google/snappy),
+  so it's a plain C codec like the others — no `CXX`, no `libc++` in the
+  `.wasm`. (google/snappy, C++, is kept only as the differential test
+  oracle and never built for wasm.) The raw Snappy block format isn't
+  incrementally codable, so the streaming API buffers the whole input and
+  runs the one-shot codec on `finish()` — memory scales with input size,
+  unlike the natively-streaming codecs.
 - **gzip** — same libz as the `zlib` codec; the only difference is
   `windowBits 31` to select the gzip (RFC 1952) wrapper instead of the
   zlib (RFC 1950) one. It reuses the zlib upstream — its
