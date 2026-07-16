@@ -2,7 +2,7 @@
 
 [package]
 name = "compress-utils"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.71"
 license = "MIT"
@@ -17,6 +17,7 @@ build = "bindings/rust/build.rs"
 # core + vendored codecs from source, plus the Rust sources.
 include = [
     "bindings/rust/src/**/*.rs",
+    "bindings/rust/tests/**/*.rs",
     "bindings/rust/build.rs",
     "bindings/rust/README.md",
     "include/compress_utils.h",
