@@ -89,26 +89,19 @@
       "url": "https://github.com/lz4/lz4.git"
     },
     "snappy": {
-      "config_headers": [
-        "config.h",
-        "snappy-stubs-public.h"
-      ],
-      "cxx": true,
-      "defines": [
-        "HAVE_CONFIG_H"
-      ],
+      "config_headers": [],
+      "cxx": false,
+      "defines": [],
       "include_dirs": [
         "."
       ],
+      "note": "C port (release codec). google/snappy (C++) kept at third_party/snappy-oracle for the differential test only. compat.h is our portable shim (see third_party/snappy/compat.h), not upstream.",
       "sources": [
-        "snappy-c.cc",
-        "snappy-sinksource.cc",
-        "snappy-stubs-internal.cc",
-        "snappy.cc"
+        "snappy.c"
       ],
-      "tag": "1.2.2",
-      "tree_sha256": "e4372ea7aaf20acf8ca1fbd1c35cccf3fa1532e65b00d0b26d063819ce0ebf2e",
-      "url": "https://github.com/google/snappy.git"
+      "tag": "fef67ac6effb40c83fb5e37eaf243381fa056f9b",
+      "tree_sha256": "4f5530736a9c1d2398d79f916c5046ce8aadaa30c78ca05d8b883482898fe2d4",
+      "url": "https://github.com/andikleen/snappy-c.git"
     },
     "xz": {
       "config_headers": [],

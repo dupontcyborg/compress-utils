@@ -46,9 +46,19 @@ with portable, compile-time-detected headers that are correct for every target
   pristine `zconf.h.in` leaves it off (breaks compiling zlib's `gz*.c` on POSIX,
   which need `<unistd.h>`). Our copy detects `<unistd.h>` at compile time via
   `__has_include`, so one header is correct on every target and toolchain.
-- `snappy/config.h`, `snappy/snappy-stubs-public.h` — hand-authored; SIMD,
-  endianness, and platform knobs resolve via `__has_builtin` / `__ARM_NEON` /
-  `__SSSE3__` / `__BYTE_ORDER__` / `_WIN32` at compile time.
+- `snappy/compat.h` — hand-authored portable userspace shim for the vendored
+  **andikleen/snappy-c** port (the shipped Snappy is this pure-C port, NOT
+  google/snappy — so the library carries no C++ runtime dependency). Replaces
+  upstream's kernel-derived compat.h, which is GCC/Clang-only (`typeof`,
+  statement-expressions, `<endian.h>`). Ours uses only C11 `_Generic` + `memcpy`
+  for unaligned access, resolves endianness via `__BYTE_ORDER__`, and provides
+  MSVC fallbacks (`_BitScan*` for `__builtin_ctz/clz`, `SSIZE_T` for `ssize_t`)
+  so it compiles on GCC, Clang, zig cc (wasm32) and MSVC.
+- `snappy-oracle/` — google/snappy (C++), a pinned snapshot kept ONLY as the
+  differential-test oracle (`tests/test_snappy_oracle`). It never ships and is
+  not a `manifest.json` codec. Its `config.h` / `snappy-stubs-public.h` are the
+  previous hand-authored headers (SIMD/endianness/platform knobs via
+  `__has_builtin` / `__ARM_NEON` / `__SSSE3__` / `__BYTE_ORDER__` / `_WIN32`).
 
 > These files are **preserved** across re-vendors (`vendor-codecs.py` never
 > overwrites them) — which also means a version bump does **not** refresh them.

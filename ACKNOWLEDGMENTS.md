@@ -25,3 +25,12 @@ This project would not be possible without the remarkable work of other engineer
 - **Repository**: https://github.com/tukaani-project/xz
 - **License**: BSD 0-Clause License
 - **Authors**: Lasse Collin, Tukaani and contributors
+
+## Snappy
+
+The shipped codec is the pure-C port (keeps the library free of a C++ runtime dependency). The reference C++ implementation is used only as the differential test oracle (`third_party/snappy-oracle`) and is never distributed.
+
+- **Repository**: https://github.com/andikleen/snappy-c (shipped, pure C)
+- **License**: BSD 3-Clause License
+- **Authors**: Andi Kleen and contributors
+- **Reference / test oracle**: https://github.com/google/snappy — BSD 3-Clause License, Google and contributors

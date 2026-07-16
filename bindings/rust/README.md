@@ -84,8 +84,9 @@ levels (Snappy) ignore it.
 
 - A `Compressor`/`Decompressor` is not safe for concurrent use; the one-shot
   `compress`/`decompress` functions are. Use one stream per thread.
-- Snappy is C++, so the linked archive pulls in the C++ runtime (`libc++` /
-  `libstdc++`) — handled automatically by `build.rs`.
+- The crate is pure C — every codec (including Snappy, which uses the C
+  `andikleen/snappy-c` port) compiles to C, so there is no `libc++`/`libstdc++`
+  runtime dependency.
 - Windows is supported by the C core; the crate's source build works with MSVC.
   CI currently covers Linux and macOS (matching the other source bindings).
 

@@ -128,7 +128,14 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
 - [X] `bzip2`
 - [X] `gzip`
 - [X] `lz4`
-- [X] `snappy`
+- [X] `snappy` — **switched from google/snappy (C++) to the pure-C port
+  andikleen/snappy-c (2026-07)** so the whole release library is pure C (no
+  libc++/libstdc++ in any binding — native shared/static, Rust, Go, WASM all
+  verified). Wire format identical (byte-for-byte + both-direction interop).
+  google/snappy is kept at `third_party/snappy-oracle` as the C++ differential
+  test oracle only (`tests/test_snappy_oracle`), never shipped.
+  `third_party/snappy/compat.h` is a hand-authored portable shim (C11 `_Generic`
+  + MSVC/wasm fallbacks) replacing upstream's GCC-only kernel compat.h.
 - [X] `xz/lzma`
 - [X] `zlib`
 - [X] `zstd`

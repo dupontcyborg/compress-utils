@@ -8,11 +8,18 @@
  * reference C++ snappy::Compress(). It is NOT the Snappy *framing* format
  * (the `.sz` stream format used by CLIs / streaming libraries).
  *
+ * Implementation: the pure-C port andikleen/snappy-c (third_party/snappy),
+ * NOT google/snappy (C++). This keeps the whole release library pure C — no
+ * libc++/libstdc++ runtime dependency in any binding. google/snappy is retained
+ * at third_party/snappy-oracle purely as the differential-test oracle; it never
+ * ships. The wire format is identical (verified byte-for-byte + both-direction
+ * interop in the CTest differential test).
+ *
  * Raw-block-only is a deliberate decision (2026-07-08): it's the format
  * Snappy's ecosystem embeds (Parquet pages, Kafka messages, Cassandra, RPC),
  * and it carries the uncompressed length so cu_decompress_size_hint works.
- * The framing format is intentionally NOT supported here — libsnappy's C API
- * is raw-block only, so framing would have to be hand-written (chunking +
+ * The framing format is intentionally NOT supported here — the raw-block API
+ * is all we wrap, so framing would have to be hand-written (chunking +
  * masked CRC-32C) and would be a *separate* codec (CU_ALGO_SNAPPY_FRAMED),
  * not a mode of this one. It's a non-breaking addition if `.sz` interop is
  * ever needed; see TODO.md (Algorithms) and docs/adding-an-algorithm.md.
@@ -37,20 +44,19 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 
-#include <snappy-c.h>
+#include <snappy.h>  /* andikleen/snappy-c: snappy_env + raw-block compress/uncompress */
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-static cu_status_t map_snappy_status(snappy_status s, cu_status_t fallback) {
-    switch (s) {
-        case SNAPPY_OK:               return CU_OK;
-        case SNAPPY_INVALID_INPUT:    cu_set_last_error("snappy: invalid input"); return fallback;
-        case SNAPPY_BUFFER_TOO_SMALL: cu_set_last_error("snappy: buffer too small"); return CU_ERR_BUF_TOO_SMALL;
-        default:                      cu_set_last_errorf("snappy: status %d", (int)s); return fallback;
-    }
+/* andikleen's API returns 0 on success, negative on failure (no rich error
+ * codes / buffer-too-small — we size buffers ourselves before every call). */
+static cu_status_t snappy_err(int rc, cu_status_t fallback, const char* what) {
+    if (rc == 0) return CU_OK;
+    cu_set_last_errorf("snappy: %s failed (rc=%d)", what, rc);
+    return fallback;
 }
 
 /* ============================================================================
@@ -72,10 +78,16 @@ static cu_status_t snappy_compress_oneshot(
         *out_len = needed;
         return CU_ERR_BUF_TOO_SMALL;
     }
+    struct snappy_env env;
+    if (snappy_init_env(&env) != 0) {
+        cu_set_last_error("snappy: env alloc failed");
+        return CU_ERR_OOM;
+    }
     size_t clen = *out_len;
-    snappy_status s = snappy_compress((const char*)(in ? in : (const uint8_t*)""),
-                                      in_len, (char*)out, &clen);
-    if (s != SNAPPY_OK) return map_snappy_status(s, CU_ERR_COMPRESSION);
+    int rc = snappy_compress(&env, (const char*)(in ? in : (const uint8_t*)""),
+                             in_len, (char*)out, &clen);
+    snappy_free_env(&env);
+    if (rc != 0) return snappy_err(rc, CU_ERR_COMPRESSION, "compress");
     *out_len = clen;
     return CU_OK;
 }
@@ -89,8 +101,10 @@ static cu_status_t snappy_decompress_oneshot(
         return CU_ERR_TRUNCATED;
     }
     size_t needed = 0;
-    snappy_status s = snappy_uncompressed_length((const char*)in, in_len, &needed);
-    if (s != SNAPPY_OK) return map_snappy_status(s, CU_ERR_DECOMPRESSION);
+    if (!snappy_uncompressed_length((const char*)in, in_len, &needed)) {
+        cu_set_last_error("snappy: invalid header");
+        return CU_ERR_DECOMPRESSION;
+    }
 
     size_t cap_limit = cu_get_max_decompressed_size();
     if (cap_limit > 0 && needed > cap_limit) {
@@ -101,10 +115,11 @@ static cu_status_t snappy_decompress_oneshot(
         *out_len = needed;
         return CU_ERR_BUF_TOO_SMALL;
     }
-    size_t ulen = *out_len;
-    s = snappy_uncompress((const char*)in, in_len, (char*)out, &ulen);
-    if (s != SNAPPY_OK) return map_snappy_status(s, CU_ERR_DECOMPRESSION);
-    *out_len = ulen;
+    /* andikleen's snappy_uncompress writes exactly `needed` bytes (read from the
+     * header); it takes no capacity, so `out` must be sized to `needed` — it is. */
+    int rc = snappy_uncompress((const char*)in, in_len, (char*)out);
+    if (rc != 0) return snappy_err(rc, CU_ERR_DECOMPRESSION, "uncompress");
+    *out_len = needed;
     return CU_OK;
 }
 
@@ -113,8 +128,10 @@ static cu_status_t snappy_decompress_size_hint(
 ) {
     if (in_len == 0) return CU_ERR_TRUNCATED;
     size_t sz = 0;
-    snappy_status s = snappy_uncompressed_length((const char*)in, in_len, &sz);
-    if (s != SNAPPY_OK) return map_snappy_status(s, CU_ERR_DECOMPRESSION);
+    if (!snappy_uncompressed_length((const char*)in, in_len, &sz)) {
+        cu_set_last_error("snappy: invalid header");
+        return CU_ERR_DECOMPRESSION;
+    }
     *out_size = sz;
     return CU_OK;
 }
@@ -209,11 +226,17 @@ static cu_status_t snappy_cstream_finish(
         size_t bound = snappy_max_compressed_length(st->in_len);
         st->out_buf = malloc(bound ? bound : 1);
         if (!st->out_buf) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }
+        struct snappy_env env;
+        if (snappy_init_env(&env) != 0) {
+            cu_set_last_error("snappy: env alloc failed");
+            return CU_ERR_OOM;
+        }
         size_t clen = bound;
-        snappy_status ss = snappy_compress(
-            (const char*)(st->in_buf ? st->in_buf : (const uint8_t*)""),
+        int rc = snappy_compress(
+            &env, (const char*)(st->in_buf ? st->in_buf : (const uint8_t*)""),
             st->in_len, (char*)st->out_buf, &clen);
-        if (ss != SNAPPY_OK) return map_snappy_status(ss, CU_ERR_COMPRESSION);
+        snappy_free_env(&env);
+        if (rc != 0) return snappy_err(rc, CU_ERR_COMPRESSION, "compress");
         st->out_tail = clen;
         st->produced = 1;
     }
@@ -260,16 +283,16 @@ static cu_status_t snappy_dstream_finish(
             return CU_ERR_TRUNCATED;
         }
         size_t usize = 0;
-        snappy_status ss = snappy_uncompressed_length(
-            (const char*)st->in_buf, st->in_len, &usize);
-        if (ss != SNAPPY_OK) return map_snappy_status(ss, CU_ERR_DECOMPRESSION);
+        if (!snappy_uncompressed_length((const char*)st->in_buf, st->in_len, &usize)) {
+            cu_set_last_error("snappy: invalid header");
+            return CU_ERR_DECOMPRESSION;
+        }
         st->out_buf = malloc(usize ? usize : 1);
         if (!st->out_buf) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }
-        size_t ulen = usize;
-        ss = snappy_uncompress((const char*)st->in_buf, st->in_len,
-                               (char*)st->out_buf, &ulen);
-        if (ss != SNAPPY_OK) return map_snappy_status(ss, CU_ERR_DECOMPRESSION);
-        st->out_tail = ulen;
+        int rc = snappy_uncompress((const char*)st->in_buf, st->in_len,
+                                   (char*)st->out_buf);
+        if (rc != 0) return snappy_err(rc, CU_ERR_DECOMPRESSION, "uncompress");
+        st->out_tail = usize;
         st->produced = 1;
     }
 

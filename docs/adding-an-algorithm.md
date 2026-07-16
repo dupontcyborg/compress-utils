@@ -104,10 +104,18 @@ ignore it.
       `CU_TARGET_DEFINITIONS`. (No `add_dependencies` — the codec lib is an
       ordinary in-tree target now.)
 
-### If the upstream is C++ (like Snappy)
+### If the upstream is C++
 
-The static archive references the C++ runtime, but our library/tests link with
-the C driver, which won't pull in libstdc++/libc++ automatically:
+**Strongly prefer a pure-C implementation if a faithful one exists.** A single
+C++ codec forces a `libc++`/`libstdc++` runtime dependency onto *every* binding
+(native, Rust, Go, WASM) and breaks fully-static / musl / distroless builds —
+a disproportionate cost for one codec. Snappy is the precedent: it originally
+used google/snappy (C++) and was deliberately switched to the pure-C port
+`andikleen/snappy-c` (2026-07) to keep the whole library C. The C++ reference is
+kept only as a test oracle (`third_party/snappy-oracle`, `tests/test_snappy_oracle`).
+
+If you genuinely must ship a C++ upstream, the static archive references the C++
+runtime and our C driver won't pull it in automatically, so:
 
 - In the root `CMakeLists.txt` `INCLUDE_<ALGO>` block, append the C++ stdlib to
   `CU_TARGET_LIBS` (`c++` on Apple, `stdc++` elsewhere; MSVC needs nothing).
@@ -116,6 +124,8 @@ the C driver, which won't pull in libstdc++/libc++ automatically:
 - In `bindings/wasm/CMakeLists.txt`, enable `CXX` on the `project()` and set
   `LINKER_LANGUAGE CXX` on the target for this algo so the zig toolchain links
   libc++ for `wasm32-wasi`.
+- Every source-install binding (Rust `cc`, Go cgo, ...) then also needs its own
+  C++-runtime link flag — another reason to avoid this.
 
 ### If the codec is a variant of an existing one (like gzip / zlib)
 
