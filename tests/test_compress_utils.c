@@ -435,12 +435,62 @@ static int test_cross_api(void) {
     return 0;
 }
 
+/* Regression: malformed/garbage input must be REJECTED promptly and must never
+ * send the caller into an unbounded drain loop. Guards the xz decompression-bomb
+ * class (a truncated/garbage stream whose finish() kept returning
+ * CU_ERR_BUF_TOO_SMALL with no progress → an infinite loop in every binding). */
+static int test_reject_garbage_one(cu_algorithm_t algo) {
+    static const unsigned char patterns[][4] = {
+        {0x00}, {0xff}, {0x00, 0x00, 0x00, 0x00}, {0xde, 0xad, 0xbe, 0xef},
+    };
+    static const size_t plens[] = {1, 1, 4, 4};
+    const char* name = cu_algorithm_name(algo);
+    for (size_t p = 0; p < 4; p++) {
+        /* One-shot: must return (never hang); the exact status is codec-specific
+         * (e.g. snappy's 0x00 is a valid empty block). */
+        unsigned char o1[256];
+        size_t ol1 = sizeof o1;
+        (void)cu_decompress(algo, patterns[p], plens[p], o1, &ol1);
+
+        /* Streaming: drain finish() in a BOUNDED loop. A correct codec reaches a
+         * terminal status in a few iterations; a bomb spins on BUF_TOO_SMALL. */
+        cu_decompress_stream_t* ds = NULL;
+        if (cu_decompress_stream_create(algo, &ds) != CU_OK) continue;
+        unsigned char o2[256];
+        size_t ol2 = sizeof o2;
+        (void)cu_decompress_stream_write(ds, patterns[p], plens[p], o2, &ol2);
+        cu_status_t f = CU_ERR_BUF_TOO_SMALL;
+        int iters = 0;
+        const int LIMIT = 100000;
+        while (f == CU_ERR_BUF_TOO_SMALL && iters < LIMIT) {
+            ol2 = sizeof o2;
+            f = cu_decompress_stream_finish(ds, o2, &ol2);
+            iters++;
+        }
+        cu_decompress_stream_destroy(ds);
+        CHECK(iters < LIMIT,
+              "%s: streaming finish did not terminate on garbage pattern %zu "
+              "(decompression bomb)\n", name, p);
+    }
+    return 0;
+}
+
+static int test_reject_garbage(void) {
+    for (size_t i = 0; i < N_ALGOS; i++) {
+        if (!cu_algorithm_available(ALL_ALGOS[i])) continue;
+        if (test_reject_garbage_one(ALL_ALGOS[i])) return 1;
+        printf("  %s reject-garbage: ok\n", cu_algorithm_name(ALL_ALGOS[i]));
+    }
+    return 0;
+}
+
 int main(void) {
     if (test_version_and_introspection())   return 1;
     if (test_oneshot_roundtrip())           return 1;
     if (test_buf_too_small())               return 1;
     if (test_streaming_with_tight_buffer()) return 1;
     if (test_cross_api())                   return 1;
+    if (test_reject_garbage())              return 1;
     printf("OK\n");
     return 0;
 }

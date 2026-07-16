@@ -8,7 +8,7 @@
  * incremental decoder. (Footer-parsing size_hint is a future enhancement
  * — tracked in TODO.md.)
  *
- * Streaming uses lzma_easy_encoder / lzma_auto_decoder with the standard
+ * Streaming uses lzma_easy_encoder / lzma_stream_decoder with the standard
  * stashed-tail protocol.
  */
 
@@ -80,8 +80,14 @@ static cu_status_t xz_decompress(
         return CU_ERR_TRUNCATED;
     }
     lzma_stream strm = LZMA_STREAM_INIT;
-    if (lzma_auto_decoder(&strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit; tunable later */, LZMA_CONCATENATED) != LZMA_OK) {
-        cu_set_last_error("xz: lzma_auto_decoder init failed");
+    /* lzma_stream_decoder (NOT lzma_auto_decoder): we only ever produce .xz
+     * streams, and auto_decoder additionally accepts the legacy .lzma_alone
+     * format, whose header can declare an unknown/unbounded uncompressed size —
+     * feeding non-xz garbage (e.g. a lone 0x00) made it emit output without end
+     * (decompression bomb). stream_decoder rejects anything that isn't a valid
+     * .xz stream up front. */
+    if (lzma_stream_decoder(&strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit */, LZMA_CONCATENATED) != LZMA_OK) {
+        cu_set_last_error("xz: lzma_stream_decoder init failed");
         return CU_ERR_OOM;
     }
     strm.next_in = in;
@@ -104,8 +110,11 @@ static cu_status_t xz_decompress(
     } else if (r == LZMA_OK && strm.avail_out == 0) {
         cu_set_last_error("xz: output buffer too small (size not probed)");
         ret = CU_ERR_SIZE_UNKNOWN;
-    } else if (r == LZMA_BUF_ERROR) {
-        cu_set_last_error("xz: truncated input or output too small");
+    } else if (r == LZMA_OK || r == LZMA_BUF_ERROR) {
+        /* LZMA_FINISH returned without STREAM_END and the output buffer is NOT
+         * full → the input was an incomplete .xz stream. (LZMA_OK here is not
+         * success — only STREAM_END is.) Terminal error; do not report success. */
+        cu_set_last_error("xz: truncated input");
         ret = CU_ERR_TRUNCATED;
     } else {
         ret = map_lzma_error(r, CU_ERR_DECOMPRESSION);
@@ -165,7 +174,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
         st->strm.avail_out = cap - written;
         size_t before = st->strm.avail_out;
         lzma_ret r = lzma_code(&st->strm, action);
-        written += before - st->strm.avail_out;
+        size_t produced = before - st->strm.avail_out;
+        written += produced;
 
         if (r == LZMA_STREAM_END) {
             st->stream_end = 1;
@@ -193,7 +203,27 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
                 *out_len = written;
                 return CU_OK;
             }
+            /* FINISH, output not full, but the codec produced nothing and has no
+             * input left → it cannot make progress (truncated/incomplete stream).
+             * Stop, leaving stream_end unset; the *_finish caller turns that into
+             * CU_ERR_TRUNCATED. Continuing would spin forever. */
+            if (produced == 0 && st->strm.avail_in == 0) {
+                st->pending_len = 0;
+                *out_len = written;
+                return CU_OK;
+            }
             continue;
+        }
+        if (r == LZMA_BUF_ERROR) {
+            /* No forward progress. Output-buffer-full is handled above (LZMA_OK +
+             * avail_out==0), so this is the input side: the stream ended before
+             * the codec was done. This MUST be terminal — mapping it to
+             * CU_ERR_BUF_TOO_SMALL (as map_lzma_error does) tells the caller to
+             * drain-and-retry, which never terminates with no more input/output
+             * (the xz decompression hang). Report truncation directly.  */
+            st->pending_len = st->strm.avail_in;
+            *out_len = written;
+            return CU_ERR_TRUNCATED;
         }
         return map_lzma_error(r, action == LZMA_RUN ? CU_ERR_COMPRESSION : CU_ERR_DECOMPRESSION);
     }
@@ -259,7 +289,9 @@ static cu_status_t xz_dstream_create(void** out_state) {
     if (!st) { cu_set_last_error("xz: oom"); return CU_ERR_OOM; }
     lzma_stream init = LZMA_STREAM_INIT;
     st->strm = init;
-    lzma_ret r = lzma_auto_decoder(&st->strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit; tunable later */, LZMA_CONCATENATED);
+    /* lzma_stream_decoder, not auto_decoder — see xz_decompress for why (rejects
+     * the legacy .lzma format that could decompress-bomb on garbage input). */
+    lzma_ret r = lzma_stream_decoder(&st->strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit */, LZMA_CONCATENATED);
     if (r != LZMA_OK) {
         cu_status_t s = map_lzma_error(r, CU_ERR_DECOMPRESSION);
         free(st);
