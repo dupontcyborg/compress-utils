@@ -2,15 +2,21 @@ name: Build and Test Rust
 
 # The Rust crate compiles the vendored third_party/ sources from source via the
 # `cc` crate in build.rs — no prebuilt lib, no network, works offline/on docs.rs.
-# This workflow proves it builds + passes on every supported platform, plus fmt
-# and clippy. The Cargo.toml is at the repo root (so third_party is inside the
-# crate); real code lives under bindings/rust/.
+# This workflow proves it builds + passes on every supported platform (fmt +
+# clippy + tests), and — like the WASM and Python workflows — publishes to
+# crates.io on a v* tag from the same file. The Cargo.toml is at the repo root
+# (so third_party is inside the crate); real code lives under bindings/rust/.
+#
+#   - PRs that touch Rust-relevant paths get validation only (no publish).
+#   - main pushes get full validation, no publish.
+#   - v* tags get full validation + crates.io publish.
+#
+# Publishing requires the CARGO_REGISTRY_TOKEN repo secret (crates.io API token).
 
 on:
   push:
     branches: ["main"]
-    paths: ["bindings/rust/**", "Cargo.toml", "src/**", "include/**",
-            "third_party/**"]
+    tags: ["v*"]
   pull_request:
     branches: ["main"]
     paths: ["bindings/rust/**", "Cargo.toml", "src/**", "include/**",
@@ -51,3 +57,41 @@ jobs:
         run: cargo build
       - name: Test
         run: cargo test
+
+  # Packaging gate: proves `cargo publish` will succeed before a release tag —
+  # catches include-list mistakes and the crates.io 10 MiB size limit early
+  # (the vendored third_party/ tree is bundled). Does not upload.
+  package:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo publish --dry-run
+        run: cargo publish --dry-run
+
+  # crates.io publish — only on a v* tag, after everything else is green.
+  publish:
+    needs: [lint, test, package]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    # Same protected deployment environment the npm/PyPI publish jobs use — its
+    # scoped CARGO_REGISTRY_TOKEN secret + any approval/branch rules apply here.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      # The version-drift workflow already asserts Cargo.toml == tag on tag push;
+      # re-check here so a publish can never ship a mismatched version.
+      - name: Verify crate version matches the tag
+        run: |
+          VER=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "Cargo.toml=$VER  tag=$TAG"
+          test "$VER" = "$TAG" || { echo "::error::Cargo.toml version ($VER) != tag ($TAG) — run tools/sync-versions.py"; exit 1; }
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish

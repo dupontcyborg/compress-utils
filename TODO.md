@@ -2,22 +2,22 @@
 
 ## Bugs & Critical Issues
 
-- [ ] **XZ streaming decompress can emit unbounded output on malformed input
-  (decompression bomb).** Feeding a non-xz-magic byte (e.g. a lone `0x00`) to the
-  xz decompressor makes `cu_decompress_stream_finish` return `CU_ERR_BUF_TOO_SMALL`
-  with a full output buffer *every call, forever* — it never terminates. Root
-  cause: `xz_dstream_create` (`src/algorithms/xz/xz.c`) uses `lzma_auto_decoder`,
-  which falls back to the legacy `.lzma` (LZMA_ALONE) format on a non-`0xFD`
-  first byte; that format can encode "unknown size", so liblzma expands garbage
-  without bound. **Affects every source binding** (Go's `Decompress` → `io.ReadAll`
-  hangs identically); self-tests miss it because they only decode valid/own output.
-  Found 2026-07 while building the Rust binding (Rust defends at the binding layer:
-  `decompress()` caps its streaming fallback at the one-shot size cap, and the
-  streaming reader treats `BUF_TOO_SMALL`+0-bytes as a stuck decoder → error).
-  - **Fix:** switch xz decompress from `lzma_auto_decoder` to `lzma_stream_decoder`
-    (xz-only; rejects the `.lzma` fallback), or gate legacy `.lzma` behind an
-    explicit opt-in. Also make the C streaming `finish` detect no-forward-progress
-    and return `CU_ERR_DECOMPRESSION` rather than looping. Add a fuzz-corpus entry.
+- [X] **XZ decompress hang / bomb on malformed input (fixed 2026-07).** Feeding a
+  non-xz-magic byte (e.g. a lone `0x00`) to the xz decompressor never terminated.
+  Two independent causes, both fixed in `src/algorithms/xz/xz.c`:
+  1. `xz_dstream_create`/`xz_decompress` used `lzma_auto_decoder`, which falls
+     back to the legacy `.lzma` (LZMA_ALONE) format on a non-`0xFD` first byte;
+     that format can declare "unknown size", so liblzma expanded garbage without
+     bound → **switched to `lzma_stream_decoder`** (`.xz`-only, no `.lzma`).
+  2. `stream_pump` mapped `LZMA_BUF_ERROR` (no forward progress on a truncated
+     stream) to `CU_ERR_BUF_TOO_SMALL` — a *drain-and-retry* signal — so the
+     caller looped forever with zero output. Now `LZMA_BUF_ERROR`/no-progress on
+     FINISH is **terminal → `CU_ERR_TRUNCATED`**; the one-shot path likewise stops
+     treating `LZMA_OK`-without-`STREAM_END` as success.
+  Affected every source binding (Rust already had a binding-layer guard; Go was
+  vulnerable — now fixed at the core). Regression test:
+  `tests/test_compress_utils.c::test_reject_garbage` drains `finish()` in a
+  bounded loop for every codec and fails if it doesn't terminate.
 - [X] **Fix comment/code mismatch in zlib.cpp:60-61** - Comment says "max 4 times" but code uses `retries = 10`
 - [X] **C API discards all error context** - `catch (const std::exception& e)` returns `-1` with no way to diagnose failures
   - [X] Add error retrieval function (`compress_utils_last_error()`)
@@ -148,7 +148,13 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
 - [X] `go` -> `pkg.go`
 - [X] `js/ts` -> `npm`
 - [X] `python` -> `pypi`
-- [X] `rust` -> `cargo`
+- [x] `rust` -> `cargo` — `build_and_test_rust.yml` publishes to crates.io on a
+  `v*` tag (a tag-gated `publish` job in the same workflow, matching the WASM/
+  Python pattern; verifies Cargo.toml == tag first) plus a `cargo publish
+  --dry-run` package gate on every run. Packaged crate is 7.1 MiB / 1.7 MiB
+  compressed (well under the 10 MiB limit). **Prerequisite: add the
+  `CARGO_REGISTRY_TOKEN` repo secret (crates.io API token) before the first
+  tag** — until then only the publish step fails, nothing else.
 - [ ] `java` -> `maven`
 - [ ] `swift` -> ?
 - [ ] `cli-macos` -> `homebrew`
