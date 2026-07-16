@@ -99,7 +99,7 @@
       "sources": [
         "snappy.c"
       ],
-      "tag": "master",
+      "tag": "fef67ac6effb40c83fb5e37eaf243381fa056f9b",
       "tree_sha256": "",
       "url": "https://github.com/andikleen/snappy-c.git"
     },

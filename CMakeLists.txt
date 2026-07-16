@@ -189,17 +189,10 @@ if(INCLUDE_SNAPPY)
     list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/snappy/snappy.c)
     list(APPEND CU_TARGET_LIBS snappy_library)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_SNAPPY)
-    # Snappy is C++; its static archive references the C++ runtime. Our
-    # library, tests, and fuzz targets link with the C driver, which does not
-    # pull in libstdc++/libc++ automatically — add it explicitly. MSVC embeds
-    # the dependency in the objects, so nothing extra is needed there.
-    if(NOT MSVC)
-        if(APPLE)
-            list(APPEND CU_TARGET_LIBS c++)
-        else()
-            list(APPEND CU_TARGET_LIBS stdc++)
-        endif()
-    endif()
+    # Snappy is now the pure-C port (andikleen/snappy-c, third_party/snappy) — no
+    # C++ runtime dependency. The old c++/stdc++ link for google/snappy is gone;
+    # the whole release library is pure C. google/snappy (C++) lives only in the
+    # differential test (see tests/).
 endif()
 
 # Platform link deps.

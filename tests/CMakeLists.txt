@@ -27,4 +27,29 @@ if(ENABLE_TESTS)
     add_test(NAME test_compress_utils COMMAND test_compress_utils)
 endif()
 
+# Snappy differential test vs the reference google/snappy (C++). google/snappy
+# is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
+# release library, which uses the pure-C andikleen port. This is a C++ target on
+# purpose; the whole point of the swap is that C++ stays confined to tests.
+if(ENABLE_TESTS AND INCLUDE_SNAPPY)
+    set(_CU_SNAPPY_ORACLE ${CMAKE_SOURCE_DIR}/third_party/snappy-oracle)
+    add_executable(test_snappy_oracle
+        interop/snappy_oracle_test.cc
+        ${_CU_SNAPPY_ORACLE}/snappy.cc
+        ${_CU_SNAPPY_ORACLE}/snappy-sinksource.cc
+        ${_CU_SNAPPY_ORACLE}/snappy-stubs-internal.cc)
+    set_target_properties(test_snappy_oracle PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+    target_compile_definitions(test_snappy_oracle PRIVATE HAVE_CONFIG_H)
+    target_include_directories(test_snappy_oracle PRIVATE
+        ${_CU_SNAPPY_ORACLE} ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(test_snappy_oracle PRIVATE compress_utils_obj)
+    # Silence google/snappy upstream warnings — we don't own that code.
+    if(MSVC)
+        target_compile_options(test_snappy_oracle PRIVATE /w)
+    else()
+        target_compile_options(test_snappy_oracle PRIVATE -w)
+    endif()
+    add_test(NAME test_snappy_oracle COMMAND test_snappy_oracle)
+endif()
+
 add_subdirectory(fuzz)

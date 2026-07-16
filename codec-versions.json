@@ -1,10 +1,10 @@
 {
-  "_comment": "Single source of truth for upstream codec sources. Read by CMake (cmake/CodecVersions.cmake) and by tools/sync-codecs.py (which regenerates bindings/zig/build.zig.zon).",
+  "_comment": "Single source of truth for upstream codec sources. Read by CMake (cmake/CodecVersions.cmake) and by tools/sync-codecs.py. snappy is the pure-C andikleen port (no C++ runtime); third_party/snappy/compat.h is a hand-authored portable shim, not upstream. google/snappy (C++) is snapshotted at third_party/snappy-oracle (from tag 1.2.2) as a TEST-ONLY differential oracle — it never ships, so it is intentionally not a codec entry here. NOTE: tools/vendor-codecs.py still has a google-snappy-specific special-case; update it (preserve compat.h, no config.h) before re-vendoring snappy.",
   "zstd":   { "url": "https://github.com/facebook/zstd.git",       "tag": "v1.5.7" },
   "brotli": { "url": "https://github.com/google/brotli.git",       "tag": "v1.2.0" },
   "zlib":   { "url": "https://github.com/madler/zlib.git",         "tag": "v1.3.1" },
   "bz2":    { "url": "https://gitlab.com/bzip2/bzip2.git",         "tag": "bzip2-1.0.8" },
   "lz4":    { "url": "https://github.com/lz4/lz4.git",             "tag": "v1.10.0" },
   "xz":     { "url": "https://github.com/tukaani-project/xz.git",  "tag": "v5.6.3" },
-  "snappy": { "url": "https://github.com/google/snappy.git",       "tag": "1.2.2" }
+  "snappy": { "url": "https://github.com/andikleen/snappy-c.git",  "tag": "fef67ac6effb40c83fb5e37eaf243381fa056f9b" }
 }
