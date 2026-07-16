@@ -1,0 +1,67 @@
+# Thin, root-level crate manifest for the Rust binding.
+
+[package]
+name = "compress-utils"
+version = "0.7.1"
+edition = "2021"
+rust-version = "1.71"
+license = "MIT"
+description = "Unified interface to zstd, brotli, zlib, gzip, bzip2, lz4, xz/lzma and snappy compression, over a single C core."
+repository = "https://github.com/dupontcyborg/compress-utils"
+homepage = "https://github.com/dupontcyborg/compress-utils"
+readme = "bindings/rust/README.md"
+keywords = ["compression", "zstd", "brotli", "lz4", "gzip"]
+categories = ["compression", "api-bindings"]
+build = "bindings/rust/build.rs"
+# Keep the published crate lean: ship only what build.rs needs to compile the C
+# core + vendored codecs from source, plus the Rust sources.
+include = [
+    "bindings/rust/src/**/*.rs",
+    "bindings/rust/build.rs",
+    "bindings/rust/README.md",
+    "include/compress_utils.h",
+    "src/**/*.c",
+    "src/**/*.h",
+    "third_party/manifest.json",
+    "third_party/**/*.c",
+    "third_party/**/*.cc",
+    "third_party/**/*.h",
+    "third_party/**/*.hpp",
+    "third_party/**/*.inc",
+    "LICENSE",
+]
+
+[lib]
+name = "compress_utils"
+path = "bindings/rust/src/lib.rs"
+
+# The crate always compiles the C core + vendored codecs from source with the
+# `cc` crate, needing only a C/C++ compiler
+[build-dependencies]
+cc = "1.0"
+# Reads third_party/manifest.json (the single source of truth for codec
+# sources/includes/defines) so the vendored build never drifts from CMake.
+serde_json = "1"
+
+[dev-dependencies]
+# Independent reference codecs for interop tests. All PURE-RUST implementations
+# on purpose: our static archive statically defines the C codec symbols
+# (ZSTD_*, lzma_*, BZ2_*, ...), so linking a C-backed reference crate
+# (zstd-sys / lzma-sys / bzip2-sys) into the same test binary would collide on
+# those symbols. Pure-Rust refs are both clash-free and genuinely independent.
+# bz2 has no mainstream pure-Rust reference — its interop stays covered by the
+# Python + CLI channels; Rust still self-consistency-tests it.
+flate2 = "1"          # gzip + zlib, miniz_oxide backend (pure Rust)
+brotli = "6"          # pure Rust
+lz4_flex = { version = "0.11", features = ["frame"] }
+snap = "1"            # pure-Rust Snappy (raw block)
+ruzstd = "0.7"        # pure-Rust zstd decoder (outbound-only ref)
+lzma-rs = "0.3"       # pure-Rust xz
+
+[[test]]
+name = "roundtrip"
+path = "bindings/rust/tests/roundtrip.rs"
+
+[[test]]
+name = "interop"
+path = "bindings/rust/tests/interop.rs"

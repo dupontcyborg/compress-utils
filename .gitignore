@@ -52,3 +52,7 @@ py.typed
 .DS_Store
 
 .cache/
+
+# Rust. Cargo.lock is not committed for alibrary crate.
+/target/
+Cargo.lock

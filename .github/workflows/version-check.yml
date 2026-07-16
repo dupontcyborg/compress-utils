@@ -1,11 +1,12 @@
 name: Binding version drift check
 
 # Verifies the committed version fallbacks (the C header's CU_VERSION_* macros,
-# bindings/wasm/package.json, and CMakeLists.txt's DEFAULT_VERSION) match the
-# git tag. The Go and WASM bindings compile/ship from these committed values —
-# there is no CMake or git at `go get` / npm-install time — so a stale value
-# means customers get the wrong reported version. tools/sync-versions.py keeps
-# them honest; this is the gate that catches a forgotten sync.
+# bindings/wasm/package.json, CMakeLists.txt's DEFAULT_VERSION, and Cargo.toml's
+# [package] version) match the git tag. The Go, Rust and WASM bindings
+# compile/ship from these committed values — there is no CMake or git at
+# `go get` / `cargo` / npm-install time — so a stale value means customers get
+# the wrong reported version. tools/sync-versions.py keeps them honest; this is
+# the gate that catches a forgotten sync.
 #
 #   * On a release tag push: assert every committed value == the pushed tag.
 #   * On a PR touching the version surface: assert every value == the latest
@@ -20,6 +21,7 @@ on:
       - "include/compress_utils.h"
       - "bindings/wasm/package.json"
       - "CMakeLists.txt"
+      - "Cargo.toml"
       - "tools/sync-versions.py"
   workflow_dispatch:
 

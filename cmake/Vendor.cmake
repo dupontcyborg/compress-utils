@@ -6,11 +6,13 @@
 # no configure step: the manifest already encodes sources, include dirs, and the
 # portable -D define set for every target.
 #
-# cu_add_vendored_codec(<name>) creates target <name>_library (STATIC) with its
-# include dirs PUBLIC (so consumers that #include the codec's headers pick them
-# up) and its build-time defines PRIVATE. Header-visible defines that our vtable
-# also needs (e.g. LZMA_API_STATIC) are added PUBLIC via the optional
-# PUBLIC_DEFINES argument.
+# cu_add_vendored_codec(<name>) creates an OBJECT library <name>_objs (the
+# compiled objects) and a STATIC facade <name>_library over it, with include
+# dirs PUBLIC (so consumers that #include the codec's headers pick them up) and
+# build-time defines PRIVATE. Header-visible defines that our vtable also needs
+# (e.g. LZMA_API_STATIC) are added PUBLIC via the optional PUBLIC_DEFINES
+# argument. The <name>_objs target lets compress_utils_static bundle every
+# codec's objects into one self-contained archive (see BUILD_STATIC_LIB).
 
 # Repo root holding third_party/ — the WASM per-algo child build sets
 # CU_REPO_ROOT since its CMAKE_SOURCE_DIR is the wasm project, not the repo.
@@ -66,19 +68,34 @@ function(cu_add_vendored_codec name)
     list(TRANSFORM _sources PREPEND "${_codec_dir}/")
     list(TRANSFORM _includes PREPEND "${_codec_dir}/")
 
-    add_library(${name}_library STATIC ${_sources})
-    target_include_directories(${name}_library PUBLIC ${_includes})
-    target_compile_definitions(${name}_library
+    # The codec's objects live in an OBJECT library (<name>_objs) so a bundled
+    # self-contained archive (compress_utils_static) can pull them in via
+    # $<TARGET_OBJECTS:...>. The STATIC <name>_library is derived from those
+    # objects and is what all existing consumers (native lib, WASM, tests) link;
+    # its name and behaviour are unchanged.
+    add_library(${name}_objs OBJECT ${_sources})
+    target_include_directories(${name}_objs PUBLIC ${_includes})
+    target_compile_definitions(${name}_objs
         PRIVATE ${_defines}
         PUBLIC ${ARG_PUBLIC_DEFINES})
-    set_target_properties(${name}_library PROPERTIES
+    set_target_properties(${name}_objs PROPERTIES
         POSITION_INDEPENDENT_CODE ON)
 
     # Silence upstream warnings — we don't own this code and build with -Werror
     # nowhere in the codec libs. Keeps a clean build log across 8 upstreams.
     if(MSVC)
-        target_compile_options(${name}_library PRIVATE /w)
+        target_compile_options(${name}_objs PRIVATE /w)
     else()
-        target_compile_options(${name}_library PRIVATE -w)
+        target_compile_options(${name}_objs PRIVATE -w)
     endif()
+
+    # STATIC facade over the objects. Mirror the OBJECT library's PUBLIC usage
+    # requirements (include dirs + header-visible defines) onto it so consumers
+    # that link <name>_library keep compiling exactly as before. Build-time
+    # PRIVATE defines aren't needed here — no sources compile at this target.
+    add_library(${name}_library STATIC $<TARGET_OBJECTS:${name}_objs>)
+    target_include_directories(${name}_library PUBLIC ${_includes})
+    target_compile_definitions(${name}_library PUBLIC ${ARG_PUBLIC_DEFINES})
+    set_target_properties(${name}_library PROPERTIES
+        POSITION_INDEPENDENT_CODE ON)
 endfunction()

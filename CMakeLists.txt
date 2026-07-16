@@ -90,6 +90,10 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_FUZZ  "Enable libFuzzer harnesses (clang only)" OFF)
 
+# Build a single self-contained static archive (compress_utils_static) bundling
+# the core dispatcher + every enabled codec's objects.
+option(BUILD_STATIC_LIB "Build a self-contained compress_utils_static archive" OFF)
+
 # Per-algorithm inclusion. All six have been migrated to the C core in
 # Phase 1; default to ON. Disable individually for slimmer builds.
 option(INCLUDE_ZSTD   "Include Zstd compression algorithm"   ON)
@@ -266,6 +270,40 @@ target_link_libraries(compress_utils PRIVATE ${CU_TARGET_LIBS})
 # The former zstd_external/brotli_external/... ExternalProject fetch steps are
 # gone entirely.
 
+# Optional self-contained static archive. Bundles the core dispatcher objects
+# (compress_utils_obj, already compiled with default-visibility cu_* symbols)
+# plus every enabled codec's OBJECT library, so a single `.a`/`.lib` links
+# without hunting down 8 codec archives. This is the artifact the Rust binding
+# downloads from GitHub Releases; see .github/workflows/build_and_test_c_cpp.yml.
+if(BUILD_STATIC_LIB)
+    # Collect the OBJECT libraries behind the enabled codec <algo>_library
+    # targets. CU_TARGET_LIBS also holds system libs (m, c++/stdc++, msvcrt)
+    # which have no objects to bundle — those stay a link-time responsibility
+    # of the consumer, documented in the release README.
+    set(CU_CODEC_OBJECTS "")
+    foreach(_lib IN LISTS CU_TARGET_LIBS)
+        if(_lib MATCHES "_library$")
+            string(REGEX REPLACE "_library$" "_objs" _objtgt "${_lib}")
+            list(APPEND CU_CODEC_OBJECTS "$<TARGET_OBJECTS:${_objtgt}>")
+        endif()
+    endforeach()
+
+    add_library(compress_utils_static STATIC
+        $<TARGET_OBJECTS:compress_utils_obj>
+        ${CU_CODEC_OBJECTS}
+    )
+    target_include_directories(compress_utils_static
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+    )
+    # Uniform archive name on every platform (libcompress_utils_static.a /
+    # compress_utils_static.lib) so it never collides with the shared lib's
+    # Windows import library (compress_utils.lib) and the Rust build.rs can link
+    # `static=compress_utils_static` unconditionally. Installed in the INSTALL
+    # section below once CU_DIST_DIR is defined.
+endif()
+
 ######### INSTALL #########
 
 option(SCIKIT_BUILD "Build within scikit-build environment" OFF)
@@ -280,6 +318,10 @@ if(NOT SCIKIT_BUILD)
     )
     install(FILES ${CMAKE_SOURCE_DIR}/include/compress_utils.h
             DESTINATION ${CU_DIST_DIR}/include)
+    if(BUILD_STATIC_LIB)
+        install(TARGETS compress_utils_static
+            ARCHIVE DESTINATION ${CU_DIST_DIR}/lib)
+    endif()
 endif()
 
 ######### TESTS #########

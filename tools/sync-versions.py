@@ -7,8 +7,9 @@ Python bindings already derive it live at build time — CMake injects
 Python wheel reads the tag via setuptools_scm (bindings/python/pyproject.toml).
 
 But the bindings that compile from source with no CMake and no git at the
-consumer's build — Go (`go get`, via cgo) and WASM (`npm`, a published
-package.json) — can only see the values *committed* to the tree. Those are:
+consumer's build — Go (`go get`, via cgo), Rust (`cargo`, via build.rs) and WASM
+(`npm`, a published package.json) — can only see the values *committed* to the
+tree. Those are:
 
   * include/compress_utils.h   CU_VERSION_{MAJOR,MINOR,PATCH}  (cu_version()'s
     fallback when CU_BUILD_VERSION is absent — this is what the Go binding
@@ -16,9 +17,11 @@ package.json) — can only see the values *committed* to the tree. Those are:
   * bindings/wasm/package.json "version"
   * CMakeLists.txt             DEFAULT_VERSION (the fallback for out-of-tree
     builds with no git history)
+  * Cargo.toml                 [package] version (the Rust crate version; also
+    what build.rs injects as CU_BUILD_VERSION and matches the release asset name)
 
-This script rewrites those three from the tag so a source build reports the
-release version instead of a stale hardcoded one.
+This script rewrites those from the tag so a source build reports the release
+version instead of a stale hardcoded one.
 
 Usage:
     tools/sync-versions.py              # version from `git describe` tag
@@ -38,6 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HEADER = REPO_ROOT / "include" / "compress_utils.h"
 WASM_PKG = REPO_ROOT / "bindings" / "wasm" / "package.json"
 CMAKELISTS = REPO_ROOT / "CMakeLists.txt"
+CARGO_TOML = REPO_ROOT / "Cargo.toml"
 
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
@@ -99,6 +103,17 @@ def render_cmakelists(text: str, version: str) -> str:
     return text
 
 
+def render_cargo_toml(text: str, version: str) -> str:
+    # Only the [package] version — a line-start `version = "..."`. Dependency
+    # versions live inside inline tables (`ureq = { version = "2" }`) or bare
+    # (`flate2 = "1"`), never at column 0, so anchoring to ^ leaves them alone.
+    text, n = re.subn(r'(?m)^(version\s*=\s*")[^"]*(")',
+                      rf"\g<1>{version}\g<2>", text, count=1)
+    if n != 1:
+        sys.exit(f"error: expected a [package] version line in {CARGO_TOML}")
+    return text
+
+
 def targets(version: str) -> list[tuple[Path, str, str]]:
     """Return (path, committed_text, rendered_text) for every synced file."""
     ver = parse(version)
@@ -106,6 +121,7 @@ def targets(version: str) -> list[tuple[Path, str, str]]:
         (HEADER, HEADER.read_text(), render_header(HEADER.read_text(), ver)),
         (WASM_PKG, WASM_PKG.read_text(), render_wasm_pkg(WASM_PKG.read_text(), version)),
         (CMAKELISTS, CMAKELISTS.read_text(), render_cmakelists(CMAKELISTS.read_text(), version)),
+        (CARGO_TOML, CARGO_TOML.read_text(), render_cargo_toml(CARGO_TOML.read_text(), version)),
     ]
 
 
