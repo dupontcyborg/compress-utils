@@ -40,8 +40,11 @@ typedef uint64_t u64;
 
 /* ---- unaligned load/store via memcpy (no typeof / statement-expressions) ----
  * snappy.c only ever calls these through UNALIGNED_LOAD/STORE{16,32,64}, which
- * cast the pointer to a u16, u32 or u64 pointer first, so _Generic dispatch on
- * the pointer type covers every call site. */
+ * cast the pointer to a u16, u32 or u64 pointer first. We dispatch on
+ * `sizeof(*(p))` (a compile-time constant) rather than C11 `_Generic`, because
+ * `_Generic` requires C11 mode — MSVC's default C mode (used by the Rust `cc`
+ * crate, which doesn't pass /std:c11) rejects it. The `sizeof` ternary works in
+ * any C mode (C89+); the untaken branch is valid but never evaluated. */
 static inline u16 cu_ld16(const void *p) { u16 v; memcpy(&v, p, 2); return v; }
 static inline u32 cu_ld32(const void *p) { u32 v; memcpy(&v, p, 4); return v; }
 static inline u64 cu_ld64(const void *p) { u64 v; memcpy(&v, p, 8); return v; }
@@ -50,11 +53,10 @@ static inline void cu_st32(void *p, u32 v) { memcpy(p, &v, 4); }
 static inline void cu_st64(void *p, u64 v) { memcpy(p, &v, 8); }
 
 #define get_unaligned(p) \
-    _Generic((p), const u16 *: cu_ld16, u16 *: cu_ld16, \
-                  const u32 *: cu_ld32, u32 *: cu_ld32)(p)
+    (sizeof(*(p)) == 2 ? (u32)cu_ld16((const void *)(p)) : cu_ld32((const void *)(p)))
 #define get_unaligned64(p) cu_ld64((const void *)(p))
 #define put_unaligned(v, p) \
-    _Generic((p), u16 *: cu_st16, u32 *: cu_st32)((p), (v))
+    (sizeof(*(p)) == 2 ? cu_st16((void *)(p), (u16)(v)) : cu_st32((void *)(p), (u32)(v)))
 #define put_unaligned64(v, p) cu_st64((void *)(p), (u64)(v))
 
 /* ---- little-endian helpers ----

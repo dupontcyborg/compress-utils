@@ -88,7 +88,7 @@ add_subdirectory(
 # _initialize runs and the clang toolchain supports — but MSVC cannot parse it,
 # so it is applied only to the wasm build, not the shared manifest.
 if(CU_WASM_ALGO STREQUAL "brotli")
-    target_compile_definitions(brotli_library PRIVATE BROTLI_STATIC_INIT=1)
+    target_compile_definitions(brotli_objs PRIVATE BROTLI_STATIC_INIT=1)
 endif()
 
 # --- Export allow-list groups -----------------------------------------------

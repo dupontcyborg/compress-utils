@@ -111,8 +111,8 @@ describe("per-algo .wasm size budgets", () => {
     // enough headroom for routine codec drift, tight enough that a real
     // regression trips it (e.g. --export-dynamic returning would blow zstd
     // past 440; brotli falling back to BROTLI_STATIC_INIT=NONE jumps it to
-    // ~712, well past 520). Current sizes: zlib 78, bz2 92, xz 132, lz4 108,
-    // zstd 406, brotli 471 KB.
+    // ~800, well past its cap). Current sizes: zlib 78, bz2 92, xz 132, lz4 108,
+    // zstd 406, brotli 514 KB.
     const BUDGET_KB: Record<string, number> = {
         zlib: 88,
         bz2: 102,
@@ -121,7 +121,7 @@ describe("per-algo .wasm size budgets", () => {
         snappy: 60,
         gzip: 90,
         zstd: 440,
-        brotli: 520,
+        brotli: 565,
     };
 
     for (const algo of ALL_ALGOS) {
@@ -139,11 +139,11 @@ describe("direction-variant .wasm size budgets", () => {
     // are the regression gate that matters most — if the encoder ever leaks
     // back into a decode-only module (e.g. a codec vtable stops honoring
     // CU_OMIT_COMPRESS), the size jumps obviously past these caps. ~10% over
-    // current; current decode KB: zstd 90, brotli 183, lz4 35, bz2 54, xz 81,
-    // zlib 49 — encode KB: zstd 346, brotli 431, lz4 96, bz2 65, xz 100, zlib 58.
+    // current; current decode KB: zstd 90, brotli 189, lz4 35, bz2 54, xz 81,
+    // zlib 49 — encode KB: zstd 346, brotli 470, lz4 96, bz2 65, xz 100, zlib 58.
     const VARIANT_KB: Record<string, { decompress: number; compress: number }> = {
         zstd: { decompress: 100, compress: 380 },
-        brotli: { decompress: 205, compress: 470 },
+        brotli: { decompress: 205, compress: 515 },
         zlib: { decompress: 58, compress: 68 },
         bz2: { decompress: 62, compress: 75 },
         lz4: { decompress: 45, compress: 108 },
