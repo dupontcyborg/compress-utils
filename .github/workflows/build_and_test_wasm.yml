@@ -23,6 +23,7 @@ on:
       - "include/compress_utils.h"
       - "cmake/toolchains/zig-wasm.cmake"
       - ".github/workflows/build_and_test_wasm.yml"
+  workflow_dispatch:
 
 # Least-privilege default for all jobs; jobs needing more override below.
 permissions:
@@ -198,7 +199,8 @@ jobs:
   publish_to_npm:
     name: Publish to npm
     needs: [lint, build, test-runtime-matrix, test-browsers]
-    if: github.ref_type == 'tag'
+    # Tag push (normal release) OR manual dispatch (recovery re-publish).
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -221,8 +223,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # registry-url wires NODE_AUTH_TOKEN into ~/.npmrc.
           registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10.x,
+      # which silently falls back to token auth. Upgrade before publishing.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       # `npm install` rather than `npm ci`: the lockfile generated on
       # macOS doesn't always capture Biome's Linux-side optional deps
@@ -232,29 +238,35 @@ jobs:
       # downloaded as an artifact.
       - run: npm install --no-audit --no-fund --ignore-scripts
 
+      # On a tag, force package.json to the tag version. On manual dispatch there
+      # is no tag ref — the committed package.json version (kept in sync by
+      # tools/sync-versions.py) is authoritative, so leave it as-is.
       - name: Set package version from tag
+        if: github.ref_type == 'tag'
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
-      # Bootstrap path: authenticated via NPM_TOKEN (granular access
-      # token scoped to compress-utils, stored in the `release`
-      # environment). --provenance still works — it's powered by the
-      # `id-token: write` permission above, independent of how publish
-      # auth happens. Once the npm UI hold clears we'll register
-      # Trusted Publishing and drop NODE_AUTH_TOKEN.
-      - name: Publish (token auth + provenance)
+      # Authenticated via npm Trusted Publishing (OIDC) — no token. npm detects
+      # the GitHub Actions OIDC context (powered by `id-token: write` above),
+      # exchanges it for a short-lived credential, and generates provenance
+      # automatically. NODE_AUTH_TOKEN is intentionally NOT set: if a token were
+      # present, npm would use it instead of OIDC. The dormant NPM_TOKEN secret
+      # in the `release` environment is harmless (just unused now).
+      - name: Publish (OIDC trusted publishing + provenance)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # GitHub Release attachment only makes sense on a tag (manual recovery runs
+      # have no release to attach to).
       - name: Bundle artifacts for GitHub Release
+        if: github.ref_type == 'tag'
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           tar -czf compress-utils-wasm-${VERSION}.tar.gz dist/
           echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Attach to GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v1
         with:
           files: bindings/wasm/compress-utils-wasm-${{ env.RELEASE_VERSION }}.tar.gz
