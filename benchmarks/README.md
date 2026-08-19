@@ -12,26 +12,40 @@ and algorithm. Three jobs:
    (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
-Status: **C, C-native baseline, WASM (Node), and Python drivers implemented** —
-all one-shot + streaming. Corpora: `smoke` (synthetic), `silesia`,
-`silesia-mini`, `enwik8`. Ecosystem-library baselines (JS/Python native libs)
-are not done yet — see TODO.md.
+Status: **C, C-native baseline, WASM (Node), Python, Go, and Rust drivers
+implemented** — all one-shot + streaming. Corpora: `smoke` (synthetic),
+`silesia`, `silesia-mini`, `enwik8`. Ecosystem-library baselines (JS/Python
+native libs) are not done yet — see TODO.md.
 
 ## Language comparison
 
 ![throughput by language and algorithm](assets/lang-comparison.png)
 
-All eight codecs across the three language bindings, measured back-to-back in
-one interleaved run (Silesia-mini, level 6, one-shot). Compression **ratio is
-identical** across languages (within 0.5%) — only throughput differs:
+All eight codecs across the five language bindings, measured back-to-back in
+one interleaved run (Silesia-mini, level 6, one-shot). Every binding drives the
+same C core, so compression **ratio is byte-identical** across languages — only
+throughput differs. Relative to native C (higher = closer to the ceiling):
 
-- **Python ≈ native C.** The binding is the C core via pybind11, so compress is
-  ~1.0× and decompress ~1.0–1.4× (overhead only shows on the fastest decoders).
-- **WASM ~1.2–1.7× slower to compress, ~1.0–1.85× to decompress.** zstd/brotli
-  decode are the worst cases (native SIMD tricks); lz4 decode is nearly free
-  (memory-bound).
+- **Rust ≈ native C**, 0.95–1.00× compress and 0.87–1.04× decompress. The one
+  outlier is **snappy compress at 0.73×**: safe Rust cannot hand out an
+  uninitialized output buffer, so the one-shot path zeroes `compress_bound`
+  bytes before the call. That memset is noise next to xz, but on the fastest
+  codec it is a large slice of the total.
+- **Python ≈ native C**, 0.89–1.07× compress and 0.74–0.98× decompress. The
+  binding is the C core via pybind11; overhead only shows on the fastest
+  decoders (zlib/gzip).
+- **Go pays for cgo**, 0.60–0.99× compress and 0.39–0.95× decompress. The
+  per-call transition plus `runtime.LockOSThread` is a fixed cost, so it is
+  invisible on xz and dominant on snappy compress and zlib/gzip decode.
+- **WASM is the slowest across the board**, 0.60–0.84× compress and 0.50–1.00×
+  decompress. zstd/brotli decode are the worst cases (they lean on native SIMD);
+  lz4 decode is free (memory-bound, so the sandbox costs nothing).
 
-Regenerate with `python3 benchmarks/plot_langs.py` after a 3-way run.
+Ratios at or slightly above 1.00× are measurement noise — those bindings run
+literally the same codec code as the C driver.
+
+Regenerate with `python3 benchmarks/plot_langs.py` after a 5-way run
+(`--drivers c,wasm,python,go,rust`).
 
 ## Quick start
 
@@ -39,6 +53,14 @@ Regenerate with `python3 benchmarks/plot_langs.py` after a 3-way run.
 ./build.sh --languages=c,cpp,python,wasm --cores=8   # Release by default; produces dist/ + packages the drivers link
 python3 benchmarks/runner.py         # runs the matrix, writes results/<…>.json
 python3 benchmarks/report.py         # prints a table + writes results/plots/*.png
+```
+
+The Go and Rust drivers need no `build.sh` step — those bindings compile the C
+core themselves, so the runner just invokes `go build` / `cargo build --release`
+on demand:
+
+```sh
+python3 benchmarks/runner.py --drivers c,wasm,python,go,rust
 ```
 
 Overlay the binding against its native-library baseline (measures wrapper
@@ -92,6 +114,9 @@ benchmarks/
     c/bench_baseline.c  baseline: raw libzstd/libbrotli/… linked directly
     wasm/bench_wasm.mjs   compress-utils WASM package via Node (records module size)
     python/bench_py.py    compress-utils Python binding
+    go/bench_go.go        compress-utils Go binding (cgo; `go build`)
+    rust/                 compress-utils Rust binding — a sibling crate with a
+                          path dependency, so the published manifest stays clean
   lib/
     bench_common.py  run metadata, result schema, throughput math
   runner.py          builds a driver, runs the matrix, writes results

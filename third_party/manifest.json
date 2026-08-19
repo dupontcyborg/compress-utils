@@ -165,9 +165,7 @@
         "src/common/tuklib_physmem.c",
         "src/liblzma/check/check.c",
         "src/liblzma/check/crc32_fast.c",
-        "src/liblzma/check/crc32_table.c",
         "src/liblzma/check/crc64_fast.c",
-        "src/liblzma/check/crc64_table.c",
         "src/liblzma/check/sha256.c",
         "src/liblzma/common/alone_decoder.c",
         "src/liblzma/common/alone_encoder.c",
@@ -239,8 +237,8 @@
         "src/liblzma/simple/sparc.c",
         "src/liblzma/simple/x86.c"
       ],
-      "tag": "v5.6.3",
-      "tree_sha256": "c79e6fc0e43c2c517a711207b6a1dd71ac25b273f152b8dbbe0d08ad1ad907a9",
+      "tag": "v5.8.3",
+      "tree_sha256": "bb079f81e74fd5f5fa0350749a9b581dd1eaf4e3d3f5946719c649e8a3ac5129",
       "url": "https://github.com/tukaani-project/xz.git"
     },
     "zlib": {
@@ -269,8 +267,8 @@
         "uncompr.c",
         "zutil.c"
       ],
-      "tag": "v1.3.1",
-      "tree_sha256": "9ab5aab5b8db0c655e97434c26ced7054a5351edd029bb06b99bcd7965f5d47f",
+      "tag": "v1.3.2",
+      "tree_sha256": "939f79ad1b569ddac0d2a2f77e46e01cfe65db903ee6995f7e3b77fad547abb1",
       "url": "https://github.com/madler/zlib.git"
     },
     "zstd": {

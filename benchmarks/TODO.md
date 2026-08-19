@@ -3,17 +3,17 @@
 ## Benchmarks
 
 Done (internal benchmarks — mergeable): C driver + C-native baseline, WASM
-(Node), and Python drivers — all one-shot + streaming; interleaved runner
-(caffeinate, checkpoint, skip/error markers); corpus tiers (smoke / silesia /
-silesia-mini / enwik8, fetch + sha lock); report (tables, pareto/throughput
-plots, regression diff; impl- & mode-aware); baked baselines.
+(Node), Python, Go, and Rust drivers — all one-shot + streaming; interleaved
+runner (caffeinate, checkpoint, skip/error markers); corpus tiers (smoke /
+silesia / silesia-mini / enwik8, fetch + sha lock); report (tables,
+pareto/throughput plots, regression diff; impl- & mode-aware); baked baselines.
 
 Todo (later PRs — ecosystem comparisons, not needed to merge):
 - [ ] Decide default level set (`1,3,6,9` vs `1,3,5,7,9`) + per-codec edge mapping question.
 - [ ] Python ecosystem baseline (stdlib `zlib/bz2/lzma`, pip `zstandard/brotli/lz4`).
 - [ ] JS ecosystem baseline for WASM (`node:zlib`, `CompressionStream`, `fzstd`).
 - [ ] CI: size budgets as hard gate; throughput trend on dedicated HW only (never shared runners).
-- [ ] Rust/Go drivers as those bindings land.
+- [x] Rust/Go drivers as those bindings land. Both compile the C core themselves, so the runner shells out to `go build` / `cargo build --release` instead of linking `dist/`.
 
 ## WASM size opt  (plan + measurements: `docs/wasm-size.md`; guard: `baseline-wasm`)
 

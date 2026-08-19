@@ -91,11 +91,11 @@
     "check": "biome check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.15",
+    "@biomejs/biome": "2.5.9",
     "@playwright/test": "^1.60.0",
-    "@types/node": "^25.8.0",
+    "@types/node": "^26.2.0",
     "esbuild": "^0.28.0",
-    "typescript": "^5.5.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.6"
   },
   "engines": {
