@@ -142,12 +142,25 @@ def build_go() -> list[str]:
     return [str(out)]
 
 
+def build_rust() -> list[str]:
+    """The Rust driver is a sibling crate (benchmarks/drivers/rust) with a path
+    dependency on the binding, so it never touches the published manifest. Like
+    Go it compiles the C core from source — only cargo and a C toolchain are
+    needed. Cargo does its own staleness tracking, so this always shells out."""
+    crate = bc.BENCH_ROOT / "drivers" / "rust"
+    out = crate / "target" / "release" / "bench_rust"
+    print(f"[runner] cargo build --release in {crate.name} (first run is slow)")
+    subprocess.run(["cargo", "build", "--release"], cwd=str(crate), check=True)
+    return [str(out)]
+
+
 DRIVERS = {
     "c": build_c,
     "c-baseline": build_c_baseline,
     "wasm": build_wasm,
     "python": build_python,
     "go": build_go,
+    "rust": build_rust,
 }
 
 

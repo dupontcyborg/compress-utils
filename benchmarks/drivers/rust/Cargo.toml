@@ -1,0 +1,24 @@
+# Standalone crate for the Rust benchmark driver.
+#
+# Deliberately NOT a [[bin]] on the root manifest: the published crate's
+# `include` list ships only the library sources, so a bin target pointing into
+# benchmarks/ would break `cargo publish`. A sibling crate with a path
+# dependency keeps the driver out of the package entirely while still building
+# the real binding from source, exactly as a consumer would.
+[package]
+name = "bench-rust"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "bench_rust"
+path = "src/main.rs"
+
+[dependencies]
+compress-utils = { path = "../../.." }
+
+# The driver measures release-mode throughput; make a bare `cargo build` wrong
+# to use rather than silently slow.
+[profile.release]
+opt-level = 3

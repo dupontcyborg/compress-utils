@@ -7,6 +7,8 @@ corpus/cache/
 drivers/c/bench
 drivers/c/bench_baseline
 drivers/go/bench_go
+drivers/rust/target/
+drivers/rust/Cargo.lock
 
 # Run outputs. Commit baselines explicitly with `git add -f`.
 results/

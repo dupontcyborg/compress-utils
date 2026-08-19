@@ -58,6 +58,8 @@ All algorithms expose the same API surface and the same level scale (`1` fastest
 
 ![throughput by language and algorithm](benchmarks/assets/lang-comparison.png)
 
+All eight codecs across the C, JS/TS, Python, Go, and Rust bindings, measured back-to-back in one interleaved run. Every binding drives the same C core, so compression ratio is byte-identical across languages — only throughput differs, and C, Rust, and Python land on top of each other.
+
 Full methodology, per-corpus Pareto plots, and how to reproduce are in [benchmarks/README.md](benchmarks/README.md).
 
 ## Building from source
