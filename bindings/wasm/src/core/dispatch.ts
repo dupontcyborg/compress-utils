@@ -411,6 +411,16 @@ function drain(
  * ----------------------------------------------------------------------- */
 
 export interface AlgorithmBindings {
+    /** Initializes this subpath's WASM module for subsequent synchronous calls. */
+    preload(): Promise<void>;
+    /** Compresses synchronously after preload() or an asynchronous call completes. */
+    compressSync(input: Uint8Array, opts?: CompressOptions): Uint8Array;
+    /** Decompresses synchronously after preload() or an asynchronous call completes. */
+    decompressSync(input: Uint8Array, opts?: DecompressOptions): Uint8Array;
+    /** Creates an encoder synchronously after initialization. */
+    createCompressStreamSync(opts?: CompressOptions): CompressStream;
+    /** Creates a decoder synchronously after initialization. */
+    createDecompressStreamSync(): DecompressStream;
     compress(input: Uint8Array, opts?: CompressOptions): Promise<Uint8Array>;
     decompress(input: Uint8Array, opts?: DecompressOptions): Promise<Uint8Array>;
     createCompressStream(opts?: CompressOptions): Promise<CompressStream>;
@@ -439,18 +449,46 @@ export function createBindings(
     resolveWasm: WasmResolver,
 ): AlgorithmBindings {
     let dispatcherPromise: Promise<Dispatcher> | null = null;
+    let dispatcher: Dispatcher | null = null;
     const getDispatcher = (): Promise<Dispatcher> => {
         if (!dispatcherPromise) {
             dispatcherPromise = (async () => {
                 const source = await resolveWasm(wasmUrl);
                 const exports = await loadModule(source);
-                return new Dispatcher(exports, algorithm, name);
-            })();
+                dispatcher = new Dispatcher(exports, algorithm, name);
+                return dispatcher;
+            })().catch((error: unknown) => {
+                dispatcherPromise = null;
+                throw error;
+            });
         }
         return dispatcherPromise;
     };
 
+    /** Requires completed initialization without starting asynchronous work. */
+    const getInitializedDispatcher = (): Dispatcher => {
+        if (!dispatcher) {
+            throw new Error(`${name}: call and await preload() before using synchronous methods`);
+        }
+        return dispatcher;
+    };
+
     return {
+        async preload() {
+            await getDispatcher();
+        },
+        compressSync(input, opts) {
+            return getInitializedDispatcher().compress(input, opts);
+        },
+        decompressSync(input, opts) {
+            return getInitializedDispatcher().decompress(input, opts);
+        },
+        createCompressStreamSync(opts) {
+            return getInitializedDispatcher().createCompressStream(opts);
+        },
+        createDecompressStreamSync() {
+            return getInitializedDispatcher().createDecompressStream();
+        },
         async compress(input, opts) {
             return (await getDispatcher()).compress(input, opts);
         },

@@ -14,8 +14,14 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 );
 
 export const decompress = bindings.decompress;
+/** Synchronous counterpart; requires completed preload(). */
+export const decompressSync = bindings.decompressSync;
 export const createDecompressStream = bindings.createDecompressStream;
+/** Synchronous counterpart; requires completed preload(). */
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
 export const decompressionStream = bindings.decompressionStream;
+/** Initializes this independently loaded WASM subpath. */
+export const preload = bindings.preload;
 export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 

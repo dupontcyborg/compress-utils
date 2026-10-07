@@ -158,3 +158,24 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
+
+## Preloading and synchronous calls
+
+Each algorithm and direction-specific subpath exports `preload()`. It loads and
+initializes that subpath's WASM module once; concurrent calls share initialization.
+A failed initialization can be retried. No codec work is performed by preload.
+
+```ts
+import { preload, compressSync, decompressSync } from "compress-utils/zlib";
+await preload();
+const compressed = compressSync(new TextEncoder().encode("hello"));
+const restored = decompressSync(compressed);
+```
+
+`compressSync`, `decompressSync`, `createCompressStreamSync`, and
+`createDecompressStreamSync` are available for the directions exposed by the
+subpath. They throw with a `preload()` instruction before initialization completes.
+Existing asynchronous APIs initialize automatically and also enable subsequent
+synchronous calls. Initializing one subpath does not initialize another: encoder
+and decoder subpaths use different WASM modules. Sync calls block the calling
+thread; use a worker for expensive operations.

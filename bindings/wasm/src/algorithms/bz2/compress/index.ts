@@ -14,8 +14,14 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 );
 
 export const compress = bindings.compress;
+/** Synchronous counterpart; requires completed preload(). */
+export const compressSync = bindings.compressSync;
 export const createCompressStream = bindings.createCompressStream;
+/** Synchronous counterpart; requires completed preload(). */
+export const createCompressStreamSync = bindings.createCompressStreamSync;
 export const compressionStream = bindings.compressionStream;
+/** Initializes this independently loaded WASM subpath. */
+export const preload = bindings.preload;
 export const version = bindings.version;
 
 export { CompressError } from "../../../core/types.js";
