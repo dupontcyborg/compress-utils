@@ -49,7 +49,6 @@ enum class Algorithm : int {
     Snappy = CU_ALGO_SNAPPY,
     Gzip   = CU_ALGO_GZIP,
     Deflate = CU_ALGO_DEFLATE,
-    Lz4Raw = CU_ALGO_LZ4_RAW,
 };
 
 class Error : public std::runtime_error {

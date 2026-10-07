@@ -506,6 +506,11 @@ static int test_raw_lz4(void) {
     cu_decompress_stream_t* stream = NULL;
     CHECK(cu_decompress_stream_create(CU_ALGO_LZ4_RAW, &stream) == CU_ERR_UNSUPPORTED_ALGO,
           "raw LZ4 streaming must fail safely\n");
+    CHECK(stream == NULL, "failed decompressor must be NULL\n");
+    cu_compress_stream_t* encoder = NULL;
+    CHECK(cu_compress_stream_create(CU_ALGO_LZ4_RAW, 5, &encoder) == CU_ERR_UNSUPPORTED_ALGO,
+          "raw LZ4 compressor streaming must fail safely\n");
+    CHECK(encoder == NULL, "failed compressor must be NULL\n");
     return 0;
 }
 

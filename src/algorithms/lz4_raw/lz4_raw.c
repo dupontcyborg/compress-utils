@@ -36,22 +36,14 @@ static cu_status_t raw_size(const uint8_t* input, size_t length, size_t* size) {
     (void)input; (void)length; (void)size;
     return CU_ERR_SIZE_UNKNOWN;
 }
-static cu_status_t raw_cstream(int level, void** state) {
-    (void)level; *state = NULL;
-    cu_set_last_error("raw LZ4 blocks do not support streaming; supply application framing");
-    return CU_ERR_UNSUPPORTED_ALGO;
-}
-static cu_status_t raw_dstream(void** state) { return raw_cstream(1, state); }
 const cu_algorithm_vtbl_t cu_lz4_raw_vtbl = {
     .name = "lz4_raw",
 #ifndef CU_OMIT_COMPRESS
     .compress_bound = raw_bound,
     .compress = raw_compress,
-    .compress_stream_create = raw_cstream,
 #endif
 #ifndef CU_OMIT_DECOMPRESS
     .decompress = raw_decompress,
     .decompress_size_hint = raw_size,
-    .decompress_stream_create = raw_dstream,
 #endif
 };

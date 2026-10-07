@@ -14,8 +14,11 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 );
 
 export const decompress = bindings.decompress;
+export const decompressSync = bindings.decompressSync;
 export const createDecompressStream = bindings.createDecompressStream;
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
 export const decompressionStream = bindings.decompressionStream;
+export const preload = bindings.preload;
 export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 

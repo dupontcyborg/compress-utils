@@ -86,3 +86,20 @@ it("shares WASM initialization across framed and raw bindings", async () => {
     expect(await framed.decompress(framedBytes)).toEqual(input);
     expect(await raw.decompress(rawBytes)).toEqual(input);
 });
+
+it("validates raw LZ4 capacities in both async and sync directional bindings", async () => {
+    const decoder = await import("compress-utils/lz4_raw/decompress");
+    await Promise.all([lz4Raw.preload(), decoder.preload()]);
+    const encoded = new Uint8Array([0x50, 104, 101, 108, 108, 111]);
+    for (const binding of [lz4Raw, decoder]) {
+        expect(binding.decompressSync(encoded, { expectedSize: 32 })).toEqual(
+            new TextEncoder().encode("hello"),
+        );
+        for (const expectedSize of [undefined, -1, 0.5, Number.NaN, 0x80000000]) {
+            expect(() => binding.decompressSync(encoded, { expectedSize })).toThrow(/expectedSize/);
+            await expect(binding.decompress(encoded, { expectedSize })).rejects.toThrow(
+                /expectedSize/,
+            );
+        }
+    }
+});

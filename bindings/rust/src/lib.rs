@@ -55,8 +55,6 @@ pub enum Algorithm {
     Gzip,
     /// Raw RFC 1951 DEFLATE.
     Deflate,
-    /// Raw LZ4 block, requires a caller-provided output capacity.
-    Lz4Raw,
 }
 
 impl Algorithm {
@@ -72,7 +70,6 @@ impl Algorithm {
             Algorithm::Snappy => ffi::CU_ALGO_SNAPPY,
             Algorithm::Gzip => ffi::CU_ALGO_GZIP,
             Algorithm::Deflate => ffi::CU_ALGO_DEFLATE,
-            Algorithm::Lz4Raw => ffi::CU_ALGO_LZ4_RAW,
         }
     }
 

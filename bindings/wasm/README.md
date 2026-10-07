@@ -179,20 +179,3 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
-
-## Raw formats
-
-`compress-utils/deflate` (and `/compress`, `/decompress`) reads and writes raw
-RFC 1951 DEFLATE without a zlib or gzip wrapper. Whole-buffer and streaming APIs
-use the same raw format. Existing `zlib` and `gzip` subpaths are unchanged.
-
-`compress-utils/lz4_raw` (and directional subpaths) reads and writes one raw LZ4
-block without framing or a size prefix. Pass `decompress(bytes, { expectedSize })`
-with a known output capacity; the result contains only the bytes actually decoded.
-This subpath deliberately omits streaming APIs: applications must handle their
-own block framing, such as Hadoop's block lengths. Its fast encoder accepts the
-common level option but does not vary compression by level.
-
-Raw and framed subpaths share the same per-codec WASM asset and initialized
-module instance. Encoder and decoder assets remain separate. The decompression
-size limit is shared by raw/framed bindings using that module instance.

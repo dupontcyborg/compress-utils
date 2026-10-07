@@ -114,19 +114,6 @@ export class Dispatcher {
     }
 
     decompress(input: Uint8Array, opts: DecompressOptions = {}): Uint8Array {
-        if (
-            this.algorithm === Algorithm.Lz4Raw &&
-            (opts.expectedSize === undefined ||
-                !Number.isSafeInteger(opts.expectedSize) ||
-                opts.expectedSize < 0 ||
-                opts.expectedSize > 0x7fffffff)
-        ) {
-            throw new CompressError(
-                Status.InvalidArg,
-                this.algorithmName,
-                "raw LZ4 decompression requires expectedSize (output capacity, integer 0..2147483647)",
-            );
-        }
         const inLen = input.byteLength;
         const arena = new Arena(this.exports);
         try {
@@ -136,7 +123,7 @@ export class Dispatcher {
             const outSize = opts.expectedSize ?? this.tryProbeSize(arena, inPtr, inLen);
             if (outSize === undefined) {
                 // Wire format doesn't carry size (bz2, brotli, raw deflate,
-                // raw LZ4, current xz size_hint impl). Fall through to a
+                // current xz size_hint impl). Fall through to a
                 // streaming decode so the one-shot API still works.
                 return this.decompressStreaming(input);
             }

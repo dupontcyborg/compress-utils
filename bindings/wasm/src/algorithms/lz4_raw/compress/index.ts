@@ -14,6 +14,8 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 );
 
 export const compress = bindings.compress;
+export const compressSync = bindings.compressSync;
+export const preload = bindings.preload;
 export const version = bindings.version;
 
 export { CompressError } from "../../../core/types.js";
