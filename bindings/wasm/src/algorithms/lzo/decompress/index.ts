@@ -11,6 +11,21 @@ export function decompress(
     input: Uint8Array,
     options: DecompressOptions & { expectedSize: number },
 ): Promise<Uint8Array> {
+    validateOutputCapacity(options);
+    return bindings.decompress(input, options);
+}
+/** Decode synchronously after preload(), returning only the actual decoded bytes. */
+export function decompressSync(
+    input: Uint8Array,
+    options: DecompressOptions & { expectedSize: number },
+): Uint8Array {
+    validateOutputCapacity(options);
+    return bindings.decompressSync(input, options);
+}
+/** Load and initialize the decoder once, sharing concurrent initialization. */
+export const preload = bindings.preload;
+/** Reject missing or invalid capacity before initializing or allocating. */
+function validateOutputCapacity(options: DecompressOptions & { expectedSize: number }): void {
     if (
         !Number.isSafeInteger(options?.expectedSize) ||
         options.expectedSize < 0 ||
@@ -20,7 +35,6 @@ export function decompress(
             "LZO expectedSize must be an integer output capacity between 0 and 2147483647",
         );
     }
-    return bindings.decompress(input, options);
 }
 export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;

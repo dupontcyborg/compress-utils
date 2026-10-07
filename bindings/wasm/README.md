@@ -172,20 +172,16 @@ synchronous calls. Initializing one subpath does not initialize another: encoder
 and decoder subpaths use different WASM modules. Sync calls block the calling
 thread; use a worker for expensive operations.
 
-## License
-
-MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
-
----
-
-Built by [Nico Dupont](https://nico.codes).
-
 ### LZO (decoder only)
 
 `compress-utils/lzo/decompress` decodes one raw LZO1X block produced by
 LZO1X-1 or LZO1X-999. Pass `{expectedSize}` as the output capacity; the returned
 array contains only the actual decoded bytes. Capacity must be a non-negative
 integer, and the configured decompression limit also applies.
+
+`await preload()` initializes the decoder for subsequent `decompressSync(bytes,
+{expectedSize})` calls. Calling the sync method before initialization throws a
+preload instruction; the async method initializes automatically.
 
 No compression or streaming API is published. Lzop files, dictionaries,
 other LZO variants and Hadoop framing are not supported. Parquet pages and
@@ -194,3 +190,11 @@ bound to this decoder. Their container framing belongs in the loader.
 
 The decoder is adapted from MIT-licensed lzokay; source revision and license
 are recorded in `src/algorithms/lzo/PROVENANCE.md` and `LICENSE`.
+
+## License
+
+MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
+
+---
+
+Built by [Nico Dupont](https://nico.codes).

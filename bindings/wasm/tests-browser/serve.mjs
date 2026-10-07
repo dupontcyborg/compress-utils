@@ -57,7 +57,14 @@ async function main() {
             results[name] = "error: " + (e?.message || String(e));
         }
     }
-    results.lzo = dec.decode(await lzo.decompress(new Uint8Array([22,104,101,108,108,111,17,0,0]), {expectedSize: 10})) === "hello" ? "ok" : "mismatch";
+    const lzoInput = new Uint8Array([22,104,101,108,108,111,17,0,0]);
+    let lzoRequiresPreload = false;
+    try { lzo.decompressSync(lzoInput, {expectedSize: 10}); }
+    catch (error) { lzoRequiresPreload = /preload/.test(error.message); }
+    await Promise.all([lzo.preload(), lzo.preload()]);
+    const lzoSyncOutput = lzo.decompressSync(lzoInput, {expectedSize: 10});
+    const lzoAsyncOutput = await lzo.decompress(lzoInput, {expectedSize: 10});
+    results.lzo = lzoRequiresPreload && dec.decode(lzoSyncOutput) === "hello" && dec.decode(lzoAsyncOutput) === "hello" ? "ok" : "mismatch";
     globalThis.__cuResults = results;
     document.title = "ready";
 }

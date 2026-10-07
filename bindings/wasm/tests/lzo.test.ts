@@ -6,6 +6,19 @@ const fixture = (name: string) =>
         readFileSync(new URL(`../../../tests/fixtures/lzo/${name}.bin`, import.meta.url)),
     );
 describe("raw LZO1X decoder", () => {
+    test("requires preload before synchronous decoding and shares concurrent preload", async () => {
+        const input = new Uint8Array([22, 104, 101, 108, 108, 111, 17, 0, 0]);
+        expect(() => lzo.decompressSync(input, { expectedSize: 10 })).toThrow(/preload/);
+        await Promise.all([lzo.preload(), lzo.preload()]);
+        expect(lzo.decompressSync(input, { expectedSize: 10 })).toEqual(
+            new TextEncoder().encode("hello"),
+        );
+        for (const expectedSize of [-1, 0.5, Number.NaN, 0x80000000]) {
+            expect(() => lzo.decompressSync(input, { expectedSize })).toThrow(RangeError);
+            expect(() => lzo.decompress(input, { expectedSize })).toThrow(RangeError);
+        }
+        expect(() => lzo.decompressSync(input, { expectedSize: 1 })).toThrow();
+    });
     test.each(["1", "999"])("decodes independently generated LZO1X-%s", async (variant) => {
         const expected = fixture("input");
         expect(
