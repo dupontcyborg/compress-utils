@@ -29,5 +29,7 @@ test("all algorithms round-trip asynchronously and after preload synchronously i
         xz: "ok",
         snappy: "ok",
         gzip: "ok",
+        deflate: "ok",
+        lz4_raw: "ok",
     });
 });

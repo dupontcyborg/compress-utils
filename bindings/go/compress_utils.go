@@ -47,6 +47,8 @@ const (
 	Lzma   Algorithm = C.CU_ALGO_LZMA // alias for Xz; produces .xz frames
 	Snappy Algorithm = C.CU_ALGO_SNAPPY
 	Gzip   Algorithm = C.CU_ALGO_GZIP
+    Deflate Algorithm = C.CU_ALGO_DEFLATE
+    Lz4Raw Algorithm = C.CU_ALGO_LZ4_RAW
 )
 
 // Name returns the lowercase canonical name ("zstd", "brotli", ...), or ""

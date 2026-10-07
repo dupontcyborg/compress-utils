@@ -30,10 +30,12 @@ import * as lz4    from "compress-utils/lz4";
 import * as xz     from "compress-utils/xz";
 import * as snappy from "compress-utils/snappy";
 import * as gzip from "compress-utils/gzip";
+import * as deflate from "compress-utils/deflate";
+import * as lz4_raw from "compress-utils/lz4_raw";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const algos = { zstd, brotli, zlib, bz2, lz4, xz, snappy, gzip };
+const algos = { zstd, brotli, zlib, bz2, lz4, xz, snappy, gzip, deflate, lz4_raw };
 
 async function main() {
     const results = {};
@@ -41,14 +43,14 @@ async function main() {
     for (const [name, m] of Object.entries(algos)) {
         try {
             const asyncCompressed = await m.compress(input);
-            const asyncRestored = await m.decompress(asyncCompressed);
+            const asyncRestored = await m.decompress(asyncCompressed, { expectedSize: input.length });
             if (dec.decode(asyncRestored) !== dec.decode(input)) {
                 results[name] = "async mismatch";
                 continue;
             }
             await m.preload();
             const compressed = m.compressSync(input);
-            const back = m.decompressSync(compressed);
+            const back = m.decompressSync(compressed, { expectedSize: input.length });
             results[name] = dec.decode(back) === dec.decode(input) ? "ok" : "sync mismatch";
         } catch (e) {
             results[name] = "error: " + (e?.message || String(e));
@@ -81,6 +83,8 @@ await esbuild.build({
         "compress-utils/xz":     path.join(PKG_ROOT, "dist/algorithms/xz/index.js"),
         "compress-utils/snappy": path.join(PKG_ROOT, "dist/algorithms/snappy/index.js"),
         "compress-utils/gzip": path.join(PKG_ROOT, "dist/algorithms/gzip/index.js"),
+        "compress-utils/deflate": path.join(PKG_ROOT, "dist/algorithms/deflate/index.js"),
+        "compress-utils/lz4_raw": path.join(PKG_ROOT, "dist/algorithms/lz4_raw/index.js"),
     },
     logLevel: "info",
 });
@@ -102,6 +106,13 @@ for (const algo of ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzi
         path.join(PKG_ROOT, `dist/algorithms/${algo}/${algo}.wasm`),
         path.join(OUT, `${algo}.wasm`),
     );
+}
+
+// Raw bindings reference the same assets through sibling codec URLs.
+for (const codec of ["zlib", "lz4"]) {
+    await mkdir(path.join(OUT, codec), { recursive: true });
+    await copyFile(path.join(PKG_ROOT, `dist/algorithms/${codec}/${codec}.wasm`),
+        path.join(OUT, codec, `${codec}.wasm`));
 }
 
 const MIME = {

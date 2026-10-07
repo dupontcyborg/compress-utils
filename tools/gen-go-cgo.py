@@ -47,7 +47,7 @@ GEN_GO = "cgo_generated.go"
 # All algorithms the binding exposes. gzip is not a manifest codec — it is zlib
 # in a different wire wrapper, so it contributes a vtable + INCLUDE_GZIP but no
 # codec sources of its own (it links zlib's).
-ALGOS = ["zstd", "brotli", "zlib", "gzip", "bz2", "lz4", "xz", "snappy"]
+ALGOS = ["zstd", "brotli", "zlib", "gzip", "bz2", "lz4", "xz", "snappy", "deflate", "lz4_raw"]
 
 # Our own translation units (not upstream): the ABI dispatcher, the registry,
 # and one vtable per algorithm. Compiled with the global INCLUDE_* defines; no

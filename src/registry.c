@@ -22,11 +22,17 @@ extern const cu_algorithm_vtbl_t cu_brotli_vtbl;
 #ifdef INCLUDE_ZLIB
 extern const cu_algorithm_vtbl_t cu_zlib_vtbl;
 #endif
+#ifdef INCLUDE_DEFLATE
+extern const cu_algorithm_vtbl_t cu_deflate_vtbl;
+#endif
 #ifdef INCLUDE_BZ2
 extern const cu_algorithm_vtbl_t cu_bz2_vtbl;
 #endif
 #ifdef INCLUDE_LZ4
 extern const cu_algorithm_vtbl_t cu_lz4_vtbl;
+#endif
+#ifdef INCLUDE_LZ4_RAW
+extern const cu_algorithm_vtbl_t cu_lz4_raw_vtbl;
 #endif
 #ifdef INCLUDE_XZ
 extern const cu_algorithm_vtbl_t cu_xz_vtbl;
@@ -49,11 +55,17 @@ const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
 #ifdef INCLUDE_ZLIB
         case CU_ALGO_ZLIB:   return &cu_zlib_vtbl;
 #endif
+#ifdef INCLUDE_DEFLATE
+        case CU_ALGO_DEFLATE: return &cu_deflate_vtbl;
+#endif
 #ifdef INCLUDE_BZ2
         case CU_ALGO_BZ2:    return &cu_bz2_vtbl;
 #endif
 #ifdef INCLUDE_LZ4
         case CU_ALGO_LZ4:    return &cu_lz4_vtbl;
+#endif
+#ifdef INCLUDE_LZ4_RAW
+        case CU_ALGO_LZ4_RAW: return &cu_lz4_raw_vtbl;
 #endif
 #ifdef INCLUDE_XZ
         case CU_ALGO_XZ:     return &cu_xz_vtbl;

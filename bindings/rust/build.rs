@@ -25,9 +25,11 @@ const VTABLES: &[(&str, &str)] = &[
     ("INCLUDE_ZSTD", "src/algorithms/zstd/zstd.c"),
     ("INCLUDE_BROTLI", "src/algorithms/brotli/brotli.c"),
     ("INCLUDE_ZLIB", "src/algorithms/zlib/zlib.c"),
+    ("INCLUDE_DEFLATE", "src/algorithms/deflate/deflate.c"),
     ("INCLUDE_GZIP", "src/algorithms/gzip/gzip.c"),
     ("INCLUDE_BZ2", "src/algorithms/bz2/bz2.c"),
     ("INCLUDE_LZ4", "src/algorithms/lz4/lz4.c"),
+    ("INCLUDE_LZ4_RAW", "src/algorithms/lz4_raw/lz4_raw.c"),
     ("INCLUDE_XZ", "src/algorithms/xz/xz.c"),
     ("INCLUDE_SNAPPY", "src/algorithms/snappy/snappy.c"),
 ];

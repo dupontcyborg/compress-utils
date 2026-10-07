@@ -91,3 +91,13 @@ MIT — see [LICENSE](LICENSE).
 This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 Built by [Nico Dupont](https://nico.codes).
+
+### Explicit raw formats
+
+The C ABI and language algorithm enums also expose `deflate` (raw RFC 1951)
+and `lz4_raw` (a raw LZ4 block without a size prefix). They are enabled with
+the existing zlib and LZ4 build options respectively. Raw DEFLATE supports
+whole-buffer and streaming operations; raw LZ4 requires caller-provided
+output capacity and does not support streaming. Existing zlib, gzip, and
+LZ4 frame wire formats are unchanged. TypeScript has independently loadable
+`compress-utils/deflate` and `compress-utils/lz4_raw` directional subpaths.

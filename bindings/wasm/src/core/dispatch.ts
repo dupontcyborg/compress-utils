@@ -11,7 +11,7 @@
 
 import { checkStatus, decodeCString, loadModule, type WasmExports } from "./loader.js";
 import {
-    type Algorithm,
+    Algorithm,
     CompressError,
     Status,
     type AlgorithmName,
@@ -114,6 +114,19 @@ export class Dispatcher {
     }
 
     decompress(input: Uint8Array, opts: DecompressOptions = {}): Uint8Array {
+        if (
+            this.algorithm === Algorithm.Lz4Raw &&
+            (opts.expectedSize === undefined ||
+                !Number.isSafeInteger(opts.expectedSize) ||
+                opts.expectedSize < 0 ||
+                opts.expectedSize > 0x7fffffff)
+        ) {
+            throw new CompressError(
+                Status.InvalidArg,
+                this.algorithmName,
+                "raw LZ4 decompression requires expectedSize (output capacity, integer 0..2147483647)",
+            );
+        }
         const inLen = input.byteLength;
         const arena = new Arena(this.exports);
         try {
@@ -442,6 +455,29 @@ export interface AlgorithmBindings {
 
 export type WasmResolver = (url: URL) => Promise<BufferSource | Response | PromiseLike<Response>>;
 
+/** Shared WASM initialization for wire variants using the same codec asset. */
+const wasmModulePromises = new WeakMap<WasmResolver, Map<string, Promise<WasmExports>>>();
+
+/** Loads one module per asset/resolver; failed loads remain retryable. */
+function loadSharedModule(wasmUrl: URL, resolveWasm: WasmResolver): Promise<WasmExports> {
+    let modules = wasmModulePromises.get(resolveWasm);
+    if (!modules) {
+        modules = new Map();
+        wasmModulePromises.set(resolveWasm, modules);
+    }
+    const cached = modules.get(wasmUrl.href);
+    if (cached) return cached;
+    const currentModules = modules;
+    const pending = (async () => loadModule(await resolveWasm(wasmUrl)))().catch(
+        (error: unknown) => {
+            currentModules.delete(wasmUrl.href);
+            throw error;
+        },
+    );
+    modules.set(wasmUrl.href, pending);
+    return pending;
+}
+
 export function createBindings(
     algorithm: Algorithm,
     name: AlgorithmName,
@@ -453,8 +489,7 @@ export function createBindings(
     const getDispatcher = (): Promise<Dispatcher> => {
         if (!dispatcherPromise) {
             dispatcherPromise = (async () => {
-                const source = await resolveWasm(wasmUrl);
-                const exports = await loadModule(source);
+                const exports = await loadSharedModule(wasmUrl, resolveWasm);
                 dispatcher = new Dispatcher(exports, algorithm, name);
                 return dispatcher;
             })().catch((error: unknown) => {
