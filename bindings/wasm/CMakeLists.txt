@@ -32,7 +32,7 @@ endif()
 set(CU_WASM_ALGO "zstd" CACHE STRING
     "Algorithm to compile into this .wasm (zstd|brotli|zlib|bz2|lz4|xz|snappy|gzip)")
 
-set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz snappy gzip)
+set(_CU_VALID_ALGOS zstd brotli zlib bz2 lz4 xz snappy gzip lzo)
 if(NOT CU_WASM_ALGO IN_LIST _CU_VALID_ALGOS)
     message(FATAL_ERROR
         "CU_WASM_ALGO='${CU_WASM_ALGO}' is not one of: ${_CU_VALID_ALGOS}")
@@ -41,6 +41,9 @@ endif()
 # Direction variants to build for this algo. Each entry produces one .wasm.
 set(CU_WASM_DIR "both;decompress;compress" CACHE STRING
     "Direction variants to build (any of: both compress decompress)")
+if(CU_WASM_ALGO STREQUAL "lzo")
+    set(CU_WASM_DIR "decompress")
+endif()
 set(_CU_VALID_DIRS both compress decompress)
 foreach(_d IN LISTS CU_WASM_DIR)
     if(NOT _d IN_LIST _CU_VALID_DIRS)

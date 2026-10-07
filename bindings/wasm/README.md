@@ -179,3 +179,18 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
+
+### LZO (decoder only)
+
+`compress-utils/lzo/decompress` decodes one raw LZO1X block produced by
+LZO1X-1 or LZO1X-999. Pass `{expectedSize}` as the output capacity; the returned
+array contains only the actual decoded bytes. Capacity must be a non-negative
+integer, and the configured decompression limit also applies.
+
+No compression or streaming API is published. Lzop files, dictionaries,
+other LZO variants and Hadoop framing are not supported. Parquet pages and
+ORC compressed chunks can pass their raw block payload and enclosing size
+bound to this decoder. Their container framing belongs in the loader.
+
+The decoder is adapted from MIT-licensed lzokay; source revision and license
+are recorded in `src/algorithms/lzo/PROVENANCE.md` and `LICENSE`.

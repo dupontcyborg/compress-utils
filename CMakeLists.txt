@@ -96,6 +96,7 @@ option(BUILD_STATIC_LIB "Build a self-contained compress_utils_static archive" O
 
 # Per-algorithm inclusion. All six have been migrated to the C core in
 # Phase 1; default to ON. Disable individually for slimmer builds.
+option(INCLUDE_LZO "Include raw LZO1X decompression" ON)
 option(INCLUDE_ZSTD   "Include Zstd compression algorithm"   ON)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
 option(INCLUDE_ZLIB   "Include zlib compression algorithm"   ON)
@@ -107,7 +108,7 @@ option(INCLUDE_GZIP   "Include gzip compression algorithm (DEFLATE, RFC 1952)" O
 
 if(NOT INCLUDE_ZSTD AND NOT INCLUDE_BROTLI AND NOT INCLUDE_ZLIB
         AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ
-        AND NOT INCLUDE_SNAPPY AND NOT INCLUDE_GZIP)
+        AND NOT INCLUDE_SNAPPY AND NOT INCLUDE_GZIP AND NOT INCLUDE_LZO)
     message(FATAL_ERROR "No algorithms included. Enable at least one INCLUDE_<ALGO>.")
 endif()
 
@@ -193,6 +194,11 @@ if(INCLUDE_SNAPPY)
     # C++ runtime dependency. The old c++/stdc++ link for google/snappy is gone;
     # the whole release library is pure C. google/snappy (C++) lives only in the
     # differential test (see tests/).
+endif()
+
+if(INCLUDE_LZO)
+    list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/lzo/lzo.c)
+    list(APPEND CU_TARGET_DEFINITIONS INCLUDE_LZO)
 endif()
 
 # Platform link deps.

@@ -64,7 +64,8 @@
     "./deflate/decompress": "./dist/algorithms/deflate/decompress/index.js",
     "./lz4_raw": "./dist/algorithms/lz4_raw/index.js",
     "./lz4_raw/compress": "./dist/algorithms/lz4_raw/compress/index.js",
-    "./lz4_raw/decompress": "./dist/algorithms/lz4_raw/decompress/index.js"
+    "./lz4_raw/decompress": "./dist/algorithms/lz4_raw/decompress/index.js",
+    "./lzo/decompress": "./dist/algorithms/lzo/decompress/index.js"
   },
   "imports": {
     "#resolver": {
