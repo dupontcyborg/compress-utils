@@ -151,14 +151,6 @@ const opts: CompressOptions = { level: 7 };
 const compressed: Uint8Array = await compress(input, opts);
 ```
 
-## License
-
-MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
-
----
-
-Built by [Nico Dupont](https://nico.codes).
-
 ## Preloading and synchronous calls
 
 Each algorithm and direction-specific subpath exports `preload()`. It loads and
@@ -179,3 +171,11 @@ Existing asynchronous APIs initialize automatically and also enable subsequent
 synchronous calls. Initializing one subpath does not initialize another: encoder
 and decoder subpaths use different WASM modules. Sync calls block the calling
 thread; use a worker for expensive operations.
+
+## License
+
+MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
+
+---
+
+Built by [Nico Dupont](https://nico.codes).
