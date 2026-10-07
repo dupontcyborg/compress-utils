@@ -19,7 +19,7 @@ const OUT = path.join(__dirname, ".serve");
 
 await mkdir(OUT, { recursive: true });
 
-// The consumer references all six subpaths so the smoke test covers
+// The consumer references all eight subpaths so the smoke test covers
 // every algo in one page load.
 const CONSUMER = `
 import * as zstd   from "compress-utils/zstd";
@@ -40,9 +40,16 @@ async function main() {
     const input = enc.encode("playwright payload ".repeat(200));
     for (const [name, m] of Object.entries(algos)) {
         try {
-            const compressed = await m.compress(input);
-            const back = await m.decompress(compressed);
-            results[name] = dec.decode(back) === dec.decode(input) ? "ok" : "mismatch";
+            const asyncCompressed = await m.compress(input);
+            const asyncRestored = await m.decompress(asyncCompressed);
+            if (dec.decode(asyncRestored) !== dec.decode(input)) {
+                results[name] = "async mismatch";
+                continue;
+            }
+            await m.preload();
+            const compressed = m.compressSync(input);
+            const back = m.decompressSync(compressed);
+            results[name] = dec.decode(back) === dec.decode(input) ? "ok" : "sync mismatch";
         } catch (e) {
             results[name] = "error: " + (e?.message || String(e));
         }

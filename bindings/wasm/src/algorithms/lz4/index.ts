@@ -12,11 +12,21 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 );
 
 export const compress = bindings.compress;
+/** Synchronous counterpart; requires completed preload(). */
+export const compressSync = bindings.compressSync;
 export const decompress = bindings.decompress;
+/** Synchronous counterpart; requires completed preload(). */
+export const decompressSync = bindings.decompressSync;
 export const createCompressStream = bindings.createCompressStream;
+/** Synchronous counterpart; requires completed preload(). */
+export const createCompressStreamSync = bindings.createCompressStreamSync;
 export const createDecompressStream = bindings.createDecompressStream;
+/** Synchronous counterpart; requires completed preload(). */
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
 export const compressionStream = bindings.compressionStream;
 export const decompressionStream = bindings.decompressionStream;
+/** Initializes this independently loaded WASM subpath. */
+export const preload = bindings.preload;
 export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 
