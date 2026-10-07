@@ -40,8 +40,9 @@ async function main() {
     const input = enc.encode("playwright payload ".repeat(200));
     for (const [name, m] of Object.entries(algos)) {
         try {
-            const compressed = await m.compress(input);
-            const back = await m.decompress(compressed);
+            await m.preload();
+            const compressed = m.compressSync(input);
+            const back = m.decompressSync(compressed);
             results[name] = dec.decode(back) === dec.decode(input) ? "ok" : "mismatch";
         } catch (e) {
             results[name] = "error: " + (e?.message || String(e));

@@ -12,7 +12,7 @@
 
 import { test, expect } from "@playwright/test";
 
-test("all six algorithms round-trip in browser", async ({ page }) => {
+test("all algorithms preload and round-trip synchronously in browser", async ({ page }) => {
     await page.goto("/");
     // serve.mjs sets document.title = "ready" once results are populated.
     await expect(page).toHaveTitle("ready", { timeout: 30_000 });
