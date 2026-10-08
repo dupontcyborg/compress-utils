@@ -247,6 +247,11 @@ cu_status_t cu_compress_stream_create(
     cu_status_t s = resolve(algo, &v);
     if (s != CU_OK) return s;
 
+    if (!v->compress_stream_create) {
+        cu_set_last_error("streaming compress is not supported for this algorithm");
+        return CU_ERR_UNSUPPORTED_ALGO;
+    }
+
     cu_compress_stream_t* stream = calloc(1, sizeof(*stream));
     if (!stream) {
         cu_set_last_error("out of memory allocating cu_compress_stream_t");
@@ -315,6 +320,11 @@ cu_status_t cu_decompress_stream_create(
     const cu_algorithm_vtbl_t* v;
     cu_status_t s = resolve(algo, &v);
     if (s != CU_OK) return s;
+
+    if (!v->decompress_stream_create) {
+        cu_set_last_error("streaming decompress is not supported for this algorithm");
+        return CU_ERR_UNSUPPORTED_ALGO;
+    }
 
     cu_decompress_stream_t* stream = calloc(1, sizeof(*stream));
     if (!stream) {

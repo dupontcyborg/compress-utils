@@ -11,7 +11,7 @@
 
 import { checkStatus, decodeCString, loadModule, type WasmExports } from "./loader.js";
 import {
-    type Algorithm,
+    Algorithm,
     CompressError,
     Status,
     type AlgorithmName,
@@ -123,7 +123,7 @@ export class Dispatcher {
             const outSize = opts.expectedSize ?? this.tryProbeSize(arena, inPtr, inLen);
             if (outSize === undefined) {
                 // Wire format doesn't carry size (bz2, brotli, raw deflate,
-                // raw LZ4, current xz size_hint impl). Fall through to a
+                // current xz size_hint impl). Fall through to a
                 // streaming decode so the one-shot API still works.
                 return this.decompressStreaming(input);
             }
@@ -442,6 +442,29 @@ export interface AlgorithmBindings {
 
 export type WasmResolver = (url: URL) => Promise<BufferSource | Response | PromiseLike<Response>>;
 
+/** Shared WASM initialization for wire variants using the same codec asset. */
+const wasmModulePromises = new WeakMap<WasmResolver, Map<string, Promise<WasmExports>>>();
+
+/** Loads one module per asset/resolver; failed loads remain retryable. */
+function loadSharedModule(wasmUrl: URL, resolveWasm: WasmResolver): Promise<WasmExports> {
+    let modules = wasmModulePromises.get(resolveWasm);
+    if (!modules) {
+        modules = new Map();
+        wasmModulePromises.set(resolveWasm, modules);
+    }
+    const cached = modules.get(wasmUrl.href);
+    if (cached) return cached;
+    const currentModules = modules;
+    const pending = (async () => loadModule(await resolveWasm(wasmUrl)))().catch(
+        (error: unknown) => {
+            currentModules.delete(wasmUrl.href);
+            throw error;
+        },
+    );
+    modules.set(wasmUrl.href, pending);
+    return pending;
+}
+
 export function createBindings(
     algorithm: Algorithm,
     name: AlgorithmName,
@@ -453,8 +476,7 @@ export function createBindings(
     const getDispatcher = (): Promise<Dispatcher> => {
         if (!dispatcherPromise) {
             dispatcherPromise = (async () => {
-                const source = await resolveWasm(wasmUrl);
-                const exports = await loadModule(source);
+                const exports = await loadSharedModule(wasmUrl, resolveWasm);
                 dispatcher = new Dispatcher(exports, algorithm, name);
                 return dispatcher;
             })().catch((error: unknown) => {

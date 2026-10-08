@@ -141,6 +141,14 @@ function(cu_add_wasm_variant DIR)
         ${CU_REPO_ROOT}/src/algorithms/${CU_WASM_ALGO}/${CU_WASM_ALGO}.c
         ${CU_REPO_ROOT}/src/wasm_runtime.c
     )
+    # Framed and raw variants share one asset and one upstream codec library.
+    if(CU_WASM_ALGO STREQUAL "zlib")
+        target_sources(${_tgt} PRIVATE ${CU_REPO_ROOT}/src/algorithms/deflate/deflate.c)
+        target_compile_definitions(${_tgt} PRIVATE INCLUDE_DEFLATE)
+    elseif(CU_WASM_ALGO STREQUAL "lz4")
+        target_sources(${_tgt} PRIVATE ${CU_REPO_ROOT}/src/algorithms/lz4_raw/lz4_raw.c)
+        target_compile_definitions(${_tgt} PRIVATE INCLUDE_LZ4_RAW)
+    endif()
     # Codec headers come from the linked <algo>_library's PUBLIC include dirs.
     target_include_directories(${_tgt} PRIVATE
         ${CU_REPO_ROOT}/include

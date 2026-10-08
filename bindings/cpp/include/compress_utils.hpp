@@ -48,6 +48,7 @@ enum class Algorithm : int {
     Lzma   = CU_ALGO_LZMA,  /* alias for Xz */
     Snappy = CU_ALGO_SNAPPY,
     Gzip   = CU_ALGO_GZIP,
+    Deflate = CU_ALGO_DEFLATE,
 };
 
 class Error : public std::runtime_error {

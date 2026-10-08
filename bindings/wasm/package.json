@@ -58,7 +58,13 @@
     "./snappy/compress": "./dist/algorithms/snappy/compress/index.js",
     "./gzip": "./dist/algorithms/gzip/index.js",
     "./gzip/decompress": "./dist/algorithms/gzip/decompress/index.js",
-    "./gzip/compress": "./dist/algorithms/gzip/compress/index.js"
+    "./gzip/compress": "./dist/algorithms/gzip/compress/index.js",
+    "./deflate": "./dist/algorithms/deflate/index.js",
+    "./deflate/compress": "./dist/algorithms/deflate/compress/index.js",
+    "./deflate/decompress": "./dist/algorithms/deflate/decompress/index.js",
+    "./lz4_raw": "./dist/algorithms/lz4_raw/index.js",
+    "./lz4_raw/compress": "./dist/algorithms/lz4_raw/compress/index.js",
+    "./lz4_raw/decompress": "./dist/algorithms/lz4_raw/decompress/index.js"
   },
   "imports": {
     "#resolver": {

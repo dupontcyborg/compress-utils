@@ -37,7 +37,7 @@
 static const cu_algorithm_t ALL_ALGOS[] = {
     CU_ALGO_ZSTD, CU_ALGO_BROTLI, CU_ALGO_ZLIB,
     CU_ALGO_BZ2,  CU_ALGO_LZ4,    CU_ALGO_XZ,
-    CU_ALGO_SNAPPY, CU_ALGO_GZIP,
+    CU_ALGO_SNAPPY, CU_ALGO_GZIP, CU_ALGO_DEFLATE,
 };
 #define N_ALGOS (sizeof(ALL_ALGOS) / sizeof(ALL_ALGOS[0]))
 
@@ -484,7 +484,38 @@ static int test_reject_garbage(void) {
     return 0;
 }
 
+static int test_raw_lz4(void) {
+    if (!cu_algorithm_available(CU_ALGO_LZ4_RAW)) return 0;
+    /* Independent literal-only LZ4 block for "hello". */
+    const uint8_t encoded[] = {0x50, 'h', 'e', 'l', 'l', 'o'};
+    uint8_t output[32];
+    size_t length = sizeof(output);
+    CHECK_OK(cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length));
+    CHECK(length == 5 && memcmp(output, "hello", 5) == 0, "raw LZ4 literals\n");
+    size_t capacity = cu_compress_bound(5, CU_ALGO_LZ4_RAW);
+    uint8_t* compressed = malloc(capacity);
+    CHECK(compressed, "allocation\n");
+    CHECK_OK(cu_compress(CU_ALGO_LZ4_RAW, output, 5, compressed, &capacity, 5));
+    length = sizeof(output);
+    CHECK_OK(cu_decompress(CU_ALGO_LZ4_RAW, compressed, capacity, output, &length));
+    free(compressed);
+    CHECK(length == 5 && memcmp(output, "hello", 5) == 0, "raw LZ4 round trip\n");
+    length = 1;
+    CHECK(cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length) != CU_OK,
+          "undersized raw output must fail\n");
+    cu_decompress_stream_t* stream = NULL;
+    CHECK(cu_decompress_stream_create(CU_ALGO_LZ4_RAW, &stream) == CU_ERR_UNSUPPORTED_ALGO,
+          "raw LZ4 streaming must fail safely\n");
+    CHECK(stream == NULL, "failed decompressor must be NULL\n");
+    cu_compress_stream_t* encoder = NULL;
+    CHECK(cu_compress_stream_create(CU_ALGO_LZ4_RAW, 5, &encoder) == CU_ERR_UNSUPPORTED_ALGO,
+          "raw LZ4 compressor streaming must fail safely\n");
+    CHECK(encoder == NULL, "failed compressor must be NULL\n");
+    return 0;
+}
+
 int main(void) {
+    if (test_raw_lz4()) return 1;
     if (test_version_and_introspection())   return 1;
     if (test_oneshot_roundtrip())           return 1;
     if (test_buf_too_small())               return 1;
