@@ -33,6 +33,7 @@ import * as gzip from "compress-utils/gzip";
 import * as deflate from "compress-utils/deflate";
 import * as lz4_raw from "compress-utils/lz4_raw";
 
+import * as lzo from "compress-utils/lzo/decompress";
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 const algos = { zstd, brotli, zlib, bz2, lz4, xz, snappy, gzip, deflate, lz4_raw };
@@ -56,6 +57,14 @@ async function main() {
             results[name] = "error: " + (e?.message || String(e));
         }
     }
+    const lzoInput = new Uint8Array([22,104,101,108,108,111,17,0,0]);
+    let lzoRequiresPreload = false;
+    try { lzo.decompressSync(lzoInput, {expectedSize: 10}); }
+    catch (error) { lzoRequiresPreload = /preload/.test(error.message); }
+    await Promise.all([lzo.preload(), lzo.preload()]);
+    const lzoSyncOutput = lzo.decompressSync(lzoInput, {expectedSize: 10});
+    const lzoAsyncOutput = await lzo.decompress(lzoInput, {expectedSize: 10});
+    results.lzo = lzoRequiresPreload && dec.decode(lzoSyncOutput) === "hello" && dec.decode(lzoAsyncOutput) === "hello" ? "ok" : "mismatch";
     globalThis.__cuResults = results;
     document.title = "ready";
 }
@@ -75,6 +84,7 @@ await esbuild.build({
     loader: { ".wasm": "file" },
     conditions: ["browser", "import"],
     alias: {
+        "compress-utils/lzo/decompress": path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/index.js"),
         "compress-utils/zstd":   path.join(PKG_ROOT, "dist/algorithms/zstd/index.js"),
         "compress-utils/brotli": path.join(PKG_ROOT, "dist/algorithms/brotli/index.js"),
         "compress-utils/zlib":   path.join(PKG_ROOT, "dist/algorithms/zlib/index.js"),
@@ -115,6 +125,7 @@ for (const codec of ["zlib", "lz4"]) {
         path.join(OUT, codec, `${codec}.wasm`));
 }
 
+await copyFile(path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/lzo.wasm"), path.join(OUT, "lzo.wasm"));
 const MIME = {
     ".html": "text/html; charset=utf-8",
     ".js":   "text/javascript; charset=utf-8",

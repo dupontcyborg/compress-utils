@@ -34,3 +34,10 @@ The shipped codec is the pure-C port (keeps the library free of a C++ runtime de
 - **License**: BSD 3-Clause License
 - **Authors**: Andi Kleen and contributors
 - **Reference / test oracle**: https://github.com/google/snappy — BSD 3-Clause License, Google and contributors
+
+## lzokay (LZO1X decoder)
+
+- **Repository**: https://github.com/AxioDL/lzokay
+- **License**: MIT License
+- **Author**: Jack Andersen
+- **Adaptation**: Decoder-only C port of revision `db2df1fcbebc2ed06c10f727f72567d40f06a2be`; see `third_party/lzokay/PROVENANCE.md` and `LICENSE`.

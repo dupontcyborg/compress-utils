@@ -31,5 +31,6 @@ test("all algorithms round-trip asynchronously and after preload synchronously i
         gzip: "ok",
         deflate: "ok",
         lz4_raw: "ok",
+        lzo: "ok",
     });
 });
