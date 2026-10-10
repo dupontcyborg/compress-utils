@@ -7,7 +7,7 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
     new URL("./lzo.wasm", import.meta.url),
 );
 /** Decode one block into the supplied output capacity; return actual bytes. */
-export function decompress(
+export async function decompress(
     input: Uint8Array,
     options: DecompressOptions & { expectedSize: number },
 ): Promise<Uint8Array> {

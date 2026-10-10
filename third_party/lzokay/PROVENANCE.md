@@ -10,3 +10,7 @@ unaligned reads. It validates extension lengths, input consumption, end markers,
 back-references, and output capacity. A count-only mode supports allocation-free
 size probing bounded by the existing decompression limit. No compressor,
 dictionary, LZO-RLE variant, lzop container, or application framing is included.
+
+Non-overlapping matches use `memcpy`; overlapping matches retain forward byte
+copying so repeated patterns expand correctly. The decoder is independent of
+the compress-utils ABI; `src/algorithms/lzo/lzo.c` maps its result codes.

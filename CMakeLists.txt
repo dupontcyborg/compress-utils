@@ -197,6 +197,8 @@ if(INCLUDE_SNAPPY)
 endif()
 
 if(INCLUDE_LZO)
+    add_subdirectory(algorithms/lzo)
+    list(APPEND CU_TARGET_LIBS lzo_library)
     list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/lzo/lzo.c)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_LZO)
 endif()

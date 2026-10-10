@@ -15,7 +15,7 @@ describe("raw LZO1X decoder", () => {
         );
         for (const expectedSize of [-1, 0.5, Number.NaN, 0x80000000]) {
             expect(() => lzo.decompressSync(input, { expectedSize })).toThrow(RangeError);
-            expect(() => lzo.decompress(input, { expectedSize })).toThrow(RangeError);
+            await expect(lzo.decompress(input, { expectedSize })).rejects.toThrow(RangeError);
         }
         expect(() => lzo.decompressSync(input, { expectedSize: 1 })).toThrow();
     });
@@ -39,7 +39,9 @@ describe("raw LZO1X decoder", () => {
         }
     });
     test("validates capacity and enforces configured output limit", async () => {
-        expect(() => lzo.decompress(new Uint8Array(), { expectedSize: -1 })).toThrow(RangeError);
+        await expect(lzo.decompress(new Uint8Array(), { expectedSize: -1 })).rejects.toThrow(
+            RangeError,
+        );
         await lzo.setMaxDecompressedSize(100);
         try {
             await expect(

@@ -8,7 +8,7 @@
  * The fuzzer reads (algo_byte, payload) pairs from libFuzzer-generated
  * input and exercises cu_decompress for every algorithm. The first byte
  * of every input selects the algorithm:
- *   0 -> zstd, 1 -> brotli, 2 -> zlib, 3 -> bz2, 4 -> lz4, 5 -> xz.
+ *   0 -> zstd, 1 -> brotli, 2 -> zlib, 3 -> bz2, 4 -> lz4, 5 -> xz, 6 -> raw LZO1X.
  *
  * The harness must not crash, leak, or trigger ASan/UBSan on any input.
  * It is allowed to return any cu_status_t value.
@@ -25,7 +25,7 @@
 
 static const cu_algorithm_t ALGOS[] = {
     CU_ALGO_ZSTD, CU_ALGO_BROTLI, CU_ALGO_ZLIB,
-    CU_ALGO_BZ2,  CU_ALGO_LZ4,    CU_ALGO_XZ,
+    CU_ALGO_BZ2,  CU_ALGO_LZ4,    CU_ALGO_XZ, CU_ALGO_LZO,
 };
 
 #define MAX_OUT (4 * 1024 * 1024)

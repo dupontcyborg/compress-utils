@@ -86,6 +86,7 @@ If `using` isn't available in your toolchain, call `cs.destroy()` explicitly —
 | Brotli    | `compress-utils/brotli`  | raw Brotli stream                          |
 | Snappy    | `compress-utils/snappy`  | Raw Snappy block                           |
 | gzip      | `compress-utils/gzip`    | gzip stream (RFC 1952)                     |
+| LZO       | `compress-utils/lzo/decompress` | Raw LZO1X block (decompress only; pass `{expectedSize}` as output capacity) |
 
 Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively. For per-module `.wasm` sizes (and the smaller decode-only / encode-only builds), see **[Bundle size](#bundle-size)**.
 
@@ -171,25 +172,6 @@ Existing asynchronous APIs initialize automatically and also enable subsequent
 synchronous calls. Initializing one subpath does not initialize another: encoder
 and decoder subpaths use different WASM modules. Sync calls block the calling
 thread; use a worker for expensive operations.
-
-### LZO (decoder only)
-
-`compress-utils/lzo/decompress` decodes one raw LZO1X block produced by
-LZO1X-1 or LZO1X-999. Pass `{expectedSize}` as the output capacity; the returned
-array contains only the actual decoded bytes. Capacity must be a non-negative
-integer, and the configured decompression limit also applies.
-
-`await preload()` initializes the decoder for subsequent `decompressSync(bytes,
-{expectedSize})` calls. Calling the sync method before initialization throws a
-preload instruction; the async method initializes automatically.
-
-No compression or streaming API is published. Lzop files, dictionaries,
-other LZO variants and Hadoop framing are not supported. Parquet pages and
-ORC compressed chunks can pass their raw block payload and enclosing size
-bound to this decoder. Their container framing belongs in the loader.
-
-The decoder is adapted from MIT-licensed lzokay; source revision and license
-are recorded in `src/algorithms/lzo/PROVENANCE.md` and `LICENSE`.
 
 ## License
 
