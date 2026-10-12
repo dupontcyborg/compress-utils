@@ -10,7 +10,7 @@ import (
 // allAlgos is every algorithm the binding knows about. Tests skip any that
 // the linked library was not compiled with.
 var allAlgos = []Algorithm{
-	Zstd, Brotli, Zlib, Bz2, Lz4, Xz, Snappy, Gzip,
+	Zstd, Brotli, Zlib, Bz2, Lz4, Xz, Snappy, Gzip, Deflate,
 }
 
 // payloads spans the edge cases the C interop suite also covers: empty,
@@ -194,5 +194,86 @@ func TestErrorType(t *testing.T) {
 	}
 	if ce.Error() == "" {
 		t.Fatal("error message is empty")
+	}
+}
+
+func TestDecompressWithCapacity(t *testing.T) {
+	for _, a := range allAlgos {
+		if !Available(a) {
+			continue
+		}
+		t.Run(a.Name(), func(t *testing.T) {
+			data := payloads()["text_18k"]
+			c, err := Compress(a, data, DefaultLevel)
+			if err != nil {
+				t.Fatalf("Compress: %v", err)
+			}
+			for _, capacity := range []int{len(data), len(data) + 4096} {
+				got, err := DecompressWithCapacity(a, c, capacity)
+				if err != nil {
+					t.Fatalf("capacity %d: %v", capacity, err)
+				}
+				if !bytes.Equal(got, data) {
+					t.Fatalf("capacity %d: round-trip mismatch", capacity)
+				}
+			}
+			if _, err := DecompressWithCapacity(a, c, len(data)/2); err == nil {
+				t.Fatal("expected error for an undersized capacity")
+			}
+		})
+	}
+}
+
+func TestLz4Raw(t *testing.T) {
+	if !Available(Lz4Raw) {
+		t.Skip("lz4_raw not available")
+	}
+	for name, data := range payloads() {
+		t.Run(name, func(t *testing.T) {
+			block, err := Compress(Lz4Raw, data, DefaultLevel)
+			if err != nil {
+				t.Fatalf("Compress: %v", err)
+			}
+			got, err := DecompressWithCapacity(Lz4Raw, block, len(data)+100)
+			if err != nil {
+				t.Fatalf("DecompressWithCapacity: %v", err)
+			}
+			if !bytes.Equal(got, data) {
+				t.Fatal("round-trip mismatch")
+			}
+		})
+	}
+	block, _ := Compress(Lz4Raw, []byte("hello hello hello"), DefaultLevel)
+	_, err := Decompress(Lz4Raw, block)
+	var ce *Error
+	if !errors.As(err, &ce) || ce.Code != ErrSizeUnknown {
+		t.Fatalf("Decompress without a capacity: want ErrSizeUnknown, got %v", err)
+	}
+	if _, err := DecompressWithCapacity(Lz4Raw, block, 4); !errors.As(err, &ce) || ce.Code != ErrBufTooSmall {
+		t.Fatalf("undersized capacity: want ErrBufTooSmall, got %v", err)
+	}
+}
+
+func TestLzo(t *testing.T) {
+	if !Available(Lzo) {
+		t.Skip("lzo not available")
+	}
+	// Independent LZO1X block: five literals ("hello") then the end marker.
+	block := []byte{22, 'h', 'e', 'l', 'l', 'o', 17, 0, 0}
+	for _, decode := range []func() ([]byte, error){
+		func() ([]byte, error) { return Decompress(Lzo, block) },
+		func() ([]byte, error) { return DecompressWithCapacity(Lzo, block, 64) },
+	} {
+		got, err := decode()
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if string(got) != "hello" {
+			t.Fatalf("decode: got %q", got)
+		}
+	}
+	var ce *Error
+	if _, err := Compress(Lzo, []byte("hello"), DefaultLevel); !errors.As(err, &ce) || ce.Code != ErrUnsupported {
+		t.Fatalf("Compress: want ErrUnsupported, got %v", err)
 	}
 }

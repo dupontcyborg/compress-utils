@@ -7,9 +7,10 @@ package compressutils
 //
 // Coverage is limited to the algorithms the stdlib implements:
 //
-//	gzip  (compress/gzip)  — both directions (RFC 1952)
-//	zlib  (compress/zlib)  — both directions (RFC 1950)
-//	bzip2 (compress/bzip2) — outbound only; stdlib has no bzip2 encoder
+//	gzip    (compress/gzip)  — both directions (RFC 1952)
+//	zlib    (compress/zlib)  — both directions (RFC 1950)
+//	deflate (compress/flate) — both directions (RFC 1951)
+//	bzip2   (compress/bzip2) — outbound only; stdlib has no bzip2 encoder
 //
 // zstd/brotli/lz4/xz/snappy have no stdlib codec; their wire-format interop
 // is covered by the Python binding's suite against PyPI references.
@@ -17,6 +18,7 @@ package compressutils
 import (
 	"bytes"
 	"compress/bzip2"
+	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
 	"io"
@@ -68,6 +70,41 @@ func TestInteropGzip(t *testing.T) {
 	}
 	if !bytes.Equal(dec, interopPayload) {
 		t.Fatal("inbound: we could not recover stdlib gzip output")
+	}
+}
+
+func TestInteropDeflate(t *testing.T) {
+	if !Available(Deflate) {
+		t.Skip("deflate not available")
+	}
+	// Outbound: cu.Compress -> stdlib flate decode.
+	c, err := Compress(Deflate, interopPayload, 6)
+	if err != nil {
+		t.Fatalf("Compress: %v", err)
+	}
+	got := decodeWith(t, func(r io.Reader) (io.Reader, error) { return flate.NewReader(r), nil }, c)
+	if !bytes.Equal(got, interopPayload) {
+		t.Fatal("outbound: stdlib flate could not recover our output")
+	}
+
+	// Inbound: stdlib flate encode -> cu.Decompress.
+	var buf bytes.Buffer
+	fw, err := flate.NewWriter(&buf, 6)
+	if err != nil {
+		t.Fatalf("stdlib flate writer: %v", err)
+	}
+	if _, err := fw.Write(interopPayload); err != nil {
+		t.Fatalf("stdlib flate write: %v", err)
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("stdlib flate close: %v", err)
+	}
+	dec, err := Decompress(Deflate, buf.Bytes())
+	if err != nil {
+		t.Fatalf("Decompress of stdlib flate: %v", err)
+	}
+	if !bytes.Equal(dec, interopPayload) {
+		t.Fatal("inbound: we could not recover stdlib flate output")
 	}
 }
 

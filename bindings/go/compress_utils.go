@@ -23,6 +23,7 @@ import "C"
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -38,16 +39,18 @@ const DefaultLevel = 5
 type Algorithm int
 
 const (
-	Zstd   Algorithm = C.CU_ALGO_ZSTD
-	Brotli Algorithm = C.CU_ALGO_BROTLI
-	Zlib   Algorithm = C.CU_ALGO_ZLIB
-	Bz2    Algorithm = C.CU_ALGO_BZ2
-	Lz4    Algorithm = C.CU_ALGO_LZ4
-	Xz     Algorithm = C.CU_ALGO_XZ
-	Lzma   Algorithm = C.CU_ALGO_LZMA // alias for Xz; produces .xz frames
-	Snappy Algorithm = C.CU_ALGO_SNAPPY
-	Gzip   Algorithm = C.CU_ALGO_GZIP
+	Zstd    Algorithm = C.CU_ALGO_ZSTD
+	Brotli  Algorithm = C.CU_ALGO_BROTLI
+	Zlib    Algorithm = C.CU_ALGO_ZLIB
+	Bz2     Algorithm = C.CU_ALGO_BZ2
+	Lz4     Algorithm = C.CU_ALGO_LZ4
+	Xz      Algorithm = C.CU_ALGO_XZ
+	Lzma    Algorithm = C.CU_ALGO_LZMA // alias for Xz; produces .xz frames
+	Snappy  Algorithm = C.CU_ALGO_SNAPPY
+	Gzip    Algorithm = C.CU_ALGO_GZIP
 	Deflate Algorithm = C.CU_ALGO_DEFLATE
+	Lz4Raw  Algorithm = C.CU_ALGO_LZ4_RAW // one-shot only; decompress with DecompressWithCapacity
+	Lzo     Algorithm = C.CU_ALGO_LZO     // raw LZO1X; decompression only
 )
 
 // Name returns the lowercase canonical name ("zstd", "brotli", ...), or ""
@@ -170,7 +173,9 @@ func Compress(algo Algorithm, data []byte, level int) ([]byte, error) {
 
 // Decompress decompresses data produced by the given algorithm. When the
 // wire format records the decompressed size it is recovered in a single
-// pass; otherwise Decompress falls back to the streaming decoder.
+// pass; otherwise Decompress falls back to the streaming decoder. Formats
+// that record no size and can't be streamed (Lz4Raw) need
+// DecompressWithCapacity instead.
 func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 	out, unknownSize, err := decompressOneShot(algo, data)
 	if err != nil {
@@ -180,14 +185,42 @@ func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 		return out, nil
 	}
 
-	// Wire format does not carry the size (zlib, gzip, brotli, bz2, raw lz4):
+	// Wire format does not carry the size (zlib, gzip, brotli, bz2):
 	// stream-decompress the whole buffer.
 	r, err := NewReader(bytes.NewReader(data), algo)
+	var ce *Error
+	if errors.As(err, &ce) && ce.Code == ErrUnsupported {
+		return nil, &Error{Code: ErrSizeUnknown, Msg: algo.Name() +
+			": the input doesn't record its decompressed size and can't be streamed; use DecompressWithCapacity"}
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	return io.ReadAll(r)
+}
+
+// DecompressWithCapacity decompresses data into at most capacity bytes. The
+// capacity is an upper bound on the output, allocated up front; the result
+// holds only the bytes written. It is required for formats that don't record
+// their size and can't be streamed (Lz4Raw), and skips the size probe for
+// every other algorithm.
+func DecompressWithCapacity(algo Algorithm, data []byte, capacity int) ([]byte, error) {
+	if capacity < 0 {
+		return nil, &Error{Code: ErrInvalidArg, Msg: "compress-utils: negative capacity"}
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	out := make([]byte, capacity)
+	outLen := C.size_t(capacity)
+	st := C.cu_decompress(
+		C.cu_algorithm_t(algo), bytePtr(data), C.size_t(len(data)),
+		bytePtr(out), &outLen)
+	if err := statusErr(st); err != nil {
+		return nil, err
+	}
+	return out[:int(outLen)], nil
 }
 
 // decompressOneShot attempts the size-hint + one-shot path. It returns

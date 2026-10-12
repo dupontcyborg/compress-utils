@@ -49,10 +49,22 @@ io.Copy(dst, r)
 
 ## Algorithms
 
-`Zstd`, `Brotli`, `Zlib`, `Gzip`, `Bz2`, `Lz4`, `Xz` (alias `Lzma`), `Snappy`.
+`Zstd`, `Brotli`, `Zlib`, `Gzip`, `Bz2`, `Lz4`, `Xz` (alias `Lzma`), `Snappy`,
+`Deflate` (raw RFC 1951), `Lz4Raw` (raw LZ4 block, one-shot only) and `Lzo` (raw
+LZO1X block, decompression only).
 Wire formats match the other compress-utils bindings and the reference tools
 (e.g. `Gzip` is RFC 1952, interoperable with the `gzip` CLI). `cu.Available(a)`
 reports whether an algorithm was compiled in.
+
+### Raw blocks and output capacity
+
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. `DecompressWithCapacity` takes an upper bound on the output and returns only the bytes actually decoded:
+
+```go
+page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
+```
+
+It is required for `Lz4Raw`, which has no streaming decoder; `Decompress` on an `Lz4Raw` block returns an `*Error` with code `ErrSizeUnknown`. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other API
 
