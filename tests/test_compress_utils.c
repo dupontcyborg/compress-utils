@@ -501,8 +501,22 @@ static int test_raw_lz4(void) {
     free(compressed);
     CHECK(length == 5 && memcmp(output, "hello", 5) == 0, "raw LZ4 round trip\n");
     length = 1;
-    CHECK(cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length) != CU_OK,
-          "undersized raw output must fail\n");
+    CHECK(cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length) == CU_ERR_BUF_TOO_SMALL,
+          "undersized raw output must report BUF_TOO_SMALL\n");
+    const uint8_t corrupt[] = {0xff};
+    length = sizeof(output);
+    CHECK(cu_decompress(CU_ALGO_LZ4_RAW, corrupt, sizeof(corrupt), output, &length) == CU_ERR_DECOMPRESSION,
+          "corrupt raw block must report DECOMPRESSION\n");
+    /* Capacity above the configured limit is capped rather than rejected. */
+    cu_set_max_decompressed_size(16);
+    length = sizeof(output);
+    CHECK_OK(cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length));
+    CHECK(length == 5, "capacity above the limit must still decode\n");
+    cu_set_max_decompressed_size(4);
+    length = sizeof(output);
+    cu_status_t limited = cu_decompress(CU_ALGO_LZ4_RAW, encoded, sizeof(encoded), output, &length);
+    cu_set_max_decompressed_size((size_t)1024 * 1024 * 1024);
+    CHECK(limited == CU_ERR_SIZE_LIMIT, "output above the limit must report SIZE_LIMIT\n");
     cu_decompress_stream_t* stream = NULL;
     CHECK(cu_decompress_stream_create(CU_ALGO_LZ4_RAW, &stream) == CU_ERR_UNSUPPORTED_ALGO,
           "raw LZ4 streaming must fail safely\n");
@@ -515,13 +529,13 @@ static int test_raw_lz4(void) {
 }
 
 int main(void) {
-    if (test_raw_lz4()) return 1;
     if (test_version_and_introspection())   return 1;
     if (test_oneshot_roundtrip())           return 1;
     if (test_buf_too_small())               return 1;
     if (test_streaming_with_tight_buffer()) return 1;
     if (test_cross_api())                   return 1;
     if (test_reject_garbage())              return 1;
+    if (test_raw_lz4())                     return 1;
     printf("OK\n");
     return 0;
 }

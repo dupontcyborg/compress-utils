@@ -96,7 +96,6 @@ option(BUILD_STATIC_LIB "Build a self-contained compress_utils_static archive" O
 
 # Per-algorithm inclusion. All six have been migrated to the C core in
 # Phase 1; default to ON. Disable individually for slimmer builds.
-option(INCLUDE_LZO "Include raw LZO1X decompression" ON)
 option(INCLUDE_ZSTD   "Include Zstd compression algorithm"   ON)
 option(INCLUDE_BROTLI "Include Brotli compression algorithm" ON)
 option(INCLUDE_ZLIB   "Include zlib compression algorithm"   ON)
@@ -105,6 +104,7 @@ option(INCLUDE_LZ4    "Include LZ4 compression algorithm"    ON)
 option(INCLUDE_XZ     "Include XZ/LZMA compression algorithm" ON)
 option(INCLUDE_SNAPPY "Include Snappy compression algorithm" ON)
 option(INCLUDE_GZIP   "Include gzip compression algorithm (DEFLATE, RFC 1952)" ON)
+option(INCLUDE_LZO    "Include raw LZO1X decompression" ON)
 
 if(NOT INCLUDE_ZSTD AND NOT INCLUDE_BROTLI AND NOT INCLUDE_ZLIB
         AND NOT INCLUDE_BZ2 AND NOT INCLUDE_LZ4 AND NOT INCLUDE_XZ
