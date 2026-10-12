@@ -42,16 +42,19 @@ async function main() {
     const results = {};
     const input = enc.encode("playwright payload ".repeat(200));
     for (const [name, m] of Object.entries(algos)) {
+        // Only raw LZ4 needs a capacity; the rest exercise the size-probe and
+        // streaming fallbacks.
+        const opts = name === "lz4_raw" ? { expectedSize: input.length } : undefined;
         try {
             const asyncCompressed = await m.compress(input);
-            const asyncRestored = await m.decompress(asyncCompressed, { expectedSize: input.length });
+            const asyncRestored = await m.decompress(asyncCompressed, opts);
             if (dec.decode(asyncRestored) !== dec.decode(input)) {
                 results[name] = "async mismatch";
                 continue;
             }
             await m.preload();
             const compressed = m.compressSync(input);
-            const back = m.decompressSync(compressed, { expectedSize: input.length });
+            const back = m.decompressSync(compressed, opts);
             results[name] = dec.decode(back) === dec.decode(input) ? "ok" : "sync mismatch";
         } catch (e) {
             results[name] = "error: " + (e?.message || String(e));

@@ -11,7 +11,7 @@
 
 import { checkStatus, decodeCString, loadModule, type WasmExports } from "./loader.js";
 import {
-    Algorithm,
+    type Algorithm,
     CompressError,
     Status,
     type AlgorithmName,
