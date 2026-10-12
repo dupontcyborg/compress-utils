@@ -12,7 +12,7 @@
 
 use std::io::{Read, Write};
 
-use compress_utils::{compress, decompress, Algorithm};
+use compress_utils::{compress, decompress, decompress_with_capacity, Algorithm};
 
 fn samples() -> Vec<Vec<u8>> {
     vec![
@@ -144,6 +144,54 @@ fn lz4_both_ways_lz4flex() {
             decompress(Algorithm::Lz4, &ref_packed).unwrap(),
             data,
             "lz4 inbound"
+        );
+    }
+}
+
+// ---- raw lz4 block (lz4_flex) ---------------------------------------------
+
+#[test]
+fn lz4_raw_both_ways_lz4flex() {
+    if !Algorithm::Lz4Raw.available() {
+        return;
+    }
+    for data in samples() {
+        let packed = compress(Algorithm::Lz4Raw, &data, 6).unwrap();
+        let out = lz4_flex::block::decompress(&packed, data.len())
+            .expect("lz4_flex decode our raw block");
+        assert_eq!(out, data, "lz4_raw outbound");
+
+        let ref_packed = lz4_flex::block::compress(&data);
+        assert_eq!(
+            decompress_with_capacity(Algorithm::Lz4Raw, &ref_packed, data.len()).unwrap(),
+            data,
+            "lz4_raw inbound"
+        );
+    }
+}
+
+// ---- raw deflate (flate2 / miniz_oxide) -----------------------------------
+
+#[test]
+fn deflate_both_ways_flate2() {
+    if !Algorithm::Deflate.available() {
+        return;
+    }
+    for data in samples() {
+        let packed = compress(Algorithm::Deflate, &data, 6).unwrap();
+        let mut d = flate2::read::DeflateDecoder::new(&packed[..]);
+        let mut out = Vec::new();
+        d.read_to_end(&mut out)
+            .expect("flate2 decode our raw deflate");
+        assert_eq!(out, data, "deflate outbound");
+
+        let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+        e.write_all(&data).unwrap();
+        let ref_packed = e.finish().unwrap();
+        assert_eq!(
+            decompress(Algorithm::Deflate, &ref_packed).unwrap(),
+            data,
+            "deflate inbound"
         );
     }
 }

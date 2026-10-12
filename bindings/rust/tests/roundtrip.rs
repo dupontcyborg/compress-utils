@@ -5,7 +5,9 @@
 
 use std::io::{Read, Write};
 
-use compress_utils::{compress, decompress, Algorithm, Compressor, Decompressor};
+use compress_utils::{
+    compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor, Status,
+};
 
 /// Every algorithm the binding exposes. Alias `Lzma` is exercised separately.
 const ALGOS: &[Algorithm] = &[
@@ -17,6 +19,7 @@ const ALGOS: &[Algorithm] = &[
     Algorithm::Xz,
     Algorithm::Snappy,
     Algorithm::Gzip,
+    Algorithm::Deflate,
 ];
 
 /// Deterministic pseudo-random bytes (no `rand` dep) — a simple LCG so failures
@@ -197,4 +200,58 @@ fn lzma_alias() {
     let data = b"lzma alias should equal xz".to_vec();
     let packed = compress(Algorithm::Lzma, &data, 5).unwrap();
     assert_eq!(decompress(Algorithm::Xz, &packed).unwrap(), data);
+}
+
+/// A capacity is an upper bound: exact and oversized capacities decode the
+/// same bytes, and an undersized one errors.
+#[test]
+fn decompress_with_capacity_bounds() {
+    let data = pseudo_random(16_000, 3);
+    for algo in available(ALGOS) {
+        let packed = compress(algo, &data, 5).unwrap();
+        for capacity in [data.len(), data.len() + 4096] {
+            let out = decompress_with_capacity(algo, &packed, capacity)
+                .unwrap_or_else(|e| panic!("{algo} capacity {capacity}: {e}"));
+            assert_eq!(out, data, "{algo} capacity {capacity}");
+        }
+        assert!(
+            decompress_with_capacity(algo, &packed, data.len() / 2).is_err(),
+            "{algo} accepted an undersized capacity"
+        );
+    }
+}
+
+#[test]
+fn lz4_raw_needs_capacity() {
+    if !Algorithm::Lz4Raw.available() {
+        return;
+    }
+    for (name, data) in payloads() {
+        let block = compress(Algorithm::Lz4Raw, &data, 5).unwrap();
+        let out = decompress_with_capacity(Algorithm::Lz4Raw, &block, data.len() + 100)
+            .unwrap_or_else(|e| panic!("lz4_raw {name}: {e}"));
+        assert_eq!(out, data, "lz4_raw {name}");
+    }
+    let block = compress(Algorithm::Lz4Raw, b"hello hello hello", 5).unwrap();
+    let err = decompress(Algorithm::Lz4Raw, &block).unwrap_err();
+    assert_eq!(err.code, Status::SizeUnknown, "{err}");
+    assert!(err.message.contains("decompress_with_capacity"), "{err}");
+    let err = decompress_with_capacity(Algorithm::Lz4Raw, &block, 4).unwrap_err();
+    assert_eq!(err.code, Status::BufTooSmall, "{err}");
+}
+
+#[test]
+fn lzo_decodes_only() {
+    if !Algorithm::Lzo.available() {
+        return;
+    }
+    // Independent LZO1X block: five literals ("hello") then the end marker.
+    let block = [22, b'h', b'e', b'l', b'l', b'o', 17, 0, 0];
+    assert_eq!(decompress(Algorithm::Lzo, &block).unwrap(), b"hello");
+    assert_eq!(
+        decompress_with_capacity(Algorithm::Lzo, &block, 64).unwrap(),
+        b"hello"
+    );
+    let err = compress(Algorithm::Lzo, b"hello", 5).unwrap_err();
+    assert_eq!(err.code, Status::UnsupportedAlgo, "{err}");
 }

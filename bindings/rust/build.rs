@@ -32,7 +32,12 @@ const VTABLES: &[(&str, &str)] = &[
     ("INCLUDE_LZ4_RAW", "src/algorithms/lz4_raw/lz4_raw.c"),
     ("INCLUDE_XZ", "src/algorithms/xz/xz.c"),
     ("INCLUDE_SNAPPY", "src/algorithms/snappy/snappy.c"),
+    ("INCLUDE_LZO", "src/algorithms/lzo/lzo.c"),
 ];
+
+/// Hand-ported codecs outside the manifest (see third_party/VENDOR.md). They
+/// need no private defines, so they compile in the core Build.
+const HAND_PORTED: &[(&str, &str)] = &[("third_party/lzokay", "lzokay.c")];
 
 fn main() {
     // CARGO_MANIFEST_DIR is the repo root — the manifest lives there so
@@ -42,6 +47,7 @@ fn main() {
     println!("cargo:rerun-if-changed=include/compress_utils.h");
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=third_party/manifest.json");
+    println!("cargo:rerun-if-changed=third_party/lzokay");
     println!("cargo:rerun-if-changed=bindings/rust/build.rs");
 
     let manifest: serde_json::Value = {
@@ -95,6 +101,10 @@ fn main() {
     for (def, vtable) in VTABLES {
         core.define(def, None);
         core.file(root.join(vtable));
+    }
+    for (dir, source) in HAND_PORTED {
+        core.include(root.join(dir));
+        core.file(root.join(dir).join(source));
     }
     // xz.c includes <lzma.h>; needs the static-API decoration too.
     core.define("LZMA_API_STATIC", None);
