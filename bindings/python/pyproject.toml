@@ -60,6 +60,8 @@ cmake.args = [
 cmake.build-type = "Release"
 wheel.packages = ["bindings/python/compress_utils"]
 wheel.install-dir = "compress_utils"
+# Third-party codec licenses must ship with the compiled wheel too.
+wheel.license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 
 # Ship the auto-generated type stubs and the PEP 561 marker so tools
 # like mypy/pyright/pyre and editor IDEs pick up the type information.
@@ -72,6 +74,7 @@ sdist.include = [
     "CMakeLists.txt",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
 ]
 
 [tool.scikit-build.metadata.version]

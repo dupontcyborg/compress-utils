@@ -47,7 +47,13 @@ GEN_GO = "cgo_generated.go"
 # All algorithms the binding exposes. gzip is not a manifest codec — it is zlib
 # in a different wire wrapper, so it contributes a vtable + INCLUDE_GZIP but no
 # codec sources of its own (it links zlib's).
-ALGOS = ["zstd", "brotli", "zlib", "gzip", "bz2", "lz4", "xz", "snappy", "deflate", "lz4_raw"]
+ALGOS = ["zstd", "brotli", "zlib", "gzip", "bz2", "lz4", "xz", "snappy", "deflate", "lz4_raw", "lzo"]
+
+# Hand-ported codecs that live in third_party/ but outside manifest.json (see
+# third_party/VENDOR.md), described in the same shape as a manifest entry.
+HAND_PORTED = {
+    "lzokay": {"sources": ["lzokay.c"], "include_dirs": ["."], "defines": [], "cxx": False},
+}
 
 # Our own translation units (not upstream): the ABI dispatcher, the registry,
 # and one vtable per algorithm. Compiled with the global INCLUDE_* defines; no
@@ -66,7 +72,7 @@ UNITY = {c: False for c in ALGOS}
 
 def load_manifest() -> dict:
     import json
-    return json.loads(MANIFEST.read_text())["codecs"]
+    return {**json.loads(MANIFEST.read_text())["codecs"], **HAND_PORTED}
 
 
 def define_line(d: str) -> str:
