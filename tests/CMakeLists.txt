@@ -53,3 +53,10 @@ if(ENABLE_TESTS AND INCLUDE_SNAPPY)
 endif()
 
 add_subdirectory(fuzz)
+
+if(INCLUDE_LZO)
+    add_executable(test_lzo test_lzo.c)
+    target_link_libraries(test_lzo PRIVATE compress_utils_obj)
+    target_compile_definitions(test_lzo PRIVATE LZO_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/lzo")
+    add_test(NAME test_lzo COMMAND test_lzo)
+endif()

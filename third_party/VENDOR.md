@@ -54,6 +54,10 @@ with portable, compile-time-detected headers that are correct for every target
   for unaligned access, resolves endianness via `__BYTE_ORDER__`, and provides
   MSVC fallbacks (`_BitScan*` for `__builtin_ctz/clz`, `SSIZE_T` for `ssize_t`)
   so it compiles on GCC, Clang, zig cc (wasm32) and MSVC.
+- `lzokay/` — hand-adapted, decoder-only C port with checked offsets and an
+  allocation-free size probe. Its pinned revision and MIT license are retained
+  in `PROVENANCE.md` and `LICENSE`. It is built by `algorithms/lzo` rather than
+  the generated manifest; re-vendoring preserves this separate directory.
 - `snappy-oracle/` — google/snappy (C++), a pinned snapshot kept ONLY as the
   differential-test oracle (`tests/test_snappy_oracle`). It never ships and is
   not a `manifest.json` codec. Its `config.h` / `snappy-stubs-public.h` are the

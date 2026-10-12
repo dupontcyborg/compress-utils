@@ -151,7 +151,7 @@ static cu_status_t resolve(cu_algorithm_t algo, const cu_algorithm_vtbl_t** out_
 
 size_t cu_compress_bound(size_t in_len, cu_algorithm_t algo) {
     const cu_algorithm_vtbl_t* v = cu_registry_lookup(algo);
-    if (!v) return 0;
+    if (!v || !v->compress_bound) return 0;
     return v->compress_bound(in_len);
 }
 
@@ -174,6 +174,7 @@ cu_status_t cu_compress(
     if (s != CU_OK) return s;
 
     cu_clear_last_error();
+    if (!v->compress) { cu_set_last_error("operation unsupported for this algorithm"); return CU_ERR_UNSUPPORTED_ALGO; }
     return v->compress(in, in_len, out, out_len, level);
 }
 
@@ -191,6 +192,7 @@ cu_status_t cu_decompress(
     if (s != CU_OK) return s;
 
     cu_clear_last_error();
+    if (!v->decompress) { cu_set_last_error("operation unsupported for this algorithm"); return CU_ERR_UNSUPPORTED_ALGO; }
     return v->decompress(in, in_len, out, out_len);
 }
 
@@ -207,6 +209,7 @@ cu_status_t cu_decompress_size_hint(
     if (s != CU_OK) return s;
 
     cu_clear_last_error();
+    if (!v->decompress_size_hint) { cu_set_last_error("operation unsupported for this algorithm"); return CU_ERR_UNSUPPORTED_ALGO; }
     return v->decompress_size_hint(in, in_len, out_size);
 }
 

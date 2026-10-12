@@ -40,6 +40,9 @@ extern const cu_algorithm_vtbl_t cu_xz_vtbl;
 #ifdef INCLUDE_SNAPPY
 extern const cu_algorithm_vtbl_t cu_snappy_vtbl;
 #endif
+#ifdef INCLUDE_LZO
+extern const cu_algorithm_vtbl_t cu_lzo_vtbl;
+#endif
 #ifdef INCLUDE_GZIP
 extern const cu_algorithm_vtbl_t cu_gzip_vtbl;
 #endif
@@ -76,6 +79,9 @@ const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
 #endif
 #ifdef INCLUDE_GZIP
         case CU_ALGO_GZIP:   return &cu_gzip_vtbl;
+#endif
+#ifdef INCLUDE_LZO
+        case CU_ALGO_LZO: return &cu_lzo_vtbl;
 #endif
         default:             return NULL;
     }

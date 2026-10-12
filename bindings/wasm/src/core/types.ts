@@ -17,6 +17,7 @@ export const enum Algorithm {
     Gzip = 8,
     Deflate = 9,
     Lz4Raw = 10,
+    Lzo = 11,
 }
 
 /** @internal */
@@ -48,7 +49,8 @@ export type AlgorithmName =
     | "snappy"
     | "gzip"
     | "deflate"
-    | "lz4_raw";
+    | "lz4_raw"
+    | "lzo";
 
 /** Thrown for any non-Ok status. Carries the raw status code and algo name. */
 export class CompressError extends Error {

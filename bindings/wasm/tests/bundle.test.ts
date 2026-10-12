@@ -51,6 +51,10 @@ async function bundleConsumer(consumerSrc: string): Promise<BundleResult> {
         nodePaths: [path.join(PKG_ROOT, "node_modules")],
         conditions: ["browser", "import"],
         alias: {
+            "compress-utils/lzo/decompress": path.join(
+                PKG_ROOT,
+                "dist/algorithms/lzo/decompress/index.js",
+            ),
             "compress-utils/zstd": path.join(PKG_ROOT, "dist/algorithms/zstd/index.js"),
             "compress-utils/brotli": path.join(PKG_ROOT, "dist/algorithms/brotli/index.js"),
             "compress-utils/zlib": path.join(PKG_ROOT, "dist/algorithms/zlib/index.js"),
@@ -78,7 +82,7 @@ async function bundleConsumer(consumerSrc: string): Promise<BundleResult> {
     // `new URL("./zstd.wasm", ...)` — a stable, greppable marker that
     // proves the algo subpath ended up in the graph.
     const referencedAlgos = new Set<string>();
-    for (const algo of ALL_ALGOS) {
+    for (const algo of [...ALL_ALGOS, "lzo"]) {
         if (jsSource.includes(`"./${algo}.wasm"`)) {
             referencedAlgos.add(algo);
         }
@@ -162,4 +166,19 @@ describe("direction-variant .wasm size budgets", () => {
             });
         }
     }
+});
+
+describe("decoder-only LZO bundle", () => {
+    it("references only lzo.wasm", async () => {
+        const result = await bundleConsumer(
+            `import {decompress} from "compress-utils/lzo/decompress"; globalThis.__cu = decompress;`,
+        );
+        expect([...result.referencedAlgos]).toEqual(["lzo"]);
+    });
+    it("keeps the decoder below 26 KiB", async () => {
+        const bytes = await readFile(
+            path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/lzo.wasm"),
+        );
+        expect(bytes.length).toBeLessThan(26 * 1024);
+    });
 });
