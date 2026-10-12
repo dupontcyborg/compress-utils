@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -48,6 +49,8 @@ static cu::Algorithm parse_algorithm(const py::object& obj) {
         if (s == "xz")                         return cu::Algorithm::Xz;
         if (s == "lzma")                       return cu::Algorithm::Lzma;
         if (s == "snappy")                     return cu::Algorithm::Snappy;
+        if (s == "lz4_raw")                    return cu::Algorithm::Lz4Raw;
+        if (s == "lzo")                        return cu::Algorithm::Lzo;
         throw std::invalid_argument("Unknown algorithm: " + s);
     }
     /* Accept the Algorithm enum and bare int. */
@@ -85,6 +88,8 @@ PYBIND11_MODULE(compress_utils_py, m) {
         .value("snappy", cu::Algorithm::Snappy)
         .value("gzip",   cu::Algorithm::Gzip)
         .value("deflate", cu::Algorithm::Deflate)
+        .value("lz4_raw", cu::Algorithm::Lz4Raw)
+        .value("lzo",     cu::Algorithm::Lzo)
         .export_values();
 
     m.def("version",      &cu::version);
@@ -100,10 +105,24 @@ PYBIND11_MODULE(compress_utils_py, m) {
     }, py::arg("data"), py::arg("algorithm"), py::arg("level") = 5,
        "Compress bytes/buffer using the given algorithm (string or Algorithm).");
 
-    m.def("decompress", [](py::buffer data, const py::object& algorithm) {
-        return to_bytes(cu::decompress(parse_algorithm(algorithm), as_span(data)));
-    }, py::arg("data"), py::arg("algorithm"),
-       "Decompress bytes/buffer using the given algorithm.");
+    m.def("decompress", [](py::buffer data, const py::object& algorithm,
+                           std::optional<std::size_t> expected_size) {
+        cu::Algorithm algo = parse_algorithm(algorithm);
+        if (expected_size) {
+            return to_bytes(cu::decompress(algo, as_span(data), *expected_size));
+        }
+        try {
+            return to_bytes(cu::decompress(algo, as_span(data)));
+        } catch (const cu::Error& e) {
+            if (e.code() != CU_ERR_SIZE_UNKNOWN) throw;
+            throw cu::Error(e.code(), cu::algorithm_name(algo) +
+                ": the input doesn't record its decompressed size; pass expected_size");
+        }
+    }, py::arg("data"), py::arg("algorithm"), py::arg("expected_size") = py::none(),
+       "Decompress bytes/buffer using the given algorithm.\n\n"
+       "expected_size is an upper bound on the output size; the result holds the\n"
+       "bytes actually decoded. It is required for lz4_raw, and skips the size\n"
+       "probe for every other algorithm.");
 
     /* Streaming. */
     py::class_<cu::CompressStream>(m, "CompressStream",

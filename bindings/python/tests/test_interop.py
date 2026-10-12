@@ -22,6 +22,8 @@ against an *independent* reference implementation:
     | xz        | `lzma` (stdlib)            | yes (system liblzma)       |
     | snappy    | `snappy` (python-snappy)   | yes (own libsnappy)        |
     | gzip      | `gzip` (stdlib)            | yes (system zlib)          |
+    | deflate   | `zlib` (stdlib, wbits=-15) | yes (system zlib)          |
+    | lz4_raw   | `lz4.block` (PyPI)         | yes (own liblz4)           |
 
 For each (algorithm, payload) we assert:
     outbound: cu.compress(x)        -> canonical.decompress(...) == x
@@ -48,6 +50,9 @@ canonical decoder chosen here must match that format exactly:
   - xz     : .xz stream w/ CRC64           -> lzma.decompress (FORMAT_XZ default)
   - snappy : raw Snappy block              -> snappy.decompress (NOT framed .sz)
   - gzip   : gzip stream (RFC 1952)        -> gzip.decompress (NOT raw zlib/RFC 1950)
+  - deflate: raw DEFLATE (RFC 1951)        -> zlib with wbits=-15
+  - lz4_raw: raw LZ4 block, no size prefix -> lz4.block with store_size=False;
+             both sides need the decompressed size, so it has its own test
 """
 
 import unittest
@@ -144,6 +149,16 @@ def _gzip_ref():
     return (gzip.compress, gzip.decompress)
 
 
+def _deflate_ref():
+    import zlib  # stdlib
+    def _c(data):
+        c = zlib.compressobj(wbits=-15)
+        return c.compress(data) + c.flush()
+    def _d(data):
+        return zlib.decompress(data, wbits=-15)
+    return (_c, _d)
+
+
 REFERENCES = {
     "zstd":   _zstd_ref,
     "brotli": _brotli_ref,
@@ -153,6 +168,7 @@ REFERENCES = {
     "xz":     _xz_ref,
     "snappy": _snappy_ref,
     "gzip":   _gzip_ref,
+    "deflate": _deflate_ref,
 }
 
 
@@ -194,6 +210,22 @@ class TestCanonicalInterop(unittest.TestCase):
                         f"{algo}: we did not recover canonical output "
                         f"({case}, {len(data)} bytes -> {len(blob)} compressed)",
                     )
+
+
+    def test_lz4_raw(self):
+        """Raw LZ4 blocks interoperate with lz4.block in both directions."""
+        if not cu.is_available("lz4_raw"):
+            self.skipTest("lz4_raw not compiled into this build")
+        try:
+            import lz4.block as lz4b
+        except ImportError:
+            self.skipTest("canonical reference library for lz4_raw not installed")
+        for case, data in PAYLOADS.items():
+            with self.subTest(algorithm="lz4_raw", case=case):
+                ours = cu.compress(data, "lz4_raw")
+                self.assertEqual(lz4b.decompress(ours, uncompressed_size=len(data)), data)
+                theirs = lz4b.compress(data, store_size=False)
+                self.assertEqual(cu.decompress(theirs, "lz4_raw", expected_size=len(data)), data)
 
 
 if __name__ == "__main__":

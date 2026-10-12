@@ -3,7 +3,8 @@
 # Surface preserved from the legacy binding:
 #   compress(data, algorithm, level=5)
 #   decompress(data, algorithm)
-#   Algorithm (enum with lowercase members: zstd, brotli, zlib, bz2, lz4, xz, lzma, snappy, gzip)
+#   Algorithm (enum with lowercase members: zstd, brotli, zlib, bz2, lz4, xz, lzma, snappy, gzip,
+#              deflate, lz4_raw, lzo)
 #   CompressStream / DecompressStream
 #
 # Removed (was a smell — wrapper around free functions with no cached state):
@@ -14,6 +15,7 @@
 #   version()                       → "MAJOR.MINOR.PATCH"
 #   is_available(algorithm)         → bool
 #   set_max_decompressed_size(b)    → cap one-shot decompression
+#   decompress(..., expected_size=n) → decode into at most n bytes (required for lz4_raw)
 
 from .compress_utils_py import (
     Algorithm,
