@@ -28,10 +28,18 @@ CASES = {
 }
 
 
+# Raw block formats: one-shot only, so they skip the generic streaming tests.
+# lz4_raw needs expected_size to decompress; lzo has no encoder.
+RAW_FORMATS = {"lz4_raw", "lzo"}
+
+# Independent LZO1X block: five literals ("hello") then the end marker.
+LZO_HELLO = bytes([22]) + b"hello" + bytes([17, 0, 0])
+
+
 def available_algorithms():
-    """Return names of algorithms compiled into this build, excluding lzma alias."""
+    """Return names of framed algorithms compiled into this build, excluding lzma alias."""
     return [a.name for a in cu.Algorithm.__members__.values()
-            if cu.is_available(a) and a.name != "lzma"]
+            if cu.is_available(a) and a.name != "lzma" and a.name not in RAW_FORMATS]
 
 
 class TestCompressUtils(unittest.TestCase):
@@ -89,6 +97,39 @@ class TestCompressUtils(unittest.TestCase):
     def test_error_on_garbage(self):
         with self.assertRaises(cu.CompressError):
             cu.decompress(b"\xff" * 32, "zstd")
+
+    def test_expected_size(self):
+        data = bytes(range(256)) * 64  # 16KB
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                compressed = cu.compress(data, name)
+                self.assertEqual(cu.decompress(compressed, name, expected_size=len(data)), data)
+                self.assertEqual(cu.decompress(compressed, name, expected_size=len(data) + 4096), data)
+                with self.assertRaises(cu.CompressError):
+                    cu.decompress(compressed, name, expected_size=len(data) // 2)
+
+    @unittest.skipUnless(cu.is_available("lz4_raw"), "lz4_raw not compiled in")
+    def test_lz4_raw(self):
+        for case_name, data in CASES.items():
+            with self.subTest(case=case_name):
+                block = cu.compress(data, "lz4_raw")
+                self.assertEqual(cu.decompress(block, "lz4_raw", expected_size=len(data)), data)
+                self.assertEqual(cu.decompress(block, cu.Algorithm.lz4_raw, expected_size=len(data) + 100), data)
+        with self.assertRaisesRegex(cu.CompressError, "expected_size"):
+            cu.decompress(cu.compress(SAMPLE_DATA, "lz4_raw"), "lz4_raw")
+        with self.assertRaises(cu.CompressError):
+            cu.decompress(cu.compress(SAMPLE_DATA, "lz4_raw"), "lz4_raw", expected_size=1)
+        with self.assertRaises(cu.CompressError):
+            cu.DecompressStream("lz4_raw")
+
+    @unittest.skipUnless(cu.is_available("lzo"), "lzo not compiled in")
+    def test_lzo(self):
+        self.assertEqual(cu.decompress(LZO_HELLO, "lzo"), b"hello")
+        self.assertEqual(cu.decompress(LZO_HELLO, cu.Algorithm.lzo, expected_size=64), b"hello")
+        with self.assertRaises(cu.CompressError):
+            cu.decompress(LZO_HELLO, "lzo", expected_size=4)
+        with self.assertRaises(cu.CompressError):
+            cu.compress(b"hello", "lzo")
 
     def test_is_available(self):
         for a in cu.Algorithm.__members__.values():

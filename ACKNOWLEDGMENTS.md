@@ -1,6 +1,6 @@
 # Acknowledgements
 
-This project would not be possible without the remarkable work of other engineers in the data compression space. `compress-utils` incorporates such code from the following third-party projects:
+This project would not be possible without the remarkable work of other engineers in the data compression space. `compress-utils` incorporates such code from the following third-party projects. Their full license texts are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), which ships with every package.
 
 ## Brotli
 
@@ -13,6 +13,18 @@ This project would not be possible without the remarkable work of other engineer
 - **Repository**: https://github.com/madler/zlib
 - **License**: zlib License
 - **Authors**: Jean-loup Gailly, Mark Adler and contributors
+
+## bzip2
+
+- **Repository**: https://gitlab.com/bzip2/bzip2
+- **License**: bzip2 License (BSD-style)
+- **Author**: Julian Seward
+
+## LZ4
+
+- **Repository**: https://github.com/lz4/lz4
+- **License**: BSD 2-Clause License (library)
+- **Authors**: Yann Collet and contributors
 
 ## Zstandard (zstd)
 

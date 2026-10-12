@@ -3,6 +3,9 @@
 //! A unified, safe Rust interface to eight compression algorithms — Zstandard,
 //! Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy — over a single C core.
 //! Every algorithm speaks the same API; switching codecs is a one-enum change.
+//! Raw DEFLATE, raw LZ4 blocks and raw LZO1X blocks (decompression only) are
+//! also available; raw blocks don't record their size, so decode them with
+//! [`decompress_with_capacity`].
 //!
 //! ```no_run
 //! use compress_utils::{compress, decompress, Algorithm};
@@ -55,6 +58,11 @@ pub enum Algorithm {
     Gzip,
     /// Raw RFC 1951 DEFLATE.
     Deflate,
+    /// Raw LZ4 block, without framing or a size prefix. One-shot only: decode
+    /// it with [`decompress_with_capacity`].
+    Lz4Raw,
+    /// Raw LZO1X block. Decompression only.
+    Lzo,
 }
 
 impl Algorithm {
@@ -70,6 +78,8 @@ impl Algorithm {
             Algorithm::Snappy => ffi::CU_ALGO_SNAPPY,
             Algorithm::Gzip => ffi::CU_ALGO_GZIP,
             Algorithm::Deflate => ffi::CU_ALGO_DEFLATE,
+            Algorithm::Lz4Raw => ffi::CU_ALGO_LZ4_RAW,
+            Algorithm::Lzo => ffi::CU_ALGO_LZO,
         }
     }
 
@@ -256,17 +266,30 @@ pub fn compress(algo: Algorithm, data: &[u8], level: i32) -> Result<Vec<u8>, Err
 
 /// Decompress `data` produced by `algo`. When the wire format records the
 /// decompressed size it is recovered in a single pass; otherwise this falls
-/// back to the streaming decoder (as the C++/Python/Go bindings do).
+/// back to the streaming decoder (as the C++/Python/Go bindings do). Formats
+/// that record no size and can't be streamed ([`Algorithm::Lz4Raw`]) need
+/// [`decompress_with_capacity`] instead.
 pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
     match decompress_one_shot(algo, data)? {
         Some(out) => Ok(out),
-        // Wire format does not carry the size (zlib, gzip, brotli, bz2, raw
-        // lz4, snappy): stream-decompress the whole buffer, bounded by the same
+        // Wire format does not carry the size (zlib, gzip, brotli, bz2,
+        // snappy): stream-decompress the whole buffer, bounded by the same
         // cap the C one-shot path enforces so a malformed bomb can't run us out
         // of memory here.
         None => {
             use std::io::Read;
-            let mut r = Decompressor::new(data, algo)?;
+            let mut r = match Decompressor::new(data, algo) {
+                Err(e) if e.code == Status::UnsupportedAlgo => {
+                    return Err(Error {
+                        code: Status::SizeUnknown,
+                        message: format!(
+                            "{algo}: the input doesn't record its decompressed size and \
+                             can't be streamed; use decompress_with_capacity"
+                        ),
+                    });
+                }
+                r => r?,
+            };
             let mut out = Vec::new();
             let cap = MAX_DECOMPRESSED.load(Ordering::Relaxed);
             if cap == usize::MAX {
@@ -291,6 +314,40 @@ pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
             Ok(out)
         }
     }
+}
+
+/// Decompress `data` into at most `capacity` bytes. The capacity is an upper
+/// bound on the output, allocated up front; the result holds only the bytes
+/// written. Required for formats that don't record their size and can't be
+/// streamed ([`Algorithm::Lz4Raw`]), and skips the size probe for every other
+/// algorithm.
+pub fn decompress_with_capacity(
+    algo: Algorithm,
+    data: &[u8],
+    capacity: usize,
+) -> Result<Vec<u8>, Error> {
+    let mut out: Vec<u8> = Vec::new();
+    if out.try_reserve_exact(capacity).is_err() {
+        return Err(Error {
+            code: Status::Oom,
+            message: format!("compress-utils: cannot allocate {capacity} bytes of output"),
+        });
+    }
+    out.resize(capacity, 0);
+    let mut out_len = out.len();
+    // SAFETY: valid slices; out_len is in/out and starts at out's length.
+    let st = unsafe {
+        ffi::cu_decompress(
+            algo.to_raw(),
+            data.as_ptr(),
+            data.len(),
+            out.as_mut_ptr(),
+            &mut out_len,
+        )
+    };
+    check(st)?;
+    out.truncate(out_len);
+    Ok(out)
 }
 
 /// Attempt the size-hint + one-shot path. `Ok(None)` means the caller should

@@ -19,6 +19,8 @@ pub const CU_ALGO_LZMA: c_int = 6;
 pub const CU_ALGO_SNAPPY: c_int = 7;
 pub const CU_ALGO_GZIP: c_int = 8;
 pub const CU_ALGO_DEFLATE: c_int = 9;
+pub const CU_ALGO_LZ4_RAW: c_int = 10;
+pub const CU_ALGO_LZO: c_int = 11;
 
 // cu_status_t
 pub const CU_OK: c_int = 0;

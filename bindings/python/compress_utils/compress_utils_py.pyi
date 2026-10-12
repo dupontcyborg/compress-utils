@@ -4,7 +4,7 @@ Python bindings for compress-utils library (C-core).
 from __future__ import annotations
 import typing
 import typing_extensions
-__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'gzip', 'is_available', 'lz4', 'lzma', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
+__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'deflate', 'gzip', 'is_available', 'lz4', 'lz4_raw', 'lzma', 'lzo', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
 class Algorithm:
     """
     Members:
@@ -26,13 +26,22 @@ class Algorithm:
       snappy
     
       gzip
+    
+      deflate
+    
+      lz4_raw
+    
+      lzo
     """
-    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>, 'snappy': <Algorithm.snappy: 7>, 'gzip': <Algorithm.gzip: 8>}
+    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>, 'snappy': <Algorithm.snappy: 7>, 'gzip': <Algorithm.gzip: 8>, 'deflate': <Algorithm.deflate: 9>, 'lz4_raw': <Algorithm.lz4_raw: 10>, 'lzo': <Algorithm.lzo: 11>}
     brotli: typing.ClassVar[Algorithm]  # value = <Algorithm.brotli: 1>
     bz2: typing.ClassVar[Algorithm]  # value = <Algorithm.bz2: 3>
+    deflate: typing.ClassVar[Algorithm]  # value = <Algorithm.deflate: 9>
     gzip: typing.ClassVar[Algorithm]  # value = <Algorithm.gzip: 8>
     lz4: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4: 4>
+    lz4_raw: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4_raw: 10>
     lzma: typing.ClassVar[Algorithm]  # value = <Algorithm.lzma: 6>
+    lzo: typing.ClassVar[Algorithm]  # value = <Algorithm.lzo: 11>
     snappy: typing.ClassVar[Algorithm]  # value = <Algorithm.snappy: 7>
     xz: typing.ClassVar[Algorithm]  # value = <Algorithm.xz: 5>
     zlib: typing.ClassVar[Algorithm]  # value = <Algorithm.zlib: 2>
@@ -89,9 +98,13 @@ def compress(data: typing_extensions.Buffer, algorithm: typing.Any, level: int =
     """
     Compress bytes/buffer using the given algorithm (string or Algorithm).
     """
-def decompress(data: typing_extensions.Buffer, algorithm: typing.Any) -> bytes:
+def decompress(data: typing_extensions.Buffer, algorithm: typing.Any, expected_size: int | None = None) -> bytes:
     """
     Decompress bytes/buffer using the given algorithm.
+    
+    expected_size is an upper bound on the output size; the result holds the
+    bytes actually decoded. It is required for lz4_raw, and skips the size
+    probe for every other algorithm.
     """
 def is_available(algorithm: typing.Any) -> bool:
     ...
@@ -101,9 +114,12 @@ def version() -> str:
     ...
 brotli: Algorithm  # value = <Algorithm.brotli: 1>
 bz2: Algorithm  # value = <Algorithm.bz2: 3>
+deflate: Algorithm  # value = <Algorithm.deflate: 9>
 gzip: Algorithm  # value = <Algorithm.gzip: 8>
 lz4: Algorithm  # value = <Algorithm.lz4: 4>
+lz4_raw: Algorithm  # value = <Algorithm.lz4_raw: 10>
 lzma: Algorithm  # value = <Algorithm.lzma: 6>
+lzo: Algorithm  # value = <Algorithm.lzo: 11>
 snappy: Algorithm  # value = <Algorithm.snappy: 7>
 xz: Algorithm  # value = <Algorithm.xz: 5>
 zlib: Algorithm  # value = <Algorithm.zlib: 2>

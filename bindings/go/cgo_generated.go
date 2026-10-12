@@ -13,6 +13,7 @@ package compressutils
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/brotli/c/include
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/bz2
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/lz4/lib
+// #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/lzokay
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/snappy
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/liblzma/api
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/liblzma/common
@@ -25,5 +26,5 @@ package compressutils
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/common
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/zlib
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/zstd/lib
-// #cgo CPPFLAGS: -DINCLUDE_ZSTD -DINCLUDE_BROTLI -DINCLUDE_ZLIB -DINCLUDE_GZIP -DINCLUDE_BZ2 -DINCLUDE_LZ4 -DINCLUDE_XZ -DINCLUDE_SNAPPY -DINCLUDE_DEFLATE -DINCLUDE_LZ4_RAW -DLZMA_API_STATIC
+// #cgo CPPFLAGS: -DINCLUDE_ZSTD -DINCLUDE_BROTLI -DINCLUDE_ZLIB -DINCLUDE_GZIP -DINCLUDE_BZ2 -DINCLUDE_LZ4 -DINCLUDE_XZ -DINCLUDE_SNAPPY -DINCLUDE_DEFLATE -DINCLUDE_LZ4_RAW -DINCLUDE_LZO -DLZMA_API_STATIC
 import "C"

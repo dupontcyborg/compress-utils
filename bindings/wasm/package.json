@@ -80,11 +80,13 @@
   "files": [
     "dist/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build:wasm": "cmake -S ../.. -B ../../build-wasm -DBUILD_WASM_BINDINGS=ON -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_BINDINGS=OFF -DENABLE_TESTS=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build ../../build-wasm --target compress_utils_wasm -j",
     "build:ts": "tsc -p tsconfig.json",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md')\"",
     "build": "npm run build:wasm && npm run build:ts",
     "test": "vitest run",
     "test:watch": "vitest",

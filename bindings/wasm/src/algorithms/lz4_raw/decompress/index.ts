@@ -7,7 +7,7 @@
 import { defineAlgorithm } from "../../../core/algorithm.js";
 import { Algorithm } from "../../../core/types.js";
 
-import { validateDecompressOptions } from "../options.js";
+import { validateCapacity } from "../../../core/capacity.js";
 import type { DecompressOptions } from "../../../core/types.js";
 
 const bindings = /*#__PURE__*/ defineAlgorithm(
@@ -21,12 +21,12 @@ export async function decompress(
     input: Uint8Array,
     options: DecompressOptions = {},
 ): Promise<Uint8Array> {
-    validateDecompressOptions(options);
+    validateCapacity("lz4_raw", "raw LZ4", options);
     return bindings.decompress(input, options);
 }
 /** Decodes a raw block synchronously after preload(). */
 export function decompressSync(input: Uint8Array, options: DecompressOptions = {}): Uint8Array {
-    validateDecompressOptions(options);
+    validateCapacity("lz4_raw", "raw LZ4", options);
     return bindings.decompressSync(input, options);
 }
 export const preload = bindings.preload;

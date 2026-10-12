@@ -5,3 +5,5 @@ build-*/
 tests-browser/.serve/
 test-results/
 playwright-report/
+# Copied from the repo root by `npm pack`/`npm publish` (prepack).
+THIRD_PARTY_NOTICES.md

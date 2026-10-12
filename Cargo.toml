@@ -28,6 +28,7 @@ include = [
     "third_party/**/*.h",
     "third_party/**/*.inc",
     "LICENSE",
+    "/THIRD_PARTY_NOTICES.md",
 ]
 
 [lib]
