@@ -33,7 +33,7 @@
         "enabled": true,
         "rules": {
             "preset": "recommended",
-cl            "style": {
+            "style": {
                 "noNonNullAssertion": "warn"
             },
             "suspicious": {
