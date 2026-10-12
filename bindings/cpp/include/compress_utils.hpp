@@ -12,6 +12,9 @@
  *   auto compressed = cu::compress(cu::Algorithm::Zstd, input, 5);
  *   auto restored   = cu::decompress(cu::Algorithm::Zstd, compressed);
  *
+ *   // Raw blocks don't record their size: pass an output capacity.
+ *   auto block = cu::decompress(cu::Algorithm::Lz4Raw, raw, page_size);
+ *
  *   cu::CompressStream cs(cu::Algorithm::Zstd, 5);
  *   for (auto chunk : input_chunks) {
  *       for (auto& out : cs.write(chunk)) sink.push(out);
@@ -26,6 +29,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -49,6 +53,8 @@ enum class Algorithm : int {
     Snappy = CU_ALGO_SNAPPY,
     Gzip   = CU_ALGO_GZIP,
     Deflate = CU_ALGO_DEFLATE,
+    Lz4Raw = CU_ALGO_LZ4_RAW,  /* one-shot only; decompress needs a capacity */
+    Lzo    = CU_ALGO_LZO,      /* raw LZO1X; decompression only */
 };
 
 class Error : public std::runtime_error {
@@ -125,6 +131,26 @@ inline std::vector<std::uint8_t> decompress(
     Algorithm a,
     std::span<const std::uint8_t> in
 );  // forward decl; defined below the streaming class.
+
+/*
+ * Decompress into at most `capacity` bytes. The capacity is an upper bound on
+ * the output, allocated up front; the result is trimmed to what was written.
+ * Required for formats that don't record their size and can't be streamed
+ * (Lz4Raw), and skips the size probe for every other algorithm.
+ */
+inline std::vector<std::uint8_t> decompress(
+    Algorithm a,
+    std::span<const std::uint8_t> in,
+    std::size_t capacity
+) {
+    // A non-empty allocation keeps data() non-null for a zero capacity.
+    std::vector<std::uint8_t> out(capacity ? capacity : 1);
+    std::size_t out_len = capacity;
+    detail::check(cu_decompress(detail::c_algo(a), in.data(), in.size(),
+                                out.data(), &out_len));
+    out.resize(out_len);
+    return out;
+}
 
 /* ============================================================================
  * Streaming
@@ -263,7 +289,7 @@ inline std::vector<std::uint8_t> decompress(
     std::size_t hint = 0;
     cu_status_t s = cu_decompress_size_hint(detail::c_algo(a), in.data(), in.size(), &hint);
     if (s == CU_OK) {
-        std::vector<std::uint8_t> out(hint);
+        std::vector<std::uint8_t> out(hint ? hint : 1);
         std::size_t out_len = hint;
         detail::check(cu_decompress(detail::c_algo(a), in.data(), in.size(),
                                     out.data(), &out_len));
@@ -272,10 +298,19 @@ inline std::vector<std::uint8_t> decompress(
     }
     if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
 
-    // Unknown size: stream-decompress.
-    DecompressStream ds(a);
-    auto first = ds.write(in);
-    auto last  = ds.finish();
+    // Unknown size: stream-decompress. A format with neither a recorded size
+    // nor a streaming decoder (Lz4Raw) can only be decoded with a capacity.
+    std::optional<DecompressStream> ds;
+    try {
+        ds.emplace(a);
+    } catch (const Error& e) {
+        if (e.code() != CU_ERR_UNSUPPORTED_ALGO) throw;
+        throw Error(CU_ERR_SIZE_UNKNOWN, algorithm_name(a) +
+            ": the input doesn't record its decompressed size and can't be "
+            "streamed; pass an output capacity");
+    }
+    auto first = ds->write(in);
+    auto last  = ds->finish();
     first.insert(first.end(), last.begin(), last.end());
     return first;
 }

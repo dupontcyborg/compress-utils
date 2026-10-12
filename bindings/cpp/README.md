@@ -68,8 +68,21 @@ each codec's native range; codecs with no levels ignore it).
 | XZ/LZMA   | `cu::Algorithm::Xz`     | XZ stream with CRC64 (`cu::Algorithm::Lzma` is an alias)|
 | Snappy    | `cu::Algorithm::Snappy` | Raw Snappy block (interoperable with reference snappy)  |
 | gzip      | `cu::Algorithm::Gzip`   | gzip stream (RFC 1952)                                  |
+| DEFLATE   | `cu::Algorithm::Deflate`| Raw DEFLATE (RFC 1951), no wrapper                      |
+| LZ4 block | `cu::Algorithm::Lz4Raw` | Raw LZ4 block, no frame or size prefix (one-shot only)  |
+| LZO1X     | `cu::Algorithm::Lzo`    | Raw LZO1X block (decompression only)                    |
 
 Use `cu::is_available(algo)` to check whether a codec was compiled into the build.
+
+### Raw blocks and output capacity
+
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass an output capacity, an upper bound on the output; the result holds only the bytes actually decoded:
+
+```cpp
+auto page = cu::decompress(cu::Algorithm::Lz4Raw, block, uncompressed_page_size);
+```
+
+The capacity is required for `Lz4Raw`, which has no streaming decoder; without it, `decompress` throws `cu::Error` with `CU_ERR_SIZE_UNKNOWN`. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Streaming API
 
