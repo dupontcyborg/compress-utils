@@ -244,11 +244,11 @@ func TestLz4Raw(t *testing.T) {
 		})
 	}
 	block, _ := Compress(Lz4Raw, []byte("hello hello hello"), DefaultLevel)
-	_, err := Decompress(Lz4Raw, block)
-	var ce *Error
-	if !errors.As(err, &ce) || ce.Code != ErrSizeUnknown {
-		t.Fatalf("Decompress without a capacity: want ErrSizeUnknown, got %v", err)
+	got, err := Decompress(Lz4Raw, block)
+	if err != nil || !bytes.Equal(got, []byte("hello hello hello")) {
+		t.Fatalf("incremental fallback: got %q, error %v", got, err)
 	}
+	var ce *Error
 	if _, err := DecompressWithCapacity(Lz4Raw, block, 4); !errors.As(err, &ce) || ce.Code != ErrBufTooSmall {
 		t.Fatalf("undersized capacity: want ErrBufTooSmall, got %v", err)
 	}

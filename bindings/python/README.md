@@ -77,7 +77,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
 
-`expected_size` is required for one-shot `lz4_raw` decoding. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+Passing `expected_size` selects caller-sized one-shot decoding; omitted raw LZ4 sizes use incremental decoding. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other helpful APIs
 

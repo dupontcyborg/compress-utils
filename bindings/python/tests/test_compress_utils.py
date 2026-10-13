@@ -115,12 +115,12 @@ class TestCompressUtils(unittest.TestCase):
                 block = cu.compress(data, "lz4_raw")
                 self.assertEqual(cu.decompress(block, "lz4_raw", expected_size=len(data)), data)
                 self.assertEqual(cu.decompress(block, cu.Algorithm.lz4_raw, expected_size=len(data) + 100), data)
-        with self.assertRaisesRegex(cu.CompressError, "expected_size"):
-            cu.decompress(cu.compress(SAMPLE_DATA, "lz4_raw"), "lz4_raw")
+        self.assertEqual(cu.decompress(cu.compress(SAMPLE_DATA, "lz4_raw"), "lz4_raw"), SAMPLE_DATA)
         with self.assertRaises(cu.CompressError):
             cu.decompress(cu.compress(SAMPLE_DATA, "lz4_raw"), "lz4_raw", expected_size=1)
-        with self.assertRaises(cu.CompressError):
-            cu.DecompressStream("lz4_raw")
+        stream = cu.DecompressStream("lz4_raw")
+        self.assertEqual(stream.decompress(cu.compress(SAMPLE_DATA, "lz4_raw")), SAMPLE_DATA)
+        self.assertEqual(stream.finish(), b"")
 
     @unittest.skipUnless(cu.is_available("lzo"), "lzo not compiled in")
     def test_lzo(self):

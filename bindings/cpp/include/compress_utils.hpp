@@ -53,7 +53,7 @@ enum class Algorithm : int {
     Snappy = CU_ALGO_SNAPPY,
     Gzip   = CU_ALGO_GZIP,
     Deflate = CU_ALGO_DEFLATE,
-    Lz4Raw = CU_ALGO_LZ4_RAW,  /* one-shot only; decompress needs a capacity */
+    Lz4Raw = CU_ALGO_LZ4_RAW,  /* raw block; incremental decompression */
     Lzo    = CU_ALGO_LZO,      /* raw LZO1X; decompression only */
 };
 
@@ -299,7 +299,7 @@ inline std::vector<std::uint8_t> decompress(
     if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
 
     // Unknown size: stream-decompress. A format with neither a recorded size
-    // nor a streaming decoder (Lz4Raw) can only be decoded with a capacity.
+    // nor a streaming decoder can only be decoded with a capacity.
     std::optional<DecompressStream> ds;
     try {
         ds.emplace(a);

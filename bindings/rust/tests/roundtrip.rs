@@ -222,7 +222,7 @@ fn decompress_with_capacity_bounds() {
 }
 
 #[test]
-fn lz4_raw_needs_capacity() {
+fn lz4_raw_supports_capacity_and_stream_fallback() {
     if !Algorithm::Lz4Raw.available() {
         return;
     }
@@ -233,9 +233,7 @@ fn lz4_raw_needs_capacity() {
         assert_eq!(out, data, "lz4_raw {name}");
     }
     let block = compress(Algorithm::Lz4Raw, b"hello hello hello", 5).unwrap();
-    let err = decompress(Algorithm::Lz4Raw, &block).unwrap_err();
-    assert_eq!(err.code, Status::SizeUnknown, "{err}");
-    assert!(err.message.contains("decompress_with_capacity"), "{err}");
+    assert_eq!(decompress(Algorithm::Lz4Raw, &block).unwrap(), b"hello hello hello");
     let err = decompress_with_capacity(Algorithm::Lz4Raw, &block, 4).unwrap_err();
     assert_eq!(err.code, Status::BufTooSmall, "{err}");
 }

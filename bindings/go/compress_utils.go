@@ -49,7 +49,7 @@ const (
 	Snappy  Algorithm = C.CU_ALGO_SNAPPY
 	Gzip    Algorithm = C.CU_ALGO_GZIP
 	Deflate Algorithm = C.CU_ALGO_DEFLATE
-	Lz4Raw  Algorithm = C.CU_ALGO_LZ4_RAW // one-shot only; decompress with DecompressWithCapacity
+	Lz4Raw  Algorithm = C.CU_ALGO_LZ4_RAW // raw block; incremental decompression
 	Lzo     Algorithm = C.CU_ALGO_LZO     // raw LZO1X; decompression only
 )
 
