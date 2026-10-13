@@ -55,7 +55,7 @@ describe("raw LZO1X decoder", () => {
     });
     test("ships one decoder asset and no compression exports", () => {
         expect("compress" in lzo).toBe(false);
-        expect("createDecompressStream" in lzo).toBe(false);
+        expect("createDecompressStream" in lzo).toBe(true);
         const module = new WebAssembly.Module(
             readFileSync(new URL("../dist/algorithms/lzo/decompress/lzo.wasm", import.meta.url)),
         );

@@ -180,3 +180,36 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
+
+### Raw block chunk-input streams
+
+`compress-utils/lz4_raw` (including its `/compress` and `/decompress` subpaths)
+and `compress-utils/lzo/decompress` expose `create*Stream()`,
+`create*StreamSync()` after `preload()`, and Web `compressionStream()` /
+`decompressionStream()` adapters. LZO remains decoder-only.
+
+These **buffer one complete raw block**: `write(chunk)` copies input and returns
+an empty byte array; `finish()` processes the assembled block and returns its
+actual output. They do not incrementally emit output, introduce framing, or
+interpret writes as separate blocks. Do not concatenate independent raw blocks.
+For progressive output use framed LZ4; applications handle LZO container framing.
+
+```ts
+import { createDecompressStream } from "compress-utils/lzo/decompress";
+const stream = await createDecompressStream({ expectedSize: outputCapacity, maxInputSize: 8 * 1024 * 1024 });
+try {
+  for await (const fragment of compressedBlockFragments) stream.write(fragment);
+  const decoded = stream.finish();
+} finally {
+  stream.destroy();
+}
+```
+
+Raw decoders require `expectedSize` as output capacity, as with one-shot calls.
+`maxInputSize` limits buffered input (default 64 MiB, integer 0..2147483647).
+Assembly temporarily allocates another input buffer of the same size. Output
+limits and malformed-block errors follow the one-shot decoder. Oversized input
+releases buffered fragments and raises `CompressError` with `SizeLimit` (9).
+Finishing or writing twice raises `StreamFinished` (10); use after `destroy()`
+raises `StreamState` (11). A codec error on finish is terminal. Call `destroy()`
+(or use `Symbol.dispose`) when abandoning a manual stream.

@@ -32,5 +32,7 @@ test("all algorithms round-trip asynchronously and after preload synchronously i
         deflate: "ok",
         lz4_raw: "ok",
         lzo: "ok",
+        rawStreams: "ok",
+        lzoStream: "ok",
     });
 });

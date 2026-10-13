@@ -4,6 +4,11 @@
  * dead-stripped — a fraction of the full module. Surface is the decode half
  * of `compress-utils/lz4_raw`; for both directions import that instead.
  */
+import {
+    BufferedBlockStream,
+    createBlockTransform,
+    type BlockDecompressOptions,
+} from "../../../core/block-stream.js";
 import { defineAlgorithm } from "../../../core/algorithm.js";
 import { Algorithm } from "../../../core/types.js";
 
@@ -35,3 +40,31 @@ export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 
 export { CompressError } from "../../../core/types.js";
 export type { DecompressOptions, AlgorithmName } from "../../../core/types.js";
+
+/** Creates a bounded single-block decompress stream after preload(); output is deferred to finish(). */
+export function createDecompressStreamSync(options: BlockDecompressOptions): BufferedBlockStream {
+    validateCapacity("lz4_raw", "raw block", options);
+    bindings.assertInitialized();
+    const codecOptions = { expectedSize: options.expectedSize };
+    return new BufferedBlockStream(
+        "lz4_raw",
+        (input) => bindings.decompressSync(input, codecOptions),
+        options.maxInputSize,
+    );
+}
+/** Preloads the codec and creates a bounded single-block decompress stream. */
+export async function createDecompressStream(
+    options: BlockDecompressOptions,
+): Promise<BufferedBlockStream> {
+    validateCapacity("lz4_raw", "raw block", options);
+    await bindings.preload();
+    return createDecompressStreamSync(options);
+}
+/** Accepts fragments of one raw block and emits output when the writable closes. */
+export function decompressionStream(
+    options: BlockDecompressOptions,
+): TransformStream<Uint8Array, Uint8Array> {
+    return createBlockTransform(() => createDecompressStream(options));
+}
+
+export type { BufferedBlockStream, BlockDecompressOptions } from "../../../core/block-stream.js";

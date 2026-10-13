@@ -68,6 +68,18 @@ async function main() {
     const lzoSyncOutput = lzo.decompressSync(lzoInput, {expectedSize: 10});
     const lzoAsyncOutput = await lzo.decompress(lzoInput, {expectedSize: 10});
     results.lzo = lzoRequiresPreload && dec.decode(lzoSyncOutput) === "hello" && dec.decode(lzoAsyncOutput) === "hello" ? "ok" : "mismatch";
+    async function transform(stream, input) {
+        const output = new Response(stream.readable).arrayBuffer();
+        const writer = stream.writable.getWriter();
+        for (const byte of input) await writer.write(new Uint8Array([byte]));
+        await writer.close();
+        return new Uint8Array(await output);
+    }
+    const rawCompressed = await transform(lz4_raw.compressionStream(), input);
+    const rawRestored = await transform(lz4_raw.decompressionStream({expectedSize: input.length}), rawCompressed);
+    results.rawStreams = dec.decode(rawRestored) === dec.decode(input) ? "ok" : "mismatch";
+    const lzoRestored = await transform(lzo.decompressionStream({expectedSize: 10}), lzoInput);
+    results.lzoStream = dec.decode(lzoRestored) === "hello" ? "ok" : "mismatch";
     globalThis.__cuResults = results;
     document.title = "ready";
 }
