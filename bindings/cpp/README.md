@@ -141,3 +141,8 @@ try {
     std::fprintf(stderr, "decompress failed (%d): %s\n", e.code(), e.what());
 }
 ```
+
+Raw LZ4 and LZO1X decompression streams emit incrementally during writes using
+the native decoder, with 64 KiB of history plus the current undrained input chunk.
+Finish validates one block; streaming does not require a capacity hint. The output
+limit is captured at stream creation. Raw compression is unchanged.

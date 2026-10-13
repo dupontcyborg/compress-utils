@@ -50,7 +50,7 @@ io.Copy(dst, r)
 ## Algorithms
 
 `Zstd`, `Brotli`, `Zlib`, `Gzip`, `Bz2`, `Lz4`, `Xz` (alias `Lzma`), `Snappy`,
-`Deflate` (raw RFC 1951), `Lz4Raw` (raw LZ4 block, one-shot only) and `Lzo` (raw
+`Deflate` (raw RFC 1951), `Lz4Raw` (raw LZ4 block, incremental decompression) and `Lzo` (raw
 LZO1X block, decompression only).
 Wire formats match the other compress-utils bindings and the reference tools
 (e.g. `Gzip` is RFC 1952, interoperable with the `gzip` CLI). `cu.Available(a)`
@@ -88,3 +88,9 @@ maps it to each codec's native range. `DefaultLevel` is 5. Codecs without levels
   `Decompress` functions are. Use one stream per goroutine.
 - Windows is supported by the C core but the Go binding's cgo build there needs
   a mingw toolchain; CI currently covers Linux and macOS.
+
+Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
+They emit during writes, retain 64 KiB of history plus the undrained part of the
+current input chunk, and validate exactly one block at finish. Streaming needs no
+output-capacity hint; the configured output limit is captured at creation.
+Raw LZ4 encoding remains one-shot and LZO remains decoder-only.

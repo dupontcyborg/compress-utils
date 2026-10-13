@@ -68,18 +68,24 @@ async function main() {
     const lzoSyncOutput = lzo.decompressSync(lzoInput, {expectedSize: 10});
     const lzoAsyncOutput = await lzo.decompress(lzoInput, {expectedSize: 10});
     results.lzo = lzoRequiresPreload && dec.decode(lzoSyncOutput) === "hello" && dec.decode(lzoAsyncOutput) === "hello" ? "ok" : "mismatch";
-    async function transform(stream, input) {
-        const output = new Response(stream.readable).arrayBuffer();
-        const writer = stream.writable.getWriter();
-        for (const byte of input) await writer.write(new Uint8Array([byte]));
-        await writer.close();
-        return new Uint8Array(await output);
-    }
-    const rawCompressed = await transform(lz4_raw.compressionStream(), input);
-    const rawRestored = await transform(lz4_raw.decompressionStream({expectedSize: input.length}), rawCompressed);
-    results.rawStreams = dec.decode(rawRestored) === dec.decode(input) ? "ok" : "mismatch";
-    const lzoRestored = await transform(lzo.decompressionStream({expectedSize: 10}), lzoInput);
-    results.lzoStream = dec.decode(lzoRestored) === "hello" ? "ok" : "mismatch";
+    const rawStream = await lz4_raw.createDecompressStream();
+    const rawEncoded = await lz4_raw.compress(input);
+    const rawOutput = rawStream.write(rawEncoded);
+    results.rawIncremental = dec.decode(rawOutput) === dec.decode(input) && rawStream.finish().length === 0 ? "ok" : "mismatch";
+    rawStream.destroy();
+    const transform = lzo.decompressionStream();
+    const reader = transform.readable.getReader();
+    const writer = transform.writable.getWriter();
+    const pendingRead = reader.read();
+    await writer.write(lzoInput.subarray(0, 6));
+    const prefix = (await pendingRead).value;
+    const tail = (async () => {
+        let length = 0;
+        for (;;) { const chunk = await reader.read(); if (chunk.done) return length; length += chunk.value.length; }
+    })();
+    await writer.write(lzoInput.subarray(6));
+    await writer.close();
+    results.lzoIncremental = dec.decode(prefix) === "hello" && (await tail) === 0 ? "ok" : "mismatch";
     globalThis.__cuResults = results;
     document.title = "ready";
 }

@@ -329,6 +329,14 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * Same protocol as streaming compression. cu_decompress_stream_finish()
  * verifies that the input ended on a frame boundary; truncated input
  * returns CU_ERR_TRUNCATED.
+ *
+ * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
+ * finish marks the end of raw LZ4 input; LZO requires its explicit end marker.
+ * These decoders retain a 64 KiB history and undrained input from the current
+ * write, never prior chunks or the full output. Their cumulative output limit
+ * is captured from cu_set_max_decompressed_size at creation (0 disables it).
+ * Emitted bytes are provisional until finish succeeds. No container framing
+ * or dictionary support is implied. Compression support is unchanged.
  */
 
 typedef struct cu_decompress_stream cu_decompress_stream_t;

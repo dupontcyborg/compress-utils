@@ -411,8 +411,6 @@ function drain(
  * ----------------------------------------------------------------------- */
 
 export interface AlgorithmBindings {
-    /** @internal Checks readiness without allocating a codec stream. */
-    assertInitialized(): void;
     /** Initializes this subpath's WASM module for subsequent synchronous calls. */
     preload(): Promise<void>;
     /** Compresses synchronously after preload() or an asynchronous call completes. */
@@ -498,9 +496,6 @@ export function createBindings(
     };
 
     return {
-        assertInitialized() {
-            getInitializedDispatcher();
-        },
         async preload() {
             await getDispatcher();
         },

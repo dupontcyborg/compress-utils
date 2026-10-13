@@ -1,9 +1,4 @@
-/** Raw LZO1X block decoder. No encoder or container framing; chunk-input streams buffer one block. */
-import {
-    BufferedBlockStream,
-    createBlockTransform,
-    type BlockDecompressOptions,
-} from "../../../core/block-stream.js";
+/** Raw LZO1X block decoder. No encoder or container framing; incremental block decoding is supported. */
 import { defineAlgorithm } from "../../../core/algorithm.js";
 import { validateCapacity } from "../../../core/capacity.js";
 import { Algorithm, type DecompressOptions } from "../../../core/types.js";
@@ -34,30 +29,10 @@ export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 export { CompressError } from "../../../core/types.js";
 
-/** Creates a bounded single-block decompress stream after preload(); output is deferred to finish(). */
-export function createDecompressStreamSync(options: BlockDecompressOptions): BufferedBlockStream {
-    validateCapacity("lzo", "raw block", options);
-    bindings.assertInitialized();
-    const codecOptions = { expectedSize: options.expectedSize };
-    return new BufferedBlockStream(
-        "lzo",
-        (input) => bindings.decompressSync(input, codecOptions),
-        options.maxInputSize,
-    );
-}
-/** Preloads the codec and creates a bounded single-block decompress stream. */
-export async function createDecompressStream(
-    options: BlockDecompressOptions,
-): Promise<BufferedBlockStream> {
-    validateCapacity("lzo", "raw block", options);
-    await bindings.preload();
-    return createDecompressStreamSync(options);
-}
-/** Accepts fragments of one raw block and emits output when the writable closes. */
-export function decompressionStream(
-    options: BlockDecompressOptions,
-): TransformStream<Uint8Array, Uint8Array> {
-    return createBlockTransform(() => createDecompressStream(options));
-}
-
-export type { BufferedBlockStream, BlockDecompressOptions } from "../../../core/block-stream.js";
+/** Creates an incremental raw-block decoder; write() emits output as input arrives. */
+export const createDecompressStream = bindings.createDecompressStream;
+/** Requires completed preload(), like other synchronous stream factories. */
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
+/** Incrementally decodes one raw block through Web Streams. */
+export const decompressionStream = bindings.decompressionStream;
+export type { DecompressStream } from "../../../core/dispatch.js";

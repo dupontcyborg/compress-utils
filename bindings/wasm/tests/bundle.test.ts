@@ -175,10 +175,11 @@ describe("decoder-only LZO bundle", () => {
         );
         expect([...result.referencedAlgos]).toEqual(["lzo"]);
     });
-    it("keeps the decoder below 26 KiB", async () => {
+    it("keeps the incremental decoder below 28 KiB", async () => {
         const bytes = await readFile(
             path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/lzo.wasm"),
         );
-        expect(bytes.length).toBeLessThan(26 * 1024);
+        // Includes the native incremental state machine and public stream ABI exports.
+        expect(bytes.length).toBeLessThan(28 * 1024);
     });
 });
