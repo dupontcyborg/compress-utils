@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import * as raw from "compress-utils/lz4_raw";
 import * as encoder from "compress-utils/lz4_raw/compress";
@@ -28,9 +30,30 @@ async function transform(
 
 describe("bounded raw block streams", () => {
     test("synchronous factories require preload", async () => {
-        expect(() => encoder.createCompressStreamSync()).toThrow(/preload/);
-        expect(() => decoder.createDecompressStreamSync({ expectedSize: 10 })).toThrow(/preload/);
-        expect(() => lzo.createDecompressStreamSync({ expectedSize: 10 })).toThrow(/preload/);
+        // Bun shares imported codec state between test files. Assert the public
+        // readiness contract in a fresh process using the same runtime.
+        execFileSync(
+            process.execPath,
+            [
+                "--eval",
+                `
+            const assert = require("node:assert/strict");
+            (async () => {
+                const encoder = await import("compress-utils/lz4_raw/compress");
+                const decoder = await import("compress-utils/lz4_raw/decompress");
+                const lzo = await import("compress-utils/lzo/decompress");
+                assert.throws(() => encoder.createCompressStreamSync(), /preload/);
+                assert.throws(() => decoder.createDecompressStreamSync({expectedSize: 10}), /preload/);
+                assert.throws(() => lzo.createDecompressStreamSync({expectedSize: 10}), /preload/);
+                await Promise.all([encoder.preload(), decoder.preload(), lzo.preload()]);
+                encoder.createCompressStreamSync().destroy();
+                decoder.createDecompressStreamSync({expectedSize: 10}).destroy();
+                lzo.createDecompressStreamSync({expectedSize: 10}).destroy();
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+        `,
+            ],
+            { cwd: fileURLToPath(new URL("../", import.meta.url)), timeout: 10000 },
+        );
         await Promise.all([encoder.preload(), decoder.preload(), lzo.preload(), raw.preload()]);
     });
     test("LZ4 full and directional paths round-trip fragments into one raw block", async () => {
