@@ -233,7 +233,10 @@ fn lz4_raw_supports_capacity_and_stream_fallback() {
         assert_eq!(out, data, "lz4_raw {name}");
     }
     let block = compress(Algorithm::Lz4Raw, b"hello hello hello", 5).unwrap();
-    assert_eq!(decompress(Algorithm::Lz4Raw, &block).unwrap(), b"hello hello hello");
+    assert_eq!(
+        decompress(Algorithm::Lz4Raw, &block).unwrap(),
+        b"hello hello hello"
+    );
     let err = decompress_with_capacity(Algorithm::Lz4Raw, &block, 4).unwrap_err();
     assert_eq!(err.code, Status::BufTooSmall, "{err}");
 }
