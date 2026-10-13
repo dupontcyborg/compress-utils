@@ -434,7 +434,8 @@ export interface AlgorithmBindings {
     /**
      * Cap on decompressed size (bytes) for the one-shot decompress path.
      * Defaults to 1 GiB. Set 0 to disable. Streaming decompress is not
-     * affected — bound your own buffer there. Thread-local in C; in WASM
+     * affected except raw LZ4/LZO, which capture the cap at creation. Bound
+     * buffers for other streams yourself. Thread-local in C; in WASM
      * it's effectively global to this module instance.
      */
     setMaxDecompressedSize(bytes: number): Promise<void>;

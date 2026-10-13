@@ -256,8 +256,8 @@ CU_API cu_status_t cu_decompress_size_hint(
  * Sets a global cap on the decompressed size that cu_decompress will
  * accept. Defaults to 1 GiB. Set to 0 to disable. Inputs that would
  * decompress to more than this return CU_ERR_SIZE_LIMIT. Stream
- * decompression is not affected — callers of the streaming API are
- * expected to enforce their own caps.
+ * raw LZ4/LZO decoders capture this cap at stream creation. Other streaming
+ * decoders are unaffected; their callers enforce their own caps.
  *
  * Thread-safe; takes effect for subsequent calls.
  */

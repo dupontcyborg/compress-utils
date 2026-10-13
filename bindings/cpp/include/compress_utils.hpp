@@ -135,8 +135,7 @@ inline std::vector<std::uint8_t> decompress(
 /*
  * Decompress into at most `capacity` bytes. The capacity is an upper bound on
  * the output, allocated up front; the result is trimmed to what was written.
- * Required for formats that don't record their size and can't be streamed
- * (Lz4Raw), and skips the size probe for every other algorithm.
+ * Skips the size probe and streaming fallback for every algorithm.
  */
 inline std::vector<std::uint8_t> decompress(
     Algorithm a,
