@@ -115,15 +115,8 @@ static int test_raw_formats() {
         std::span<const std::uint8_t> packed(block);
         CHECK(cu::decompress(cu::Algorithm::Lz4Raw, packed, in.size() + 100) == in,
               "lz4_raw capacity round-trip mismatch");
-        try {
-            auto _ = cu::decompress(cu::Algorithm::Lz4Raw, packed);
-            CHECK(false, "lz4_raw decompress without a capacity must throw");
-        } catch (const cu::Error& e) {
-            CHECK(e.code() == CU_ERR_SIZE_UNKNOWN, "lz4_raw without a capacity: code %d",
-                  static_cast<int>(e.code()));
-            CHECK(std::string(e.what()).find("capacity") != std::string::npos,
-                  "lz4_raw error should mention capacity: %s", e.what());
-        }
+        CHECK(cu::decompress(cu::Algorithm::Lz4Raw, packed) == in,
+              "lz4_raw incremental fallback round-trip mismatch");
         try {
             auto _ = cu::decompress(cu::Algorithm::Lz4Raw, packed, in.size() - 1);
             CHECK(false, "lz4_raw undersized capacity must throw");

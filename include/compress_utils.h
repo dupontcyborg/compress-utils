@@ -256,8 +256,8 @@ CU_API cu_status_t cu_decompress_size_hint(
  * Sets a global cap on the decompressed size that cu_decompress will
  * accept. Defaults to 1 GiB. Set to 0 to disable. Inputs that would
  * decompress to more than this return CU_ERR_SIZE_LIMIT. Stream
- * decompression is not affected — callers of the streaming API are
- * expected to enforce their own caps.
+ * raw LZ4/LZO decoders capture this cap at stream creation. Other streaming
+ * decoders are unaffected; their callers enforce their own caps.
  *
  * Thread-safe; takes effect for subsequent calls.
  */
@@ -329,6 +329,14 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * Same protocol as streaming compression. cu_decompress_stream_finish()
  * verifies that the input ended on a frame boundary; truncated input
  * returns CU_ERR_TRUNCATED.
+ *
+ * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
+ * finish marks the end of raw LZ4 input; LZO requires its explicit end marker.
+ * These decoders retain a 64 KiB history and undrained input from the current
+ * write, never prior chunks or the full output. Their cumulative output limit
+ * is captured from cu_set_max_decompressed_size at creation (0 disables it).
+ * Emitted bytes are provisional until finish succeeds. No container framing
+ * or dictionary support is implied. Compression support is unchanged.
  */
 
 typedef struct cu_decompress_stream cu_decompress_stream_t;

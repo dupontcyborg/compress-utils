@@ -58,8 +58,7 @@ pub enum Algorithm {
     Gzip,
     /// Raw RFC 1951 DEFLATE.
     Deflate,
-    /// Raw LZ4 block, without framing or a size prefix. One-shot only: decode
-    /// it with [`decompress_with_capacity`].
+    /// Raw LZ4 block, without framing or a size prefix. Supports incremental decoding.
     Lz4Raw,
     /// Raw LZO1X block. Decompression only.
     Lzo,
@@ -266,9 +265,8 @@ pub fn compress(algo: Algorithm, data: &[u8], level: i32) -> Result<Vec<u8>, Err
 
 /// Decompress `data` produced by `algo`. When the wire format records the
 /// decompressed size it is recovered in a single pass; otherwise this falls
-/// back to the streaming decoder (as the C++/Python/Go bindings do). Formats
-/// that record no size and can't be streamed ([`Algorithm::Lz4Raw`]) need
-/// [`decompress_with_capacity`] instead.
+/// back to the streaming decoder (as the C++/Python/Go bindings do).
+/// Raw LZ4 can use this incremental fallback without a capacity hint.
 pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
     match decompress_one_shot(algo, data)? {
         Some(out) => Ok(out),
@@ -318,9 +316,7 @@ pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
 
 /// Decompress `data` into at most `capacity` bytes. The capacity is an upper
 /// bound on the output, allocated up front; the result holds only the bytes
-/// written. Required for formats that don't record their size and can't be
-/// streamed ([`Algorithm::Lz4Raw`]), and skips the size probe for every other
-/// algorithm.
+/// written. Skips the size probe and streaming fallback for every algorithm.
 pub fn decompress_with_capacity(
     algo: Algorithm,
     data: &[u8],

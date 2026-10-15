@@ -518,9 +518,9 @@ static int test_raw_lz4(void) {
     cu_set_max_decompressed_size((size_t)1024 * 1024 * 1024);
     CHECK(limited == CU_ERR_SIZE_LIMIT, "output above the limit must report SIZE_LIMIT\n");
     cu_decompress_stream_t* stream = NULL;
-    CHECK(cu_decompress_stream_create(CU_ALGO_LZ4_RAW, &stream) == CU_ERR_UNSUPPORTED_ALGO,
-          "raw LZ4 streaming must fail safely\n");
-    CHECK(stream == NULL, "failed decompressor must be NULL\n");
+    CHECK(cu_decompress_stream_create(CU_ALGO_LZ4_RAW, &stream) == CU_OK,
+          "raw LZ4 decoder stream creation failed\n");
+    cu_decompress_stream_destroy(stream);
     cu_compress_stream_t* encoder = NULL;
     CHECK(cu_compress_stream_create(CU_ALGO_LZ4_RAW, 5, &encoder) == CU_ERR_UNSUPPORTED_ALGO,
           "raw LZ4 compressor streaming must fail safely\n");

@@ -35,3 +35,11 @@ export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 
 export { CompressError } from "../../../core/types.js";
 export type { DecompressOptions, AlgorithmName } from "../../../core/types.js";
+
+/** Creates an incremental raw-block decoder; write() emits output as input arrives. */
+export const createDecompressStream = bindings.createDecompressStream;
+/** Requires completed preload(), like other synchronous stream factories. */
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
+/** Incrementally decodes one raw block through Web Streams. */
+export const decompressionStream = bindings.decompressionStream;
+export type { DecompressStream } from "../../../core/dispatch.js";

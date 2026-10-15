@@ -51,7 +51,7 @@ it("decodes an independent raw LZ4 block and returns actual output length", asyn
         lz4Raw.decompress(new Uint8Array([0x50, ...input]), { expectedSize: 1 }),
     ).rejects.toThrow();
     await expect(lz4Raw.decompress(new Uint8Array([0xff]), { expectedSize: 5 })).rejects.toThrow();
-    expect("createDecompressStream" in lz4Raw).toBe(false);
+    expect("createDecompressStream" in lz4Raw).toBe(true);
 });
 
 it("round-trips empty and match-heavy raw LZ4 blocks through directional subpaths", async () => {

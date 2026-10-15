@@ -49,7 +49,7 @@ const (
 	Snappy  Algorithm = C.CU_ALGO_SNAPPY
 	Gzip    Algorithm = C.CU_ALGO_GZIP
 	Deflate Algorithm = C.CU_ALGO_DEFLATE
-	Lz4Raw  Algorithm = C.CU_ALGO_LZ4_RAW // one-shot only; decompress with DecompressWithCapacity
+	Lz4Raw  Algorithm = C.CU_ALGO_LZ4_RAW // raw block; incremental decompression
 	Lzo     Algorithm = C.CU_ALGO_LZO     // raw LZO1X; decompression only
 )
 
@@ -173,9 +173,8 @@ func Compress(algo Algorithm, data []byte, level int) ([]byte, error) {
 
 // Decompress decompresses data produced by the given algorithm. When the
 // wire format records the decompressed size it is recovered in a single
-// pass; otherwise Decompress falls back to the streaming decoder. Formats
-// that record no size and can't be streamed (Lz4Raw) need
-// DecompressWithCapacity instead.
+// pass; otherwise Decompress falls back to the streaming decoder, including
+// raw LZ4. DecompressWithCapacity can avoid this fallback.
 func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 	out, unknownSize, err := decompressOneShot(algo, data)
 	if err != nil {

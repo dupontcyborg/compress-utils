@@ -77,7 +77,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
 
-`expected_size` is required for `lz4_raw`, which has no streaming decoder. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+Passing `expected_size` selects caller-sized one-shot decoding; omitted raw LZ4 sizes use incremental decoding. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other helpful APIs
 
@@ -132,3 +132,8 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
+
+Raw LZ4 and LZO1X decompression streams emit incrementally during writes using
+the native decoder, with 64 KiB of history plus the current undrained input chunk.
+Finish validates one block; streaming does not require a capacity hint. The output
+limit is captured at stream creation. Raw compression is unchanged.

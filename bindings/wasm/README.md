@@ -180,3 +180,24 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
+
+### Incremental raw block decompression
+
+`lz4_raw` (both the combined and `/decompress` entrypoints) and
+`lzo/decompress` provide `createDecompressStream()`,
+`createDecompressStreamSync()` after `preload()`, and `decompressionStream()`.
+They emit decoded literals and matches during `write()`, including across split
+lengths, offsets, and overlapping matches. `finish()` validates the end of one
+raw block: LZ4 has no end marker and LZO requires its LZO1X end marker.
+
+The native decoder retains a fixed 64 KiB history window and only any undrained
+input from the current write. Memory does not grow with the total block size;
+choose bounded input chunks and drain `BufTooSmall` as required by the C ABI.
+WASM does this draining automatically. No whole-block input or output is buffered.
+Streaming does not require `expectedSize`; the configured decompressed-size
+limit is captured when creating a stream and bounds cumulative output.
+
+Streams do not add framing, dictionaries, or concatenate independent blocks.
+Already emitted bytes are provisional until finish succeeds; truncated or
+malformed input may be detected after output has been emitted. Raw LZ4
+compression remains one-shot, and LZO remains decoder-only.

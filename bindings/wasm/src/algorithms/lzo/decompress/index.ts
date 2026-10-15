@@ -1,4 +1,4 @@
-/** Raw LZO1X block decoder. No encoder, streaming, or container framing. */
+/** Raw LZO1X block decoder. No encoder or container framing; incremental block decoding is supported. */
 import { defineAlgorithm } from "../../../core/algorithm.js";
 import { validateCapacity } from "../../../core/capacity.js";
 import { Algorithm, type DecompressOptions } from "../../../core/types.js";
@@ -28,3 +28,11 @@ export const preload = bindings.preload;
 export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 export { CompressError } from "../../../core/types.js";
+
+/** Creates an incremental raw-block decoder; write() emits output as input arrives. */
+export const createDecompressStream = bindings.createDecompressStream;
+/** Requires completed preload(), like other synchronous stream factories. */
+export const createDecompressStreamSync = bindings.createDecompressStreamSync;
+/** Incrementally decodes one raw block through Web Streams. */
+export const decompressionStream = bindings.decompressionStream;
+export type { DecompressStream } from "../../../core/dispatch.js";

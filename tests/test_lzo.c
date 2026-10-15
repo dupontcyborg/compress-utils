@@ -90,8 +90,9 @@ int main(void) {
           "no encoder\n");
     CHECK(cu_compress_stream_create(CU_ALGO_LZO, 5, &compressor) == CU_ERR_UNSUPPORTED_ALGO && !compressor,
           "no streaming encoder\n");
-    CHECK(cu_decompress_stream_create(CU_ALGO_LZO, &decompressor) == CU_ERR_UNSUPPORTED_ALGO && !decompressor,
-          "no streaming decoder\n");
+    CHECK(cu_decompress_stream_create(CU_ALGO_LZO, &decompressor) == CU_OK && decompressor,
+          "incremental decoder creation\n");
+    cu_decompress_stream_destroy(decompressor);
     unsigned random = 42;
     cu_set_max_decompressed_size(4096);
     for (size_t iteration = 0; iteration < 10000; iteration++) {
