@@ -114,17 +114,6 @@ The Python binding is a thin pybind11 wrapper over the C library. Streaming uses
 
 For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload — internal codec state is short-lived and reused.
 
-## Project layout
-
-This is one of four official bindings to the [compress-utils](https://github.com/dupontcyborg/compress-utils) C library:
-
-- **C** — the canonical ABI in `include/compress_utils.h`.
-- **C++** — header-only `cu::` namespace, `bindings/cpp/`.
-- **Python** — this package.
-- **JS / TS (WASM)** — `npm install compress-utils`, `bindings/wasm/`.
-
-Go, Rust, Swift, and Java bindings are tracked in [TODO.md](https://github.com/dupontcyborg/compress-utils/blob/main/TODO.md).
-
 ## License
 
 MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
@@ -132,8 +121,3 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
-
-Raw LZ4 and LZO1X decompression streams emit incrementally during writes using
-the native decoder, with 64 KiB of history plus the current undrained input chunk.
-Finish validates one block; streaming does not require a capacity hint. The output
-limit is captured at stream creation. Raw compression is unchanged.

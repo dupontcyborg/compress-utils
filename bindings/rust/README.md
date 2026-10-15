@@ -101,11 +101,3 @@ levels (Snappy) ignore it.
   runtime dependency.
 - Windows is supported by the C core; the crate's source build works with MSVC.
   CI currently covers Linux and macOS (matching the other source bindings).
-
-[`set_max_decompressed_size`]: https://docs.rs/compress-utils
-
-Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
-They emit during writes, retain 64 KiB of history plus the undrained part of the
-current input chunk, and validate exactly one block at finish. Streaming needs no
-output-capacity hint; the configured output limit is captured at creation.
-Raw LZ4 encoding remains one-shot and LZO remains decoder-only.

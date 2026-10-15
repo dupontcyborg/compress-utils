@@ -93,9 +93,3 @@ MIT — see [LICENSE](LICENSE).
 This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 Built by [Nico Dupont](https://nico.codes).
-
-Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
-They emit during writes, retain 64 KiB of history plus the undrained part of the
-current input chunk, and validate exactly one block at finish. Streaming needs no
-output-capacity hint; the configured output limit is captured at creation.
-Raw LZ4 encoding remains one-shot and LZO remains decoder-only.
