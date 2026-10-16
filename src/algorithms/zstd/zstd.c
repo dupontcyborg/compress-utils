@@ -396,7 +396,8 @@ static void zstd_cstream_destroy(void* state) {
 
 typedef struct {
     ZSTD_DStream* ds;
-    uint8_t* pending;
+    uint8_t* pending;       /* unconsumed input; live bytes are [pending_off, pending_len) */
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
     int      at_frame_end;  /* the last input consumed completed a frame */
@@ -425,8 +426,16 @@ static cu_status_t zstd_dstream_create(void** out_state) {
     return CU_OK;
 }
 
+/* Appends to the live pending bytes, first moving them to the front. Draining
+ * only advances pending_off, so each byte is moved at most once per append
+ * rather than once per output page. */
 static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_t* src, size_t n) {
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -446,7 +455,8 @@ static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_
 
 /* Feed `ib` to the decoder until it's consumed or `ob` fills. A full `ob`
  * returns BUF_TOO_SMALL even when all input was consumed, since zstd may still
- * hold output to flush; the drain call then runs the decoder again. */
+ * hold output to flush (the drain call then runs the decoder again), unless
+ * the decoder just finished a frame, which leaves nothing held. */
 static cu_status_t dstream_pump(zstd_dstream_state_t* st, ZSTD_inBuffer* ib, ZSTD_outBuffer* ob) {
     for (;;) {
         size_t before = ib->pos;
@@ -456,8 +466,8 @@ static cu_status_t dstream_pump(zstd_dstream_state_t* st, ZSTD_inBuffer* ib, ZST
          * value after consuming input means a frame is in progress. */
         if (r == 0) st->at_frame_end = 1;
         else if (ib->pos > before) st->at_frame_end = 0;
+        if (ib->pos == ib->size && (r == 0 || ob->pos < ob->size)) return CU_OK;
         if (ob->pos == ob->size) return CU_ERR_BUF_TOO_SMALL;
-        if (ib->pos == ib->size) return CU_OK;
     }
 }
 
@@ -470,20 +480,17 @@ static cu_status_t zstd_dstream_write(
     cu_status_t s;
 
     /* Drain pending input first. */
-    if (st->pending_len > 0) {
-        ZSTD_inBuffer ib = { st->pending, st->pending_len, 0 };
+    if (st->pending_off < st->pending_len) {
+        ZSTD_inBuffer ib = { st->pending + st->pending_off, st->pending_len - st->pending_off, 0 };
         s = dstream_pump(st, &ib, &ob);
+        st->pending_off += ib.pos;
+        *out_len = ob.pos;
         if (s == CU_ERR_BUF_TOO_SMALL) {
-            size_t consumed = ib.pos;
-            memmove(st->pending, st->pending + consumed, ib.size - consumed);
-            st->pending_len = ib.size - consumed;
             cu_status_t a = dstream_pending_append(st, in, in_len);
-            *out_len = ob.pos;
             return a != CU_OK ? a : s;
         }
-        *out_len = ob.pos;
         if (s != CU_OK) return s;
-        st->pending_len = 0;
+        st->pending_off = st->pending_len = 0;
     }
 
     ZSTD_inBuffer ib = { in, in_len, 0 };

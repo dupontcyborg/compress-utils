@@ -1,6 +1,7 @@
 /*
  * Concatenated zstd frames and gzip members, data after the end of zlib and
- * raw DEFLATE streams, and flushing when the output fills exactly.
+ * raw DEFLATE streams, flushing when the output fills exactly, and new input
+ * arriving while earlier input is still retained.
  *
  * zstd and gzip decode every frame/member and append the output, as the zstd
  * and gzip CLIs do; zlib rejects trailing data; raw DEFLATE ignores it.
@@ -212,10 +213,12 @@ static void test_zlib_trailing_data(void) {
 }
 
 static void test_raw_deflate_trailing_data(void) {
-    /* Bytes after a raw stream belong to its container: one-shot ignores them. */
+    /* Bytes after a raw stream belong to its container: both APIs ignore them,
+     * wherever the input is split. */
     uint8_t in[2048];
     size_t n = compress_into(CU_ALGO_DEFLATE, PARTS[0], in);
     memcpy(in + n, "container bytes", 15);
+    decodes_everywhere(CU_ALGO_DEFLATE, in, n + 15, (const uint8_t*)PARTS[0], strlen(PARTS[0]));
     uint8_t out[MAX_OUT];
     size_t len = sizeof(out);
     CHECK(cu_decompress(CU_ALGO_DEFLATE, in, n + 15, out, &len) == CU_OK);
@@ -252,7 +255,40 @@ static void test_exact_output_flush(cu_algorithm_t algo) {
     free(out);
 }
 
+/* New input while earlier input is still retained: each write passes the
+ * next chunk without draining first, and the final drain collects the rest. */
+static void test_write_without_draining(cu_algorithm_t algo) {
+    static uint8_t text[200000], out[200000 + 64];
+    for (size_t i = 0; i < sizeof(text); i++) text[i] = (uint8_t)("xyzzy"[i % 5] + i / 3000 % 5);
+    size_t cap = cu_compress_bound(sizeof(text), algo);
+    uint8_t* in = malloc(cap);
+    CHECK(in);
+    CHECK(cu_compress(algo, text, sizeof(text), in, &cap, 5) == CU_OK);
+
+    cu_decompress_stream_t* s = NULL;
+    CHECK(cu_decompress_stream_create(algo, &s) == CU_OK);
+    size_t total = 0;
+    cu_status_t st = CU_OK;
+    for (size_t off = 0; off < cap; off += 997) {
+        size_t n = cap - off < 997 ? cap - off : 997, got = 64;
+        st = cu_decompress_stream_write(s, in + off, n, out + total, &got);
+        CHECK(st == CU_OK || st == CU_ERR_BUF_TOO_SMALL);
+        total += got;
+    }
+    do {
+        size_t got = sizeof(out) - total;
+        st = cu_decompress_stream_finish(s, out + total, &got);
+        total += got;
+    } while (st == CU_ERR_BUF_TOO_SMALL);
+    CHECK(st == CU_OK && total == sizeof(text) && !memcmp(out, text, total));
+    cu_decompress_stream_destroy(s);
+    free(in);
+}
+
 int main(void) {
+    const cu_algorithm_t pending_algos[] = {CU_ALGO_ZSTD, CU_ALGO_GZIP, CU_ALGO_ZLIB, CU_ALGO_DEFLATE};
+    for (size_t i = 0; i < sizeof(pending_algos) / sizeof(pending_algos[0]); i++)
+        if (cu_algorithm_available(pending_algos[i])) test_write_without_draining(pending_algos[i]);
     if (cu_algorithm_available(CU_ALGO_ZSTD)) {
         test_concatenated(CU_ALGO_ZSTD);
         test_zstd_skippable();

@@ -335,10 +335,8 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * Concatenated zstd frames (including skippable frames) and gzip members
  * (with any zero padding between them) decode as one stream, here and in
  * cu_decompress, as the zstd and gzip CLIs do. zlib rejects data after the
- * end of its stream with CU_ERR_DECOMPRESSION. Raw DEFLATE ignores bytes
- * after its end in cu_decompress and in the write that completes the stream,
- * since they usually belong to an enclosing container; a later write with
- * more input returns CU_ERR_DECOMPRESSION.
+ * end of its stream with CU_ERR_DECOMPRESSION; raw DEFLATE ignores it, since
+ * it usually belongs to an enclosing container.
  *
  * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
  * finish marks the end of raw LZ4 input; LZO requires its explicit end marker.
