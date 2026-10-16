@@ -44,9 +44,7 @@ it("decodes an independent raw LZ4 block and returns actual output length", asyn
     expect(await lz4Raw.decompress(await lz4Raw.compress(input), { expectedSize: 5 })).toEqual(
         input,
     );
-    await expect(lz4Raw.decompress(new Uint8Array([0x50, ...input]))).rejects.toThrow(
-        /expectedSize/,
-    );
+    expect(await lz4Raw.decompress(new Uint8Array([0x50, ...input]))).toEqual(input);
     await expect(
         lz4Raw.decompress(new Uint8Array([0x50, ...input]), { expectedSize: 1 }),
     ).rejects.toThrow();
@@ -61,6 +59,19 @@ it("round-trips empty and match-heavy raw LZ4 blocks through directional subpath
         expect(
             await decoder.decompress(await encoder.compress(input), { expectedSize: input.length }),
         ).toEqual(input);
+    }
+});
+
+it("decodes raw LZ4 without expectedSize through the stream decoder", async () => {
+    const input = new TextEncoder().encode("raw LZ4 block without a recorded size ".repeat(4000));
+    const block = await lz4Raw.compress(input);
+    expect(await lz4Raw.decompress(block)).toEqual(input);
+    await expect(lz4Raw.decompress(block.subarray(0, block.length - 1))).rejects.toThrow();
+    await lz4Raw.setMaxDecompressedSize(1000);
+    try {
+        await expect(lz4Raw.decompress(block)).rejects.toMatchObject({ code: 9 });
+    } finally {
+        await lz4Raw.setMaxDecompressedSize(1024 * 1024 * 1024);
     }
 });
 
@@ -95,7 +106,8 @@ it("validates raw LZ4 capacities in both async and sync directional bindings", a
         expect(binding.decompressSync(encoded, { expectedSize: 32 })).toEqual(
             new TextEncoder().encode("hello"),
         );
-        for (const expectedSize of [undefined, -1, 0.5, Number.NaN, 0x80000000]) {
+        expect(binding.decompressSync(encoded)).toEqual(new TextEncoder().encode("hello"));
+        for (const expectedSize of [-1, 0.5, Number.NaN, 0x80000000]) {
             expect(() => binding.decompressSync(encoded, { expectedSize })).toThrow(/expectedSize/);
             await expect(binding.decompress(encoded, { expectedSize })).rejects.toThrow(
                 /expectedSize/,

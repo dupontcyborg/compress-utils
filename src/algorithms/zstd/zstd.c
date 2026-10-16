@@ -10,19 +10,24 @@
  *     frames can be one-shot decompressed (we set pledgedSrcSize from
  *     in_len).
  *
- *   - decompress consults ZSTD_getFrameContentSize. If the frame has a
- *     known content size, fails fast if out is too small. If the size is
- *     unknown (e.g. frame from a different producer without
- *     pledgedSrcSize), falls back to ZSTD_decompressStream into the
- *     caller's buffer; returns CU_ERR_SIZE_UNKNOWN if that exhausts the
- *     buffer.
+ *   - decompress sums the content sizes of every frame in the input
+ *     (concatenated frames, as zstd/pzstd write them, decode as one
+ *     output). If all frames record their size, fails fast if out is too
+ *     small. If any doesn't (e.g. a producer without pledgedSrcSize),
+ *     falls back to ZSTD_decompressStream into the caller's buffer;
+ *     returns CU_ERR_SIZE_UNKNOWN if that exhausts the buffer.
  *
  * Streaming:
  *   - Write/finish honor the public ABI's "fill buffer, return
  *     BUF_TOO_SMALL with unconsumed state preserved" protocol. State
  *     buffers the unconsumed tail of `in` between calls so the caller
  *     can drain with (in=NULL, in_len=0).
+ *   - Decompression continues across frame boundaries, including skippable
+ *     frames; finish() reports truncation unless the input ended exactly
+ *     at the end of a frame.
  */
+
+#define ZSTD_STATIC_LINKING_ONLY  /* ZSTD_findDecompressedSize */
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
@@ -44,6 +49,15 @@ static cu_status_t map_zstd_error(size_t code, cu_status_t fallback) {
     if (!ZSTD_isError(code)) return CU_OK;
     cu_set_last_errorf("zstd: %s", ZSTD_getErrorName(code));
     return fallback;
+}
+
+/* Total decompressed size of every frame in the input, or
+ * ZSTD_CONTENTSIZE_UNKNOWN if any frame doesn't record its size. Malformed or
+ * truncated input falls back to the first frame's header, so the decoder
+ * itself reports what is wrong. */
+static unsigned long long zstd_content_size(const uint8_t* in, size_t in_len) {
+    unsigned long long n = ZSTD_findDecompressedSize(in, in_len);
+    return n == ZSTD_CONTENTSIZE_ERROR ? ZSTD_getFrameContentSize(in, in_len) : n;
 }
 
 /* ============================================================================
@@ -107,7 +121,7 @@ static cu_status_t zstd_decompress(
         return CU_ERR_TRUNCATED;
     }
 
-    unsigned long long content_size = ZSTD_getFrameContentSize(in, in_len);
+    unsigned long long content_size = zstd_content_size(in, in_len);
 
     if (content_size == ZSTD_CONTENTSIZE_ERROR) {
         cu_set_last_error("zstd: not a valid zstd frame");
@@ -160,7 +174,8 @@ static cu_status_t zstd_decompress(
             ZSTD_freeDStream(ds);
             return s;
         }
-        if (ret == 0) { frame_done = 1; break; }
+        /* 0 ends a frame; any input left is the next frame. */
+        frame_done = ret == 0;
         if (out_buf.pos == out_buf.size && in_buf.pos < in_buf.size) {
             /* Buffer exhausted, input remains. We cannot grow. */
             ZSTD_freeDStream(ds);
@@ -189,9 +204,9 @@ static cu_status_t zstd_decompress_size_hint(
         cu_set_last_error("zstd: empty input");
         return CU_ERR_TRUNCATED;
     }
-    /* ZSTD_getFrameContentSize gracefully handles short/invalid input;
-     * we don't need the static-only ZSTD_FRAMEHEADERSIZE_MIN macro. */
-    unsigned long long n = ZSTD_getFrameContentSize(in, in_len);
+    /* Handles short/invalid input gracefully; no need for the static-only
+     * ZSTD_FRAMEHEADERSIZE_MIN macro. */
+    unsigned long long n = zstd_content_size(in, in_len);
     if (n == ZSTD_CONTENTSIZE_ERROR) {
         cu_set_last_error("zstd: not a valid zstd frame");
         return CU_ERR_DECOMPRESSION;
@@ -381,10 +396,11 @@ static void zstd_cstream_destroy(void* state) {
 
 typedef struct {
     ZSTD_DStream* ds;
-    uint8_t* pending;
+    uint8_t* pending;       /* unconsumed input; live bytes are [pending_off, pending_len) */
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
-    int      frame_done;
+    int      at_frame_end;  /* the last input consumed completed a frame */
 } zstd_dstream_state_t;
 
 static cu_status_t zstd_dstream_create(void** out_state) {
@@ -410,8 +426,16 @@ static cu_status_t zstd_dstream_create(void** out_state) {
     return CU_OK;
 }
 
+/* Appends to the live pending bytes, first moving them to the front. Draining
+ * only advances pending_off, so each byte is moved at most once per append
+ * rather than once per output page. */
 static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_t* src, size_t n) {
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -429,76 +453,64 @@ static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_
     return CU_OK;
 }
 
+/* Feed `ib` to the decoder until it's consumed or `ob` fills. A full `ob`
+ * returns BUF_TOO_SMALL even when all input was consumed, since zstd may still
+ * hold output to flush (the drain call then runs the decoder again), unless
+ * the decoder just finished a frame, which leaves nothing held. */
+static cu_status_t dstream_pump(zstd_dstream_state_t* st, ZSTD_inBuffer* ib, ZSTD_outBuffer* ob) {
+    for (;;) {
+        size_t before = ib->pos;
+        size_t r = ZSTD_decompressStream(st->ds, ob, ib);
+        if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_DECOMPRESSION);
+        /* 0 ends a frame (the decoder then expects the next one); any other
+         * value after consuming input means a frame is in progress. */
+        if (r == 0) st->at_frame_end = 1;
+        else if (ib->pos > before) st->at_frame_end = 0;
+        if (ib->pos == ib->size && (r == 0 || ob->pos < ob->size)) return CU_OK;
+        if (ob->pos == ob->size) return CU_ERR_BUF_TOO_SMALL;
+    }
+}
+
 static cu_status_t zstd_dstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
 ) {
     zstd_dstream_state_t* st = (zstd_dstream_state_t*)state;
-    if (st->frame_done) {
-        cu_set_last_error("zstd: write after frame end");
-        return CU_ERR_STREAM_FINISHED;
-    }
-    size_t cap = *out_len;
-    ZSTD_outBuffer ob = { out, cap, 0 };
+    ZSTD_outBuffer ob = { out, *out_len, 0 };
+    cu_status_t s;
 
     /* Drain pending input first. */
-    if (st->pending_len > 0) {
-        ZSTD_inBuffer ib = { st->pending, st->pending_len, 0 };
-        while (ib.pos < ib.size) {
-            size_t r = ZSTD_decompressStream(st->ds, &ob, &ib);
-            if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_DECOMPRESSION);
-            if (r == 0) { st->frame_done = 1; break; }
-            if (ob.pos == ob.size && ib.pos < ib.size) {
-                size_t consumed = ib.pos;
-                memmove(st->pending, st->pending + consumed, ib.size - consumed);
-                st->pending_len = ib.size - consumed;
-                cu_status_t s = dstream_pending_append(st, in, in_len);
-                if (s != CU_OK) return s;
-                *out_len = ob.pos;
-                return CU_ERR_BUF_TOO_SMALL;
-            }
-        }
-        st->pending_len = 0;
-    }
-
-    if (st->frame_done) {
-        if (in_len > 0) {
-            cu_set_last_error("zstd: trailing data after end of frame");
-            return CU_ERR_DECOMPRESSION;
-        }
+    if (st->pending_off < st->pending_len) {
+        ZSTD_inBuffer ib = { st->pending + st->pending_off, st->pending_len - st->pending_off, 0 };
+        s = dstream_pump(st, &ib, &ob);
+        st->pending_off += ib.pos;
         *out_len = ob.pos;
-        return CU_OK;
+        if (s == CU_ERR_BUF_TOO_SMALL) {
+            cu_status_t a = dstream_pending_append(st, in, in_len);
+            return a != CU_OK ? a : s;
+        }
+        if (s != CU_OK) return s;
+        st->pending_off = st->pending_len = 0;
     }
 
     ZSTD_inBuffer ib = { in, in_len, 0 };
-    while (ib.pos < ib.size) {
-        size_t r = ZSTD_decompressStream(st->ds, &ob, &ib);
-        if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_DECOMPRESSION);
-        if (r == 0) { st->frame_done = 1; break; }
-        if (ob.pos == ob.size && ib.pos < ib.size) {
-            cu_status_t s = dstream_pending_append(st, in + ib.pos, in_len - ib.pos);
-            if (s != CU_OK) return s;
-            *out_len = ob.pos;
-            return CU_ERR_BUF_TOO_SMALL;
-        }
-    }
-
+    s = dstream_pump(st, &ib, &ob);
     *out_len = ob.pos;
-    return CU_OK;
+    if (s == CU_ERR_BUF_TOO_SMALL) {
+        cu_status_t a = dstream_pending_append(st, in + ib.pos, in_len - ib.pos);
+        if (a != CU_OK) return a;
+    }
+    return s;
 }
 
 static cu_status_t zstd_dstream_finish(
     void* state, uint8_t* out, size_t* out_len
 ) {
     zstd_dstream_state_t* st = (zstd_dstream_state_t*)state;
-    /* If pending input remains, try to drain it (frame may complete mid-pending). */
-    if (st->pending_len > 0) {
-        cu_status_t s = zstd_dstream_write(state, NULL, 0, out, out_len);
-        if (s != CU_OK) return s;
-    } else {
-        *out_len = 0;
-    }
-    if (!st->frame_done) {
+    /* Decode any pending input and flush what the decoder still holds. */
+    cu_status_t s = zstd_dstream_write(state, NULL, 0, out, out_len);
+    if (s != CU_OK) return s;
+    if (!st->at_frame_end) {
         cu_set_last_error("zstd: truncated frame at finish");
         return CU_ERR_TRUNCATED;
     }

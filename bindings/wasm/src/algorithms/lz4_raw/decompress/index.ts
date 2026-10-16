@@ -16,7 +16,10 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
     new URL("../../lz4/decompress/lz4.wasm", import.meta.url),
 );
 
-/** Decodes a raw block into the required output capacity. */
+/**
+ * Decodes a raw block. Pass `expectedSize` (an output capacity) when known: without it
+ * the block is decoded by the incremental stream decoder, which is much slower.
+ */
 export async function decompress(
     input: Uint8Array,
     options: DecompressOptions = {},

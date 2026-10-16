@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(_MSC_VER) || defined(__clang__)
+#  include <stdatomic.h>
+#endif
+
 /* ============================================================================
  * Version
  * ============================================================================ */
@@ -120,19 +124,28 @@ const char* cu_strerror(cu_status_t code) {
  * Decompression size cap
  * ============================================================================ */
 
-/* Default: 1 GiB. Atomic-ish via word-sized writes; we don't bother with
- * <stdatomic.h> here — the worst case from a torn read is a stale cap
- * being applied for one call. */
+/* Default: 1 GiB. Bindings set it from one thread while others decode, so
+ * it's atomic. Relaxed ordering is enough: each call reads it once. MSVC's C
+ * compiler has no <stdatomic.h> without /experimental:c11atomics; there an
+ * aligned volatile size_t is read and written atomically. */
 #define CU_DEFAULT_MAX_DECOMPRESSED_SIZE ((size_t)1024 * 1024 * 1024)
 
-static size_t g_max_decompressed_size = CU_DEFAULT_MAX_DECOMPRESSED_SIZE;
+#if defined(_MSC_VER) && !defined(__clang__)
+static volatile size_t g_max_decompressed_size = CU_DEFAULT_MAX_DECOMPRESSED_SIZE;
+#  define CU_CAP_STORE(v) (g_max_decompressed_size = (v))
+#  define CU_CAP_LOAD()   (g_max_decompressed_size)
+#else
+static _Atomic size_t g_max_decompressed_size = CU_DEFAULT_MAX_DECOMPRESSED_SIZE;
+#  define CU_CAP_STORE(v) atomic_store_explicit(&g_max_decompressed_size, (v), memory_order_relaxed)
+#  define CU_CAP_LOAD()   atomic_load_explicit(&g_max_decompressed_size, memory_order_relaxed)
+#endif
 
 void cu_set_max_decompressed_size(size_t bytes) {
-    g_max_decompressed_size = bytes;
+    CU_CAP_STORE(bytes);
 }
 
 size_t cu_get_max_decompressed_size(void) {
-    return g_max_decompressed_size;
+    return CU_CAP_LOAD();
 }
 
 /* ============================================================================

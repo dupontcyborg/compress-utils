@@ -71,7 +71,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 let page = compress_utils::decompress_with_capacity(Algorithm::Lz4Raw, &block, page_size)?;
 ```
 
-It is required for `Lz4Raw`, which has no streaming decoder; `decompress` on an `Lz4Raw` block returns an error with `Status::SizeUnknown`. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other API
 
@@ -100,12 +100,3 @@ levels (Snappy) ignore it.
   `andikleen/snappy-c` port) compiles to C, so there is no `libc++`/`libstdc++`
   runtime dependency.
 - Windows is supported by the C core; the crate's source build works with MSVC.
-  CI currently covers Linux and macOS (matching the other source bindings).
-
-[`set_max_decompressed_size`]: https://docs.rs/compress-utils
-
-Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
-They emit during writes, retain 64 KiB of history plus the undrained part of the
-current input chunk, and validate exactly one block at finish. Streaming needs no
-output-capacity hint; the configured output limit is captured at creation.
-Raw LZ4 encoding remains one-shot and LZO remains decoder-only.

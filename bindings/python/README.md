@@ -64,7 +64,7 @@ restored = ds.decompress(compressed) + ds.finish()
 | Snappy    | `"snappy"`              | Raw Snappy block format.                       |
 | gzip      | `"gzip"`                | gzip stream (RFC 1952; .gz files, `gzip` CLI). |
 | DEFLATE   | `"deflate"`             | Raw DEFLATE (RFC 1951), no wrapper.            |
-| LZ4 block | `"lz4_raw"`             | Raw LZ4 block, no frame or size prefix. One-shot only; decompress needs `expected_size`. |
+| LZ4 block | `"lz4_raw"`             | Raw LZ4 block, no frame or size prefix.        |
 | LZO1X     | `"lzo"`                 | Raw LZO1X block. Decompression only.           |
 
 `cu.is_available(name_or_enum)` returns `True` for algorithms compiled into the installed wheel.
@@ -77,7 +77,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
 
-Passing `expected_size` selects caller-sized one-shot decoding; omitted raw LZ4 sizes use incremental decoding. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+Without `expected_size`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is slower, so pass it when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other helpful APIs
 
@@ -114,16 +114,13 @@ The Python binding is a thin pybind11 wrapper over the C library. Streaming uses
 
 For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload — internal codec state is short-lived and reused.
 
-## Project layout
+### Threads
 
-This is one of four official bindings to the [compress-utils](https://github.com/dupontcyborg/compress-utils) C library:
+Calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
 
-- **C** — the canonical ABI in `include/compress_utils.h`.
-- **C++** — header-only `cu::` namespace, `bindings/cpp/`.
-- **Python** — this package.
-- **JS / TS (WASM)** — `npm install compress-utils`, `bindings/wasm/`.
+A `CompressStream` or `DecompressStream` can be shared between threads: calls on one stream run one at a time. Don't resize a `bytearray` while it's being passed to a call; Python raises `BufferError` if you try.
 
-Go, Rust, Swift, and Java bindings are tracked in [TODO.md](https://github.com/dupontcyborg/compress-utils/blob/main/TODO.md).
+While another thread runs pure Python, each call that released the GIL can wait up to the interpreter's switch interval (5 ms by default) to get it back, as with the standard library's `zlib`. Larger chunks (1 MiB or more) make that wait a small share of each call; `sys.setswitchinterval(0.0005)` shortens it.
 
 ## License
 
@@ -132,8 +129,3 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Built by [Nico Dupont](https://nico.codes).
-
-Raw LZ4 and LZO1X decompression streams emit incrementally during writes using
-the native decoder, with 64 KiB of history plus the current undrained input chunk.
-Finish validates one block; streaming does not require a capacity hint. The output
-limit is captured at stream creation. Raw compression is unchanged.

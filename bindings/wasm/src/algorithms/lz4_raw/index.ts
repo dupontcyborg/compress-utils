@@ -16,7 +16,10 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
 
 export const compress = bindings.compress;
 export const compressSync = bindings.compressSync;
-/** Decodes a raw block into the required output capacity. */
+/**
+ * Decodes a raw block. Pass `expectedSize` (an output capacity) when known: without it
+ * the block is decoded by the incremental stream decoder, which is much slower.
+ */
 export async function decompress(
     input: Uint8Array,
     options: DecompressOptions = {},

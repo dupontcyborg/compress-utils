@@ -328,7 +328,15 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  *
  * Same protocol as streaming compression. cu_decompress_stream_finish()
  * verifies that the input ended on a frame boundary; truncated input
- * returns CU_ERR_TRUNCATED.
+ * returns CU_ERR_TRUNCATED. CU_ERR_BUF_TOO_SMALL can also mean the output
+ * filled exactly with output still held inside the decoder, so keep
+ * draining until a call returns CU_OK.
+ *
+ * Concatenated zstd frames (including skippable frames) and gzip members
+ * (with any zero padding between them) decode as one stream, here and in
+ * cu_decompress, as the zstd and gzip CLIs do. zlib rejects data after the
+ * end of its stream with CU_ERR_DECOMPRESSION; raw DEFLATE ignores it, since
+ * it usually belongs to an enclosing container.
  *
  * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
  * finish marks the end of raw LZ4 input; LZO requires its explicit end marker.

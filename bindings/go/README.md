@@ -64,7 +64,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
 ```
 
-It is required for `Lz4Raw`, which has no streaming decoder; `Decompress` on an `Lz4Raw` block returns an `*Error` with code `ErrSizeUnknown`. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+Without a capacity, `Decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other API
 
@@ -88,9 +88,3 @@ maps it to each codec's native range. `DefaultLevel` is 5. Codecs without levels
   `Decompress` functions are. Use one stream per goroutine.
 - Windows is supported by the C core but the Go binding's cgo build there needs
   a mingw toolchain; CI currently covers Linux and macOS.
-
-Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
-They emit during writes, retain 64 KiB of history plus the undrained part of the
-current input chunk, and validate exactly one block at finish. Streaming needs no
-output-capacity hint; the configured output limit is captured at creation.
-Raw LZ4 encoding remains one-shot and LZO remains decoder-only.

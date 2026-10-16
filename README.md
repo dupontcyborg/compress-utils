@@ -52,7 +52,7 @@ Your app → │  C / C++ / Go / JS / Python / TS / Rust  │
 | [XZ / LZMA](https://github.com/tukaani-project/xz) | Highest ratio          | XZ stream with CRC64            |
 | [Snappy](https://github.com/google/snappy)         | Very high speed, low ratio | Raw Snappy block (interoperable with reference snappy / python-snappy) |
 
-For reading data from other tools, three raw block formats are also available: raw DEFLATE (`deflate`, RFC 1951), raw LZ4 blocks (`lz4_raw`, one-shot compression and incremental decompression) and raw LZO1X blocks (`lzo`, decompression only). Raw blocks don't record their decompressed size. Caller-allocated one-shot APIs require output capacity; higher-level C++/Python/Go/Rust helpers can use incremental raw LZ4 decoding when it is omitted. WASM one-shot raw decoding still requires capacity. Code from each codec is credited in [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md), and the license texts are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+For reading data from other tools, three raw block formats are also available: raw DEFLATE (`deflate`, RFC 1951), raw LZ4 blocks (`lz4_raw`, one-shot compression and incremental decompression) and raw LZO1X blocks (`lzo`, decompression only). Raw blocks don't record their decompressed size, so every binding's `decompress` accepts an output capacity. It's fastest to pass one. Without it, `lz4_raw` is decoded with the slower incremental stream decoder. Code from each codec is credited in [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md), and the license texts are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 All algorithms expose the same API surface and the same level scale (`1` fastest → `10` smallest). The library maps each user level to the algorithm's native range so you don't need to remember that ZSTD goes 1–22 and zlib goes 1–9.
 
@@ -93,9 +93,3 @@ MIT — see [LICENSE](LICENSE).
 This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 Built by [Nico Dupont](https://nico.codes).
-
-Raw LZ4 and LZO1X decompression streams use the shared native incremental decoder.
-They emit during writes, retain 64 KiB of history plus the undrained part of the
-current input chunk, and validate exactly one block at finish. Streaming needs no
-output-capacity hint; the configured output limit is captured at creation.
-Raw LZ4 encoding remains one-shot and LZO remains decoder-only.

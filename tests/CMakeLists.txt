@@ -27,6 +27,14 @@ if(ENABLE_TESTS)
     add_test(NAME test_compress_utils COMMAND test_compress_utils)
 endif()
 
+# Concatenated zstd frames / gzip members and trailing data after zlib and raw
+# DEFLATE streams. Skips any codec that isn't compiled in.
+add_executable(test_concat_streams test_concat_streams.c)
+target_link_libraries(test_concat_streams PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_concat_streams COMMAND test_concat_streams)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses the pure-C andikleen port. This is a C++ target on
