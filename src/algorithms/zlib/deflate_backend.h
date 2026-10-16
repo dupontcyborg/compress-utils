@@ -10,6 +10,13 @@
  * mod 2^32 and needs the whole stream), so decompress_size_hint always returns
  * CU_ERR_SIZE_UNKNOWN and the bindings fall back to streaming.
  *
+ * Data after the end of the compressed stream depends on the wrapper:
+ *   - gzip: another member (`cat a.gz b.gz`, pigz), decoded and appended as
+ *     the gzip CLI does. Zero padding between or after members is skipped.
+ *   - zlib: an error.
+ *   - raw DEFLATE: ignored, since a raw stream cut from a container can be
+ *     followed by the container's own bytes.
+ *
  * This header is internal and included by exactly two .c files.
  */
 
@@ -30,6 +37,16 @@
 /* windowBits selecting the wrapper the zlib library writes/reads. */
 #define CU_DFL_ZLIB_WBITS 15
 #define CU_DFL_GZIP_WBITS 31
+
+/* At the end of a gzip member, skip zero padding; returns whether another
+ * member follows in strm's input. */
+static int dfl_next_gzip_member(z_stream* strm) {
+    while (strm->avail_in > 0 && *strm->next_in == 0) {
+        strm->next_in++;
+        strm->avail_in--;
+    }
+    return strm->avail_in > 0;
+}
 
 /* zlib/gzip: user 1..10 → zlib native 1..9 (clamp). */
 static int dfl_native_level(int user_level) {
@@ -111,13 +128,29 @@ static cu_status_t dfl_decompress(
     cu_status_t ret;
 
     r = inflate(&strm, Z_FINISH);
-    if (r == Z_STREAM_END) {
-        if (cap_limit > 0 && strm.total_out > cap_limit) {
-            cu_set_last_errorf("zlib: decompressed size %llu exceeds cap %zu",
-                               (unsigned long long)strm.total_out, cap_limit);
+    int trailing = 0;
+    while (r == Z_STREAM_END && strm.avail_in > 0) {
+        if (window_bits == CU_DFL_ZLIB_WBITS) {
+            trailing = 1;
+            break;
+        }
+        if (window_bits != CU_DFL_GZIP_WBITS || !dfl_next_gzip_member(&strm)) break;
+        r = inflateReset(&strm);
+        if (r == Z_OK) r = inflate(&strm, Z_FINISH);
+    }
+    /* inflateReset zeroes total_out, so measure from the output pointer. */
+    size_t produced = (size_t)(strm.next_out - out);
+
+    if (trailing) {
+        cu_set_last_error("zlib: data after end of stream");
+        ret = CU_ERR_DECOMPRESSION;
+    } else if (r == Z_STREAM_END) {
+        if (cap_limit > 0 && produced > cap_limit) {
+            cu_set_last_errorf("zlib: decompressed size %zu exceeds cap %zu",
+                               produced, cap_limit);
             ret = CU_ERR_SIZE_LIMIT;
         } else {
-            *out_len = (size_t)strm.total_out;
+            *out_len = produced;
             ret = CU_OK;
         }
     } else if (r == Z_BUF_ERROR || (r == Z_OK && strm.avail_out == 0)) {
@@ -155,6 +188,7 @@ typedef struct {
     int      finishing;
     int      stream_end;
     int      kind;  /* 0 = compress, 1 = decompress */
+    int      window_bits;
 } dfl_stream_state_t;
 
 static cu_status_t dfl_pending_append(dfl_stream_state_t* st, const uint8_t* src, size_t n) {
@@ -291,6 +325,7 @@ static cu_status_t dfl_dstream_create(int window_bits, void** out_state) {
     dfl_stream_state_t* st = calloc(1, sizeof(*st));
     if (!st) { cu_set_last_error("zlib: oom"); return CU_ERR_OOM; }
     st->kind = 1;
+    st->window_bits = window_bits;
     int r = inflateInit2(&st->strm, window_bits);
     if (r != Z_OK) {
         cu_status_t s = dfl_map_error(r, CU_ERR_DECOMPRESSION);
@@ -301,36 +336,54 @@ static cu_status_t dfl_dstream_create(int window_bits, void** out_state) {
     return CU_OK;
 }
 
+/* Inflates pending input into `out`. A full `out` returns BUF_TOO_SMALL even
+ * when all input was consumed, since inflate may still hold output; the drain
+ * call then runs inflate again. */
 static cu_status_t dfl_dstream_pump(dfl_stream_state_t* st,
                                     uint8_t* out, size_t* out_len) {
     size_t cap = *out_len;
-    size_t written = 0;
+    st->strm.next_in   = st->pending;
+    st->strm.avail_in  = (uInt)st->pending_len;
+    st->strm.next_out  = out;
+    st->strm.avail_out = (uInt)cap;
+    cu_status_t s = CU_OK;
 
-    if (st->pending_len > 0) {
-        st->strm.next_in  = st->pending;
-        st->strm.avail_in = (uInt)st->pending_len;
-        st->strm.next_out  = out + written;
-        st->strm.avail_out = (uInt)(cap - written);
+    for (;;) {
+        if (st->stream_end) {
+            if (st->strm.avail_in == 0) break;
+            if (st->window_bits == CU_DFL_ZLIB_WBITS) {
+                cu_set_last_error("zlib: data after end of stream");
+                s = CU_ERR_DECOMPRESSION;
+                break;
+            }
+            if (st->window_bits != CU_DFL_GZIP_WBITS) {
+                st->strm.avail_in = 0;  /* raw DEFLATE: not ours */
+                break;
+            }
+            if (!dfl_next_gzip_member(&st->strm)) break;
+            int r = inflateReset(&st->strm);
+            if (r != Z_OK) { s = dfl_map_error(r, CU_ERR_DECOMPRESSION); break; }
+            st->stream_end = 0;
+        }
         int z_ret = inflate(&st->strm, Z_NO_FLUSH);
-        size_t produced = (cap - written) - st->strm.avail_out;
-        written += produced;
         if (z_ret == Z_STREAM_END) {
             st->stream_end = 1;
-        } else if (z_ret != Z_OK && z_ret != Z_BUF_ERROR) {
-            *out_len = written;
-            return dfl_map_error(z_ret, CU_ERR_DECOMPRESSION);
+            continue;
         }
-        size_t consumed = st->pending_len - st->strm.avail_in;
-        if (st->strm.avail_in > 0 && !st->stream_end) {
-            memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-            st->pending_len = st->strm.avail_in;
-            *out_len = written;
-            return CU_ERR_BUF_TOO_SMALL;
+        if (z_ret != Z_OK && z_ret != Z_BUF_ERROR) {
+            s = dfl_map_error(z_ret, CU_ERR_DECOMPRESSION);
+            break;
         }
-        st->pending_len = 0;
+        if (st->strm.avail_out == 0) { s = CU_ERR_BUF_TOO_SMALL; break; }
+        /* Z_BUF_ERROR: no progress possible, i.e. it needs more input. */
+        if (st->strm.avail_in == 0 || z_ret == Z_BUF_ERROR) break;
     }
-    *out_len = written;
-    return CU_OK;
+
+    *out_len = cap - st->strm.avail_out;
+    size_t left = s == CU_ERR_BUF_TOO_SMALL ? st->strm.avail_in : 0;
+    if (left) memmove(st->pending, st->strm.next_in, left);
+    st->pending_len = left;
+    return s;
 }
 
 static cu_status_t dfl_dstream_write(
@@ -338,7 +391,7 @@ static cu_status_t dfl_dstream_write(
     uint8_t* out, size_t* out_len
 ) {
     dfl_stream_state_t* st = (dfl_stream_state_t*)state;
-    if (st->stream_end && in_len > 0) {
+    if (st->stream_end && in_len > 0 && st->window_bits != CU_DFL_GZIP_WBITS) {
         cu_set_last_error("zlib: data after end of stream");
         return CU_ERR_DECOMPRESSION;
     }

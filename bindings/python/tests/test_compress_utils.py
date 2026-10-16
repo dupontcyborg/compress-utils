@@ -108,6 +108,24 @@ class TestCompressUtils(unittest.TestCase):
                 with self.assertRaises(cu.CompressError):
                     cu.decompress(compressed, name, expected_size=len(data) // 2)
 
+    def test_concatenated_frames(self):
+        # zstd/pzstd and gzip/pigz output can hold several frames or members.
+        a, b = b"first part " * 50, b"second part " * 70
+        for name in ("zstd", "gzip"):
+            if not cu.is_available(name):
+                continue
+            with self.subTest(algorithm=name):
+                joined = cu.compress(a, name) + cu.compress(b, name)
+                self.assertEqual(cu.decompress(joined, name), a + b)
+                ds = cu.DecompressStream(name)
+                self.assertEqual(ds.decompress(joined) + ds.finish(), a + b)
+                ds = cu.DecompressStream(name)
+                half = len(joined) // 2
+                self.assertEqual(ds.decompress(joined[:half]) + ds.decompress(joined[half:]) + ds.finish(), a + b)
+        if cu.is_available("zlib"):
+            with self.assertRaises(cu.CompressError):
+                cu.decompress(cu.compress(a, "zlib") + cu.compress(b, "zlib"), "zlib")
+
     @unittest.skipUnless(cu.is_available("lz4_raw"), "lz4_raw not compiled in")
     def test_lz4_raw(self):
         for case_name, data in CASES.items():
