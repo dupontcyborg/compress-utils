@@ -68,6 +68,11 @@ export interface WasmExports {
         out_ptr: number,
         out_len_ptr: number,
     ) => number;
+    readonly cu_compress_stream_flush: (
+        stream: number,
+        out_ptr: number,
+        out_len_ptr: number,
+    ) => number;
     readonly cu_compress_stream_finish: (
         stream: number,
         out_ptr: number,

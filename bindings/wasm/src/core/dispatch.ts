@@ -16,6 +16,7 @@ import {
     Status,
     type AlgorithmName,
     type CompressOptions,
+    type CompressionStreamOptions,
     type DecompressOptions,
 } from "./types.js";
 
@@ -306,6 +307,26 @@ export class CompressStream extends StreamBase {
         );
     }
 
+    /**
+     * Nonterminal flush: returns the bytes a decoder needs to recover
+     * everything written so far, and keeps the stream open for more writes.
+     * Each flush costs a few bytes. Throws CompressError for snappy and bz2,
+     * which can't flush mid-stream.
+     */
+    flush(): Uint8Array {
+        this.ensureLive();
+        if (this.finished) {
+            throw new CompressError(
+                Status.StreamFinished,
+                this.dispatcher.algorithmName,
+                "flush after finish",
+            );
+        }
+        return drain(this.dispatcher, null, (_in, _len, outPtr, outLenPtr) =>
+            this.dispatcher.exports.cu_compress_stream_flush(this.handle, outPtr, outLenPtr),
+        );
+    }
+
     finish(): Uint8Array {
         this.ensureLive();
         this.finished = true;
@@ -425,8 +446,11 @@ export interface AlgorithmBindings {
     decompress(input: Uint8Array, opts?: DecompressOptions): Promise<Uint8Array>;
     createCompressStream(opts?: CompressOptions): Promise<CompressStream>;
     createDecompressStream(): Promise<DecompressStream>;
-    /** TransformStream that compresses bytes as they flow through. */
-    compressionStream(opts?: CompressOptions): TransformStream<Uint8Array, Uint8Array>;
+    /**
+     * TransformStream that compresses bytes as they flow through. With
+     * `flushEachChunk`, each output chunk is decodable on arrival.
+     */
+    compressionStream(opts?: CompressionStreamOptions): TransformStream<Uint8Array, Uint8Array>;
     /** TransformStream that decompresses bytes as they flow through. */
     decompressionStream(): TransformStream<Uint8Array, Uint8Array>;
     /** Library version, e.g. "0.6.0". */
@@ -531,7 +555,15 @@ export function createBindings(
                     stream = (await getDispatcher()).createCompressStream(opts);
                 },
                 transform(chunk, controller) {
-                    const out = stream!.write(chunk);
+                    let out = stream!.write(chunk);
+                    if (opts?.flushEachChunk) {
+                        // One output chunk per input chunk, decodable on its own.
+                        const flushed = stream!.flush();
+                        const joined = new Uint8Array(out.byteLength + flushed.byteLength);
+                        joined.set(out, 0);
+                        joined.set(flushed, out.byteLength);
+                        out = joined;
+                    }
                     if (out.byteLength > 0) controller.enqueue(out);
                 },
                 flush(controller) {

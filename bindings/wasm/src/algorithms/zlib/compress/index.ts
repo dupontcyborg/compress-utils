@@ -25,5 +25,9 @@ export const preload = bindings.preload;
 export const version = bindings.version;
 
 export { CompressError } from "../../../core/types.js";
-export type { CompressOptions, AlgorithmName } from "../../../core/types.js";
+export type {
+    CompressOptions,
+    CompressionStreamOptions,
+    AlgorithmName,
+} from "../../../core/types.js";
 export type { CompressStream } from "../../../core/dispatch.js";

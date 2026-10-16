@@ -72,6 +72,17 @@ chunks.push(cs.finish());
 // cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
 ```
 
+### Flushing a long-lived stream
+
+`cs.flush()` returns the bytes a decoder needs to recover everything written so far, and keeps the stream open. Use it to deliver each message on a long-lived connection such as a WebSocket. With Web Streams, `compressionStream({ flushEachChunk: true })` flushes after every chunk, so each output chunk decodes on arrival:
+
+```ts
+socket.send(cs.write(request));
+socket.send(cs.flush());  // after both, the peer's ds.write() calls have returned all of `request`
+```
+
+Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. `finish()` still ends the stream. Snappy and bz2 can't flush mid-stream and throw `CompressError`.
+
 If `using` isn't available in your toolchain, call `cs.destroy()` explicitly — or rely on the GC backstop (a `FinalizationRegistry` frees the C-side handle eventually).
 
 ## Supported algorithms
