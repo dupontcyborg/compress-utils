@@ -1,0 +1,87 @@
+{
+  "_comment": "Single source of truth for the algorithm and language tables in every README. tools/check-readmes.py renders the <!-- BEGIN:algorithms --> / <!-- BEGIN:languages --> regions from this file (--fix) and fails CI when a README drifts from it. The algorithm list is cross-checked against the cu_algorithm_t enum in include/compress_utils.h, the version against CMakeLists.txt DEFAULT_VERSION, and the upstream-library count against codec-versions.json. Row order here is the order every README shows.",
+  "algorithms": [
+    {
+      "id": "ZSTD", "name": "Zstandard", "url": "https://github.com/facebook/zstd", "kind": "core",
+      "strength": "High speed, high ratio",
+      "wire": "ZSTD frame with content size",
+      "spelling": {"c": "CU_ALGO_ZSTD", "cpp": "cu::Algorithm::Zstd", "go": "cu.Zstd", "python": "\"zstd\"", "rust": "Algorithm::Zstd", "wasm": "compress-utils/zstd"}
+    },
+    {
+      "id": "BROTLI", "name": "Brotli", "url": "https://github.com/google/brotli", "kind": "core",
+      "strength": "Web-optimized",
+      "wire": "Raw Brotli stream",
+      "spelling": {"c": "CU_ALGO_BROTLI", "cpp": "cu::Algorithm::Brotli", "go": "cu.Brotli", "python": "\"brotli\"", "rust": "Algorithm::Brotli", "wasm": "compress-utils/brotli"}
+    },
+    {
+      "id": "ZLIB", "name": "zlib", "url": "https://github.com/madler/zlib", "kind": "core",
+      "strength": "Ubiquitous",
+      "wire": "zlib wrapper (RFC 1950)",
+      "spelling": {"c": "CU_ALGO_ZLIB", "cpp": "cu::Algorithm::Zlib", "go": "cu.Zlib", "python": "\"zlib\"", "rust": "Algorithm::Zlib", "wasm": "compress-utils/zlib"}
+    },
+    {
+      "id": "GZIP", "name": "gzip", "url": "https://www.gnu.org/software/gzip/", "kind": "core",
+      "strength": "Ubiquitous (.gz files)",
+      "wire": "gzip stream (RFC 1952)",
+      "spelling": {"c": "CU_ALGO_GZIP", "cpp": "cu::Algorithm::Gzip", "go": "cu.Gzip", "python": "\"gzip\"", "rust": "Algorithm::Gzip", "wasm": "compress-utils/gzip"}
+    },
+    {
+      "id": "BZ2", "name": "bzip2", "url": "https://sourceware.org/bzip2", "kind": "core",
+      "strength": "High ratio",
+      "wire": "bzip2 stream",
+      "spelling": {"c": "CU_ALGO_BZ2", "cpp": "cu::Algorithm::Bz2", "go": "cu.Bz2", "python": "\"bz2\" (also \"bzip2\")", "rust": "Algorithm::Bz2", "wasm": "compress-utils/bz2"}
+    },
+    {
+      "id": "LZ4", "name": "LZ4", "url": "https://github.com/lz4/lz4", "kind": "core",
+      "strength": "Highest speed",
+      "wire": "LZ4 frame (interoperable with the `lz4` CLI and `.lz4` files)",
+      "spelling": {"c": "CU_ALGO_LZ4", "cpp": "cu::Algorithm::Lz4", "go": "cu.Lz4", "python": "\"lz4\"", "rust": "Algorithm::Lz4", "wasm": "compress-utils/lz4"}
+    },
+    {
+      "id": "XZ", "name": "XZ / LZMA", "url": "https://github.com/tukaani-project/xz", "kind": "core",
+      "strength": "Highest ratio",
+      "wire": "XZ stream with CRC64",
+      "spelling": {"c": "CU_ALGO_XZ (alias CU_ALGO_LZMA)", "cpp": "cu::Algorithm::Xz (alias Lzma)", "go": "cu.Xz (alias Lzma)", "python": "\"xz\" (also \"lzma\")", "rust": "Algorithm::Xz (alias Lzma)", "wasm": "compress-utils/xz"}
+    },
+    {
+      "id": "SNAPPY", "name": "Snappy", "url": "https://github.com/andikleen/snappy-c", "kind": "core",
+      "strength": "Very high speed, low ratio",
+      "wire": "Raw Snappy block (interoperable with reference snappy and python-snappy)",
+      "spelling": {"c": "CU_ALGO_SNAPPY", "cpp": "cu::Algorithm::Snappy", "go": "cu.Snappy", "python": "\"snappy\"", "rust": "Algorithm::Snappy", "wasm": "compress-utils/snappy"}
+    },
+    {
+      "id": "DEFLATE", "name": "DEFLATE", "url": "https://www.rfc-editor.org/rfc/rfc1951", "kind": "raw",
+      "wire": "Raw DEFLATE (RFC 1951), no wrapper",
+      "spelling": {"c": "CU_ALGO_DEFLATE", "cpp": "cu::Algorithm::Deflate", "go": "cu.Deflate", "python": "\"deflate\"", "rust": "Algorithm::Deflate", "wasm": "compress-utils/deflate"}
+    },
+    {
+      "id": "LZ4_RAW", "name": "LZ4 block", "url": "https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md", "kind": "raw",
+      "wire": "Raw LZ4 block, no frame or size prefix (one-shot compression, incremental decompression)",
+      "spelling": {"c": "CU_ALGO_LZ4_RAW", "cpp": "cu::Algorithm::Lz4Raw", "go": "cu.Lz4Raw", "python": "\"lz4_raw\"", "rust": "Algorithm::Lz4Raw", "wasm": "compress-utils/lz4_raw"}
+    },
+    {
+      "id": "LZO", "name": "LZO1X", "url": "https://www.oberhumer.com/opensource/lzo/", "kind": "raw", "decompress_only": true,
+      "wire": "Raw LZO1X block (decompression only)",
+      "spelling": {"c": "CU_ALGO_LZO", "cpp": "cu::Algorithm::Lzo", "go": "cu.Lzo", "python": "\"lzo\"", "rust": "Algorithm::Lzo", "wasm": "compress-utils/lzo/decompress"}
+    }
+  ],
+  "aliases": ["LZMA"],
+  "languages": [
+    {"key": "c",      "name": "C",          "install": "Build from source",                                           "docs": "include/compress_utils.h", "docs_label": "C Docs"},
+    {"key": "cpp",    "name": "C++",        "install": "Build from source",                                           "docs": "bindings/cpp/README.md",    "docs_label": "C++ Docs"},
+    {"key": "go",     "name": "Go",         "install": "`go get github.com/dupontcyborg/compress-utils/bindings/go`", "docs": "bindings/go/README.md",     "docs_label": "Go Docs"},
+    {"key": "wasm",   "name": "JavaScript", "install": "`npm install compress-utils`",                                "docs": "bindings/wasm/README.md",   "docs_label": "JS Docs"},
+    {"key": "python", "name": "Python",     "install": "`pip install compress-utils`",                                "docs": "bindings/python/README.md", "docs_label": "Python Docs"},
+    {"key": "rust",   "name": "Rust",       "install": "`cargo add compress-utils`",                                  "docs": "bindings/rust/README.md",   "docs_label": "Rust Docs"},
+    {"key": "wasm",   "name": "TypeScript", "install": "`npm install compress-utils`",                                "docs": "bindings/wasm/README.md",   "docs_label": "TS Docs"}
+  ],
+  "planned_languages": ["Swift", "Java"],
+  "readmes": {
+    "root":   "README.md",
+    "cpp":    "bindings/cpp/README.md",
+    "go":     "bindings/go/README.md",
+    "python": "bindings/python/README.md",
+    "rust":   "bindings/rust/README.md",
+    "wasm":   "bindings/wasm/README.md"
+  }
+}
