@@ -114,6 +114,14 @@ The Python binding is a thin pybind11 wrapper over the C library. Streaming uses
 
 For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload — internal codec state is short-lived and reused.
 
+### Threads
+
+Calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
+
+A `CompressStream` or `DecompressStream` can be shared between threads: calls on one stream run one at a time. Don't resize a `bytearray` while it's being passed to a call; Python raises `BufferError` if you try.
+
+While another thread runs pure Python, each call that released the GIL can wait up to the interpreter's switch interval (5 ms by default) to get it back, as with the standard library's `zlib`. Larger chunks (1 MiB or more) make that wait a small share of each call; `sys.setswitchinterval(0.0005)` shortens it.
+
 ## License
 
 MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).

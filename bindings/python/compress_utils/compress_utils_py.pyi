@@ -77,6 +77,7 @@ class CompressError(Exception):
 class CompressStream:
     """
     Streaming compression. Feed chunks via .compress(b); flush with .finish().
+    Safe to share between threads: calls on one stream run one at a time.
     """
     def __init__(self, algorithm: typing.Any, level: int = 5) -> None:
         ...
@@ -87,6 +88,7 @@ class CompressStream:
 class DecompressStream:
     """
     Streaming decompression. Feed chunks via .decompress(b); flush with .finish().
+    Safe to share between threads: calls on one stream run one at a time.
     """
     def __init__(self, algorithm: typing.Any) -> None:
         ...

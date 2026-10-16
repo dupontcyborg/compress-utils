@@ -7,7 +7,11 @@ via the free functions and the streaming classes, plus a few edge cases
 one-shot decompress and vice versa).
 """
 
+import pathlib
 import random
+import sys
+import threading
+import time
 import unittest
 
 import compress_utils as cu
@@ -153,6 +157,103 @@ class TestCompressUtils(unittest.TestCase):
         for a in cu.Algorithm.__members__.values():
             self.assertIsInstance(cu.is_available(a), bool)
 
+    def test_ships_type_information(self):
+        # PEP 561: without py.typed, mypy ignores the stubs. cibuildwheel runs
+        # this suite against each built wheel, so this checks what ships.
+        package = pathlib.Path(cu.__file__).parent
+        self.assertTrue((package / "py.typed").is_file())
+        self.assertTrue((package / "compress_utils_py.pyi").is_file())
+
+
+# The binding keeps the GIL for calls under 256 KiB, so these are larger.
+GIL_PAYLOAD = bytes(random.Random(0).randbytes(4096)) * 4096  # 16 MiB, compressible
+GIL_RANDOM = random.Random(1).randbytes(1024 * 1024)  # incompressible
+
+
+class TestThreading(unittest.TestCase):
+    def test_large_calls_release_the_gil(self):
+        # With a 10 s switch interval, a thread holding the GIL is never made
+        # to give it up, so the helper can only count while a call has
+        # released it. The input is small: the release comes from the 16 MiB
+        # size recorded in the frame.
+        packed = cu.compress(GIL_PAYLOAD, "zstd")
+        self.assertLess(len(packed), 256 * 1024)
+        count, go, stop = [0], threading.Event(), threading.Event()
+
+        def helper():
+            go.wait()
+            while not stop.is_set():
+                count[0] += 1
+                time.sleep(0)  # releases the GIL so the caller can get it back
+
+        thread = threading.Thread(target=helper)
+        thread.start()
+        old_interval = sys.getswitchinterval()
+        sys.setswitchinterval(10)
+        try:
+            go.set()
+            before = count[0]
+            for _ in range(5):
+                self.assertEqual(cu.decompress(packed, "zstd"), GIL_PAYLOAD)
+            during = count[0] - before
+        finally:
+            sys.setswitchinterval(old_interval)
+            stop.set()
+            thread.join()
+        self.assertGreater(during, 0)
+
+    def test_input_cannot_be_resized_mid_call(self):
+        # The binding keeps the buffer exported while it runs without the GIL,
+        # so resizing a bytearray raises BufferError instead of freeing memory
+        # being read. gzip ignores trailing zero padding, so an append that
+        # lands between calls doesn't change what decodes. gzip doesn't record
+        # its size, so the input itself must be large: use random data.
+        data = bytearray(cu.compress(GIL_RANDOM, "gzip"))
+        refused, done = [0], threading.Event()
+
+        def resizer():
+            while not done.is_set():
+                try:
+                    data.append(0)
+                    data.pop()
+                except BufferError:
+                    refused[0] += 1
+
+        thread = threading.Thread(target=resizer)
+        thread.start()
+        try:
+            for _ in range(10):
+                self.assertEqual(cu.decompress(data, "gzip"), GIL_RANDOM)
+        finally:
+            done.set()
+            thread.join()
+        self.assertGreater(refused[0], 0)
+
+    def test_shared_stream_serializes_calls(self):
+        # Every thread writes the same complete zstd frame to one stream, so in
+        # any interleaving each call must decode to exactly that chunk;
+        # overlapping calls on the stream would corrupt its state. Frames this
+        # size reliably overlap (and fail) when the mutex is missing.
+        chunk = GIL_RANDOM[:512 * 1024]
+        frame = cu.compress(chunk, "zstd")
+        stream = cu.DecompressStream("zstd")
+        results, errors = [], []
+
+        def writer():
+            try:
+                for _ in range(10):
+                    results.append(stream.decompress(frame) == chunk)
+            except Exception as e:
+                errors.append(e)
+
+        workers = [threading.Thread(target=writer) for _ in range(8)]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [True] * 80)
+        self.assertEqual(stream.finish(), b"")
 
 if __name__ == "__main__":
     unittest.main()
