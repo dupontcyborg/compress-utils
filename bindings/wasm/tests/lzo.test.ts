@@ -23,6 +23,9 @@ describe("raw LZO1X decoder", () => {
     });
     test.each(["1", "999"])("decodes independently generated LZO1X-%s", async (variant) => {
         const expected = fixture("input");
+        expect(await lzo.decompress(fixture(variant))).toEqual(expected);
+        await lzo.preload();
+        expect(lzo.decompressSync(fixture(variant))).toEqual(expected);
         expect(
             await lzo.decompress(fixture(variant), { expectedSize: expected.length + 100 }),
         ).toEqual(expected);
@@ -49,6 +52,7 @@ describe("raw LZO1X decoder", () => {
             await expect(
                 lzo.decompress(fixture("1"), { expectedSize: 32768 }),
             ).rejects.toMatchObject({ code: 9 });
+            await expect(lzo.decompress(fixture("1"))).rejects.toMatchObject({ code: 9 });
         } finally {
             await lzo.setMaxDecompressedSize(1024 * 1024 * 1024);
         }

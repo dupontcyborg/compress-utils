@@ -87,8 +87,8 @@ If `using` isn't available in your toolchain, call `cs.destroy()` explicitly —
 | Snappy    | `compress-utils/snappy`  | Raw Snappy block                           |
 | gzip      | `compress-utils/gzip`    | gzip stream (RFC 1952)                     |
 | DEFLATE   | `compress-utils/deflate` | Raw DEFLATE (RFC 1951), no wrapper         |
-| LZ4 block | `compress-utils/lz4_raw` | Raw LZ4 block, no frame or size prefix (`decompress` needs `{expectedSize}` as output capacity; streams don't) |
-| LZO       | `compress-utils/lzo/decompress` | Raw LZO1X block (decompress only; `decompress` needs `{expectedSize}` as output capacity; streams don't) |
+| LZ4 block | `compress-utils/lz4_raw` | Raw LZ4 block, no frame or size prefix (pass `{expectedSize}` when known: it's much faster) |
+| LZO       | `compress-utils/lzo/decompress` | Raw LZO1X block (decompress only; pass `{expectedSize}` when known to skip a sizing pass) |
 
 Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively. For per-module `.wasm` sizes (and the smaller decode-only / encode-only builds), see **[Bundle size](#bundle-size)**.
 

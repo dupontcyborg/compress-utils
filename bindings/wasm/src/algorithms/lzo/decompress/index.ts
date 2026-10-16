@@ -7,19 +7,19 @@ const bindings = /*#__PURE__*/ defineAlgorithm(
     "lzo",
     new URL("./lzo.wasm", import.meta.url),
 );
-/** Decode one block into the supplied output capacity; return actual bytes. */
+/**
+ * Decode one block; return actual bytes. Pass `expectedSize` (an output capacity) when
+ * known: without it the block is decoded twice, once to measure its size.
+ */
 export async function decompress(
     input: Uint8Array,
-    options: DecompressOptions & { expectedSize: number },
+    options: DecompressOptions = {},
 ): Promise<Uint8Array> {
     validateCapacity("lzo", "raw LZO1X", options);
     return bindings.decompress(input, options);
 }
 /** Decode synchronously after preload(), returning only the actual decoded bytes. */
-export function decompressSync(
-    input: Uint8Array,
-    options: DecompressOptions & { expectedSize: number },
-): Uint8Array {
+export function decompressSync(input: Uint8Array, options: DecompressOptions = {}): Uint8Array {
     validateCapacity("lzo", "raw LZO1X", options);
     return bindings.decompressSync(input, options);
 }
