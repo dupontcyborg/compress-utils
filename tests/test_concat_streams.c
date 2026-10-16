@@ -157,7 +157,10 @@ static void test_concatenated(cu_algorithm_t algo) {
             size_t hint = 0;
             cu_status_t st = cu_decompress_size_hint(algo, in, n, &hint);
             CHECK(st == CU_ERR_SIZE_UNKNOWN || (st == CU_OK && hint == strlen(text)));
-            if (algo == CU_ALGO_ZSTD) CHECK(streamed ? st == CU_ERR_SIZE_UNKNOWN : st == CU_OK);
+            /* zstd and LZ4 one-shot frames record their size, so the hint is
+             * the sum over frames; stream-compressed frames don't. */
+            if (algo == CU_ALGO_ZSTD || algo == CU_ALGO_LZ4)
+                CHECK(streamed ? st == CU_ERR_SIZE_UNKNOWN : st == CU_OK);
         }
     }
 

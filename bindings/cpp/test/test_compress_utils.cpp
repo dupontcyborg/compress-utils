@@ -36,6 +36,16 @@ static std::vector<std::uint8_t> sample(std::size_t n) {
     return v;
 }
 
+/* Deterministic incompressible bytes. */
+static std::vector<std::uint8_t> pseudo_random(std::size_t n, std::uint32_t seed) {
+    std::vector<std::uint8_t> v(n);
+    for (auto& b : v) {
+        seed = seed * 1103515245u + 12345u;
+        b = static_cast<std::uint8_t>(seed >> 16);
+    }
+    return v;
+}
+
 static int test_freefn_roundtrip() {
     auto in = sample(32 * 1024);
     for (auto a : ALL) {
@@ -126,10 +136,15 @@ static int test_flush() {
         }
         cu::DecompressStream ds(a);
         std::vector<std::uint8_t> sent, received;
-        for (std::size_t size : {std::size_t{131072}, std::size_t{37}}) {
-            auto message = sample(size);
+        // The random message doesn't compress, so flushing it takes more than
+        // one 64 KiB output buffer: the binding's drain loop must run again.
+        for (auto message : {sample(131072), pseudo_random(65537, 7), sample(37)}) {
             auto wire = cs.write(std::span<const std::uint8_t>(message));
             auto tail = cs.flush();
+            if (a == cu::Algorithm::Zstd && message.size() == 65537) {
+                CHECK(tail.size() > 64 * 1024, "zstd flush of random data: only %zu bytes",
+                      tail.size());
+            }
             wire.insert(wire.end(), tail.begin(), tail.end());
             auto got = ds.write(std::span<const std::uint8_t>(wire));
             sent.insert(sent.end(), message.begin(), message.end());

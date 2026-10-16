@@ -55,6 +55,7 @@ canonical decoder chosen here must match that format exactly:
              both sides need the decompressed size, so it has its own test
 """
 
+import itertools
 import random
 import unittest
 import zlib
@@ -189,6 +190,19 @@ def _zstd_flushing():
     return lambda data: enc.compress(data) + enc.flush(zstd.COMPRESSOBJ_FLUSH_BLOCK)
 
 
+def _zstd_flushing_minimal_frame():
+    # The issue's real-world sender: level 3, 4 MiB window, no content size,
+    # no checksum.
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    params = zstd.ZstdCompressionParameters.from_level(
+        3, window_log=22, write_content_size=False, write_checksum=False)
+    enc = zstd.ZstdCompressor(compression_params=params).compressobj()
+    return lambda data: enc.compress(data) + enc.flush(zstd.COMPRESSOBJ_FLUSH_BLOCK)
+
+
 def _lz4_flushing():
     try:
         import lz4.frame as lz4f
@@ -286,14 +300,51 @@ FLUSHING_RECEIVERS = {
 }
 
 
-FLUSHING_SENDERS = {
-    "zstd": _zstd_flushing,
-    "lz4": _lz4_flushing,
-    "brotli": _brotli_flushing,
-    "zlib": _zlib_flushing(15),
-    "gzip": _zlib_flushing(31),
-    "deflate": _zlib_flushing(-15),
+# (label, algorithm, sender factory)
+FLUSHING_SENDERS = [
+    ("zstd", "zstd", _zstd_flushing),
+    ("zstd, level 3, no size or checksum", "zstd", _zstd_flushing_minimal_frame),
+    ("lz4", "lz4", _lz4_flushing),
+    ("brotli", "brotli", _brotli_flushing),
+    ("zlib", "zlib", _zlib_flushing(15)),
+    ("gzip", "gzip", _zlib_flushing(31)),
+    ("deflate", "deflate", _zlib_flushing(-15)),
+]
+
+
+def _flush_sequences():
+    """The issue's message patterns, each a list of messages flushed in turn."""
+    rng = random.Random(54)
+    record = rng.randbytes(422)
+    return {
+        "issue repro": [b"A" * 131072, b"B" * 37],
+        "64K/128K mix": [b"A" * 65535, rng.randbytes(65536), b"A" * 65537,
+                         rng.randbytes(131071), b"A" * 131072, rng.randbytes(131073), b"x"],
+        "record, 65537, 37": [record, b"A" * 65537, b"B" * 37],
+        "record + 100 small": [record] + [b"msg %05d " % i + rng.randbytes(88) for i in range(100)],
+    }
+
+
+# The issue's transport profiles: compressed bytes per receiver call, cycled
+# across the whole stream. None = each flushed batch in one call.
+TRANSPORTS = {
+    "whole": lambda: None,
+    "4096": lambda: itertools.repeat(4096),
+    "1,3,7,97,4093": lambda: itertools.cycle([1, 3, 7, 97, 4093]),
+    "1": lambda: itertools.repeat(1),
 }
+
+
+def _deliver(wire, transport, receive):
+    """Hands `wire` to `receive` sliced by the transport; returns the output."""
+    if transport is None:
+        return receive(wire)
+    out, pos = b"", 0
+    while pos < len(wire):
+        step = next(transport)
+        out += receive(wire[pos:pos + step])
+        pos += step
+    return out
 
 
 class TestCanonicalInterop(unittest.TestCase):
@@ -338,55 +389,51 @@ class TestCanonicalInterop(unittest.TestCase):
 
     def test_inbound_flush_checkpoints(self):
         """A canonical encoder's mid-stream flushes decode completely at every
-        checkpoint, with no further input and no finish() (issue #54)."""
-        rng = random.Random(54)
-        payloads = [b"A" * 131072, rng.randbytes(65537), b"B" * 37,
-                    rng.randbytes(131073), b"A" * 65536, b"tail"]
-        for algo, make in FLUSHING_SENDERS.items():
-            for transport in (None, 7, 4093):
-                with self.subTest(algorithm=algo, transport=transport or "whole"):
-                    if not cu.is_available(algo):
-                        self.skipTest(f"{algo} not compiled into this build")
-                    send = make()
-                    if send is None:
-                        self.skipTest(f"canonical reference library for {algo} not installed")
-                    receiver = cu.DecompressStream(algo)
-                    got = want = b""
-                    for i, data in enumerate(payloads):
-                        wire = send(data)
-                        want += data
-                        step = transport or max(len(wire), 1)
-                        for k in range(0, len(wire), step):
-                            got += receiver.decompress(wire[k:k + step])
-                        self.assertEqual(len(got), len(want), f"checkpoint {i}")
-                        self.assertEqual(got, want, f"checkpoint {i}")
+        checkpoint, with no further input and no finish(), under every
+        transport profile (issue #54). Empty calls afterwards return nothing."""
+        for label, algo, make in FLUSHING_SENDERS:
+            for seq_name, messages in _flush_sequences().items():
+                for transport_name, transport in TRANSPORTS.items():
+                    with self.subTest(sender=label, sequence=seq_name, transport=transport_name):
+                        if not cu.is_available(algo):
+                            self.skipTest(f"{algo} not compiled into this build")
+                        send = make()
+                        if send is None:
+                            self.skipTest(f"canonical reference library for {algo} not installed")
+                        receiver = cu.DecompressStream(algo)
+                        slices = transport()
+                        got = want = b""
+                        for i, data in enumerate(messages):
+                            got += _deliver(send(data), slices, receiver.decompress)
+                            want += data
+                            self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                            self.assertEqual(got, want, f"checkpoint {i}")
+                            for _ in range(3):
+                                self.assertEqual(receiver.decompress(b""), b"")
 
     def test_outbound_flush_checkpoints(self):
         """After our flush(), a canonical streaming decoder recovers everything
-        written so far, with the stream still open (issue #54)."""
-        rng = random.Random(55)
-        payloads = [b"A" * 131072, rng.randbytes(65537), b"B" * 37,
-                    rng.randbytes(131073), b"A" * 65536, b"tail"]
+        written so far, with the stream still open, under every transport
+        profile (issue #54)."""
         for algo, make in FLUSHING_RECEIVERS.items():
-            for transport in (None, 7, 4093):
-                with self.subTest(algorithm=algo, transport=transport or "whole"):
-                    if not cu.is_available(algo):
-                        self.skipTest(f"{algo} not compiled into this build")
-                    receive = make()
-                    if receive is None:
-                        self.skipTest(f"canonical reference library for {algo} not installed")
-                    sender = cu.CompressStream(algo)
-                    got = want = b""
-                    for i, data in enumerate(payloads):
-                        wire = sender.compress(data) + sender.flush()
-                        want += data
-                        step = transport or max(len(wire), 1)
-                        for k in range(0, len(wire), step):
-                            got += receive(wire[k:k + step])
-                        self.assertEqual(len(got), len(want), f"checkpoint {i}")
-                        self.assertEqual(got, want, f"checkpoint {i}")
-                    got += receive(sender.finish())
-                    self.assertEqual(got, want)
+            for seq_name, messages in _flush_sequences().items():
+                for transport_name, transport in TRANSPORTS.items():
+                    with self.subTest(algorithm=algo, sequence=seq_name, transport=transport_name):
+                        if not cu.is_available(algo):
+                            self.skipTest(f"{algo} not compiled into this build")
+                        receive = make()
+                        if receive is None:
+                            self.skipTest(f"canonical reference library for {algo} not installed")
+                        sender = cu.CompressStream(algo)
+                        slices = transport()
+                        got = want = b""
+                        for i, data in enumerate(messages):
+                            got += _deliver(sender.compress(data) + sender.flush(), slices, receive)
+                            want += data
+                            self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                            self.assertEqual(got, want, f"checkpoint {i}")
+                        got += _deliver(sender.finish(), slices, receive)
+                        self.assertEqual(got, want)
 
     def test_lz4_raw(self):
         """Raw LZ4 blocks interoperate with lz4.block in both directions."""

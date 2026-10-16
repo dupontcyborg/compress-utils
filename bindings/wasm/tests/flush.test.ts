@@ -9,6 +9,8 @@ import * as snappy from "compress-utils/snappy";
 import * as xz from "compress-utils/xz";
 import * as zlib from "compress-utils/zlib";
 import * as zstd from "compress-utils/zstd";
+import * as lz4Decoder from "compress-utils/lz4/decompress";
+import * as zstdDecoder from "compress-utils/zstd/decompress";
 
 const flushing = { brotli, deflate, gzip, lz4, xz, zlib, zstd };
 
@@ -75,6 +77,24 @@ describe("compress stream flush", () => {
                 parts.push(decoder.write(value));
             }
             expect(concat([...parts, decoder.finish()]).byteLength).toBe(0);
+        });
+    }
+
+    // Browser receivers often load only the decode-only module, built separately.
+    for (const [name, encoder, decoder] of [
+        ["zstd", zstd, zstdDecoder],
+        ["lz4", lz4, lz4Decoder],
+    ] as const) {
+        it(`${name}: the decode-only module receives each flush completely`, async () => {
+            using cs = await encoder.createCompressStream();
+            using ds = await decoder.createDecompressStream();
+            const sent: Uint8Array[] = [];
+            const received: Uint8Array[] = [];
+            for (const message of messages) {
+                sent.push(message);
+                received.push(ds.write(concat([cs.write(message), cs.flush()])));
+                expect(concat(received)).toEqual(concat(sent));
+            }
         });
     }
 
