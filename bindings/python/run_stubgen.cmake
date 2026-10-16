@@ -38,9 +38,23 @@ if(NOT _rc EQUAL 0)
     return()
 endif()
 
+# pybind11 3 types buffer arguments as collections.abc.Buffer, which only
+# exists on Python 3.12+. typing_extensions.Buffer works on every version we
+# support (type checkers bundle typing_extensions), so use it instead.
+set(_stub ${OUT_DIR}/compress_utils/compress_utils_py.pyi)
+file(READ ${_stub} _text)
+string(REPLACE "collections.abc.Buffer" "typing_extensions.Buffer" _text "${_text}")
+if(NOT _text MATCHES "collections\\.abc\\.")
+    string(REPLACE "import collections.abc\n" "" _text "${_text}")
+endif()
+if(_text MATCHES "typing_extensions\\." AND NOT _text MATCHES "import typing_extensions")
+    string(REPLACE "import typing\n" "import typing\nimport typing_extensions\n" _text "${_text}")
+endif()
+file(WRITE ${_stub} "${_text}")
+
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${OUT_DIR}/compress_utils/compress_utils_py.pyi ${DEST}
+        ${_stub} ${DEST}
     RESULT_VARIABLE _copy_rc
 )
 if(NOT _copy_rc EQUAL 0)
