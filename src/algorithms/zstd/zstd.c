@@ -349,15 +349,13 @@ static cu_status_t zstd_cstream_write(
     return s;
 }
 
-static cu_status_t zstd_cstream_finish(
-    void* state, uint8_t* out, size_t* out_len
-) {
-    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
-    st->finishing = 1;
-    size_t cap = *out_len;
-    ZSTD_outBuffer ob = { out, cap, 0 };
+/* Feeds retained input, then runs `directive` (ZSTD_e_flush or ZSTD_e_end)
+ * until zstd reports nothing left to write. */
+static cu_status_t cstream_drain(zstd_cstream_state_t* st, ZSTD_EndDirective directive,
+                                 uint8_t* out, size_t* out_len) {
+    ZSTD_outBuffer ob = { out, *out_len, 0 };
 
-    /* Feed any retained input first; ZSTD_e_end below flushes the rest. */
+    /* Feed any retained input first; the directive below flushes the rest. */
     if (st->pending_off < st->pending_len) {
         cu_status_t s = cstream_feed(st, NULL, 0, &ob);
         if (s != CU_OK) {
@@ -366,10 +364,9 @@ static cu_status_t zstd_cstream_finish(
         }
     }
 
-    /* End the frame, looping until ZSTD reports nothing remaining. */
     ZSTD_inBuffer ib = { NULL, 0, 0 };
     for (;;) {
-        size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, ZSTD_e_end);
+        size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, directive);
         if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
         if (r == 0) {
             *out_len = ob.pos;
@@ -382,6 +379,27 @@ static cu_status_t zstd_cstream_finish(
         }
         /* r > 0 with room remaining: loop and write more. */
     }
+}
+
+static cu_status_t zstd_cstream_finish(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
+    st->finishing = 1;
+    return cstream_drain(st, ZSTD_e_end, out, out_len);
+}
+
+/* Ends the current block, so everything written so far can be decoded; the
+ * frame stays open. */
+static cu_status_t zstd_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("zstd: flush after finish started");
+        return CU_ERR_STREAM_STATE;
+    }
+    return cstream_drain(st, ZSTD_e_flush, out, out_len);
 }
 
 static void zstd_cstream_destroy(void* state) {
@@ -545,6 +563,7 @@ const cu_algorithm_vtbl_t cu_zstd_vtbl = {
     .compress_stream_create   = zstd_cstream_create,
     .compress_stream_write    = zstd_cstream_write,
     .compress_stream_finish   = zstd_cstream_finish,
+    .compress_stream_flush    = zstd_cstream_flush,
     .compress_stream_destroy  = zstd_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

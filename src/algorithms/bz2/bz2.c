@@ -395,6 +395,8 @@ const cu_algorithm_vtbl_t cu_bz2_vtbl = {
     .compress_stream_create    = bz2_cstream_create,
     .compress_stream_write     = bz2_cstream_write,
     .compress_stream_finish    = bz2_cstream_finish,
+    /* No flush: libbzip2 byte-aligns its bit buffer only at end of stream,
+     * so a BZ_FLUSH'd block can't be decoded until more data follows. */
     .compress_stream_destroy   = bz2_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

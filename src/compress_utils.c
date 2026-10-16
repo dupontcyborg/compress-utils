@@ -239,6 +239,8 @@ struct cu_compress_stream {
     const cu_algorithm_vtbl_t* vtbl;
     void* state;
     int finished;
+    int flushing;  /* a flush returned BUF_TOO_SMALL and must be completed */
+    int dirty;     /* input written since the last completed flush */
 };
 
 struct cu_decompress_stream {
@@ -298,9 +300,46 @@ cu_status_t cu_compress_stream_write(
         cu_set_last_error("write to finished compress stream");
         return CU_ERR_STREAM_FINISHED;
     }
+    if (stream->flushing) {
+        cu_set_last_error("write before the pending flush completed; call flush until CU_OK");
+        return CU_ERR_STREAM_STATE;
+    }
 
     cu_clear_last_error();
+    if (in_len > 0) stream->dirty = 1;
     return stream->vtbl->compress_stream_write(stream->state, in, in_len, out, out_len);
+}
+
+cu_status_t cu_compress_stream_flush(
+    cu_compress_stream_t* stream,
+    uint8_t* out, size_t* out_len
+) {
+    if (!stream || !out_len)            return CU_ERR_INVALID_ARG;
+    if (*out_len > 0 && !out)           return CU_ERR_INVALID_ARG;
+    if (stream->finished) {
+        cu_set_last_error("flush of finished compress stream");
+        return CU_ERR_STREAM_FINISHED;
+    }
+    if (!stream->vtbl->compress_stream_flush) {
+        cu_set_last_errorf("%s: streams can't flush mid-stream", stream->vtbl->name);
+        return CU_ERR_UNSUPPORTED_ALGO;
+    }
+    /* Nothing written since the last flush: nothing to emit. Skipping the
+     * codec keeps repeated flushes free (zlib would add a marker each time). */
+    if (!stream->dirty && !stream->flushing) {
+        *out_len = 0;
+        return CU_OK;
+    }
+
+    cu_clear_last_error();
+    cu_status_t s = stream->vtbl->compress_stream_flush(stream->state, out, out_len);
+    if (s == CU_ERR_BUF_TOO_SMALL) {
+        stream->flushing = 1;
+    } else if (s == CU_OK) {
+        stream->flushing = 0;
+        stream->dirty = 0;
+    }
+    return s;
 }
 
 cu_status_t cu_compress_stream_finish(

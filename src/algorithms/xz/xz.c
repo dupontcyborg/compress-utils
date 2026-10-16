@@ -144,6 +144,7 @@ typedef struct {
     size_t   pending_cap;
     int      finishing;
     int      stream_end;
+    int      flushing;  /* a sync flush was started and hasn't completed */
 } xz_stream_state_t;
 
 static cu_status_t pending_append(xz_stream_state_t* st, const uint8_t* src, size_t n) {
@@ -183,7 +184,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
         written += produced;
 
         if (r == LZMA_STREAM_END) {
-            st->stream_end = 1;
+            /* For LZMA_SYNC_FLUSH this only means the flush is complete. */
+            if (action != LZMA_SYNC_FLUSH) st->stream_end = 1;
             s = CU_OK;
             break;
         }
@@ -192,6 +194,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
                 s = CU_ERR_BUF_TOO_SMALL;
                 break;
             }
+            /* A sync flush isn't done until LZMA_STREAM_END. */
+            if (action == LZMA_SYNC_FLUSH) continue;
             /* Input consumed with output room left: nothing is held back. */
             if (action == LZMA_RUN && st->strm.avail_in == 0) {
                 s = CU_OK;
@@ -218,6 +222,11 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
             if (action == LZMA_RUN) {
                 s = CU_OK;
                 break;
+            }
+            if (action == LZMA_SYNC_FLUSH) {
+                *out_len = written;
+                cu_set_last_error("xz: sync flush made no progress");
+                return CU_ERR_COMPRESSION;
             }
             st->pending_len = st->strm.avail_in;
             *out_len = written;
@@ -277,7 +286,31 @@ static cu_status_t xz_cstream_finish(
     xz_stream_state_t* st = (xz_stream_state_t*)state;
     st->finishing = 1;
     if (st->stream_end) { *out_len = 0; return CU_OK; }
+    if (st->flushing) {
+        /* liblzma requires a started flush to complete before LZMA_FINISH. */
+        cu_status_t s = stream_pump(st, LZMA_SYNC_FLUSH, out, out_len);
+        if (s != CU_OK) return s;
+        st->flushing = 0;
+        if (*out_len > 0) return CU_ERR_BUF_TOO_SMALL;  /* finish on the next call */
+    }
     return stream_pump(st, LZMA_FINISH, out, out_len);
+}
+
+/* LZMA_SYNC_FLUSH ends the current LZMA2 chunk, so everything written so far
+ * can be decoded; the stream stays open. liblzma requires the same action
+ * and input until it completes, which holds because writes are rejected
+ * while a flush is in progress. */
+static cu_status_t xz_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    xz_stream_state_t* st = (xz_stream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("xz: flush after finish");
+        return CU_ERR_STREAM_STATE;
+    }
+    cu_status_t s = stream_pump(st, LZMA_SYNC_FLUSH, out, out_len);
+    st->flushing = s == CU_ERR_BUF_TOO_SMALL;
+    return s;
 }
 
 static void xz_cstream_destroy(void* state) {
@@ -362,6 +395,7 @@ const cu_algorithm_vtbl_t cu_xz_vtbl = {
     .compress_stream_create    = xz_cstream_create,
     .compress_stream_write     = xz_cstream_write,
     .compress_stream_finish    = xz_cstream_finish,
+    .compress_stream_flush     = xz_cstream_flush,
     .compress_stream_destroy   = xz_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

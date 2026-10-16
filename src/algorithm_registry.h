@@ -45,6 +45,10 @@ typedef struct cu_algorithm_vtbl {
                                          uint8_t* out, size_t* out_len);
     cu_status_t (*compress_stream_finish)(void* state,
                                           uint8_t* out, size_t* out_len);
+    /* Optional: emit everything needed to decode the input so far, keeping
+     * the frame open. NULL for codecs that can't (Snappy, bzip2). */
+    cu_status_t (*compress_stream_flush)(void* state,
+                                         uint8_t* out, size_t* out_len);
     void        (*compress_stream_destroy)(void* state);
 
     /* Streaming decompression. */

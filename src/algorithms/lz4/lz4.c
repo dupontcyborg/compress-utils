@@ -419,6 +419,27 @@ static cu_status_t lz4_cstream_write(
     return CU_OK;
 }
 
+/* Drains out_buf, writes the frame header if needed, and feeds all buffered
+ * input to the codec. Returns 1 when the caller's buffer filled first. */
+static int cstream_emit_pending(lz4_cstream_state_t* st, uint8_t* out, size_t cap,
+                                size_t* written, cu_status_t* err) {
+    *err = CU_OK;
+    if (out_drain(st, out, cap, written)) return 1;
+    if (!st->header_written) {
+        size_t r = LZ4F_compressBegin(st->cctx, st->out_buf, st->out_cap, &st->prefs);
+        if (LZ4F_isError(r)) { *err = map_lz4f_err(r, CU_ERR_COMPRESSION); return 0; }
+        st->out_tail = r;
+        st->header_written = 1;
+        if (out_drain(st, out, cap, written)) return 1;
+    }
+    while (st->in_tail > st->in_head) {
+        *err = cstream_feed_one_block(st);
+        if (*err != CU_OK) return 0;
+        if (out_drain(st, out, cap, written)) return 1;
+    }
+    return 0;
+}
+
 static cu_status_t lz4_cstream_finish(
     void* state, uint8_t* out, size_t* out_len
 ) {
@@ -426,32 +447,53 @@ static cu_status_t lz4_cstream_finish(
     st->finishing = 1;
     size_t cap = *out_len;
     size_t written = 0;
+    cu_status_t err;
 
-    if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
-
-    if (st->finished) { *out_len = written; return CU_OK; }
-
-    /* Header (for zero-input finish). */
-    if (!st->header_written) {
-        size_t r = LZ4F_compressBegin(st->cctx, st->out_buf, st->out_cap, &st->prefs);
-        if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
-        st->out_tail = r;
-        st->header_written = 1;
-        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
+    if (st->finished) {
+        int more = out_drain(st, out, cap, &written);
+        *out_len = written;
+        return more ? CU_ERR_BUF_TOO_SMALL : CU_OK;
     }
-
-    /* Drain pending input. */
-    while (st->in_tail > st->in_head) {
-        cu_status_t s = cstream_feed_one_block(st);
-        if (s != CU_OK) return s;
-        if (out_drain(st, out, cap, &written)) { *out_len = written; return CU_ERR_BUF_TOO_SMALL; }
+    if (cstream_emit_pending(st, out, cap, &written, &err)) {
+        *out_len = written;
+        return CU_ERR_BUF_TOO_SMALL;
     }
+    if (err != CU_OK) return err;
 
     /* End frame. */
     size_t r = LZ4F_compressEnd(st->cctx, st->out_buf, st->out_cap, NULL);
     if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
     st->out_tail = r;
     st->finished = 1;
+
+    int more = out_drain(st, out, cap, &written);
+    *out_len = written;
+    return more ? CU_ERR_BUF_TOO_SMALL : CU_OK;
+}
+
+/* Emits the partial block LZ4F buffers internally, so everything written so
+ * far can be decoded; the frame stays open. */
+static cu_status_t lz4_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    lz4_cstream_state_t* st = (lz4_cstream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("lz4: flush after finish started");
+        return CU_ERR_STREAM_STATE;
+    }
+    size_t cap = *out_len;
+    size_t written = 0;
+    cu_status_t err;
+
+    if (cstream_emit_pending(st, out, cap, &written, &err)) {
+        *out_len = written;
+        return CU_ERR_BUF_TOO_SMALL;
+    }
+    if (err != CU_OK) return err;
+
+    size_t r = LZ4F_flush(st->cctx, st->out_buf, st->out_cap, NULL);
+    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_COMPRESSION);
+    st->out_tail = r;
 
     int more = out_drain(st, out, cap, &written);
     *out_len = written;
@@ -616,6 +658,7 @@ const cu_algorithm_vtbl_t cu_lz4_vtbl = {
     .compress_stream_create    = lz4_cstream_create,
     .compress_stream_write     = lz4_cstream_write,
     .compress_stream_finish    = lz4_cstream_finish,
+    .compress_stream_flush     = lz4_cstream_flush,
     .compress_stream_destroy   = lz4_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

@@ -330,6 +330,19 @@ static cu_status_t dfl_cstream_finish(
     return dfl_cstream_pump(st, Z_FINISH, out, out_len);
 }
 
+/* Z_SYNC_FLUSH: byte-aligns the output and ends with an empty stored block,
+ * so everything written so far can be inflated; the stream stays open. */
+static cu_status_t dfl_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    dfl_stream_state_t* st = (dfl_stream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("zlib: flush after finish");
+        return CU_ERR_STREAM_STATE;
+    }
+    return dfl_cstream_pump(st, Z_SYNC_FLUSH, out, out_len);
+}
+
 static void dfl_stream_destroy(void* state);  /* fwd — shared by both dirs */
 
 /* ---- Streaming decompression ---- */

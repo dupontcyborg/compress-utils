@@ -269,7 +269,8 @@ CU_API void cu_set_max_decompressed_size(size_t bytes);
  *
  * Lifetime:
  *   1. cu_compress_stream_create()
- *   2. zero or more cu_compress_stream_write() calls
+ *   2. zero or more cu_compress_stream_write() calls, optionally with
+ *      cu_compress_stream_flush() between them
  *   3. cu_compress_stream_finish() (possibly multiple times if the caller's
  *      output buffer fills before all internal state is flushed — see below)
  *   4. cu_compress_stream_destroy()
@@ -316,6 +317,26 @@ CU_API cu_status_t cu_compress_stream_write(
  * output remains; caller drains with a fresh buffer.
  */
 CU_API cu_status_t cu_compress_stream_finish(
+    cu_compress_stream_t* stream,
+    uint8_t* out, size_t* out_len
+);
+
+/*
+ * Nonterminal flush: emit everything a decoder needs to recover all input
+ * written so far, without further input or finish, while keeping the frame
+ * open for more writes. Use it to deliver a message on a long-lived stream.
+ *
+ * Same drain protocol: CU_ERR_BUF_TOO_SMALL means call flush again with a
+ * fresh buffer, until CU_OK. Until then, writes return CU_ERR_STREAM_STATE;
+ * finish is allowed and includes the flush. A flush with nothing written
+ * since the last one emits nothing.
+ *
+ * Each flush costs a few bytes and some ratio (a block boundary), so flush
+ * per message, not per small write. Snappy (one raw block) and bzip2 (which
+ * byte-aligns only at end of stream) can't flush mid-stream and return
+ * CU_ERR_UNSUPPORTED_ALGO.
+ */
+CU_API cu_status_t cu_compress_stream_flush(
     cu_compress_stream_t* stream,
     uint8_t* out, size_t* out_len
 );
