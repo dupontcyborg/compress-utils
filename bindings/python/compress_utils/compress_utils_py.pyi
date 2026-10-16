@@ -33,19 +33,23 @@ class Algorithm:
     
       lzo
     """
-    __members__: typing.ClassVar[dict[str, Algorithm]]  # value = {'zstd': <Algorithm.zstd: 0>, 'brotli': <Algorithm.brotli: 1>, 'zlib': <Algorithm.zlib: 2>, 'bz2': <Algorithm.bz2: 3>, 'lz4': <Algorithm.lz4: 4>, 'xz': <Algorithm.xz: 5>, 'lzma': <Algorithm.lzma: 6>, 'snappy': <Algorithm.snappy: 7>, 'gzip': <Algorithm.gzip: 8>, 'deflate': <Algorithm.deflate: 9>, 'lz4_raw': <Algorithm.lz4_raw: 10>, 'lzo': <Algorithm.lzo: 11>}
-    brotli: typing.ClassVar[Algorithm]  # value = <Algorithm.brotli: 1>
-    bz2: typing.ClassVar[Algorithm]  # value = <Algorithm.bz2: 3>
-    deflate: typing.ClassVar[Algorithm]  # value = <Algorithm.deflate: 9>
-    gzip: typing.ClassVar[Algorithm]  # value = <Algorithm.gzip: 8>
-    lz4: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4: 4>
-    lz4_raw: typing.ClassVar[Algorithm]  # value = <Algorithm.lz4_raw: 10>
-    lzma: typing.ClassVar[Algorithm]  # value = <Algorithm.lzma: 6>
-    lzo: typing.ClassVar[Algorithm]  # value = <Algorithm.lzo: 11>
-    snappy: typing.ClassVar[Algorithm]  # value = <Algorithm.snappy: 7>
-    xz: typing.ClassVar[Algorithm]  # value = <Algorithm.xz: 5>
-    zlib: typing.ClassVar[Algorithm]  # value = <Algorithm.zlib: 2>
-    zstd: typing.ClassVar[Algorithm]  # value = <Algorithm.zstd: 0>
+    __members__: typing.ClassVar[dict[str, Algorithm]]
+    brotli: typing.ClassVar[Algorithm]
+    bz2: typing.ClassVar[Algorithm]
+    deflate: typing.ClassVar[Algorithm]
+    gzip: typing.ClassVar[Algorithm]
+    lz4: typing.ClassVar[Algorithm]
+    lz4_raw: typing.ClassVar[Algorithm]
+    lzma: typing.ClassVar[Algorithm]
+    lzo: typing.ClassVar[Algorithm]
+    snappy: typing.ClassVar[Algorithm]
+    xz: typing.ClassVar[Algorithm]
+    zlib: typing.ClassVar[Algorithm]
+    zstd: typing.ClassVar[Algorithm]
+    @typing.overload
+    def __eq__(self, other: Algorithm) -> bool:
+        ...
+    @typing.overload
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -54,15 +58,19 @@ class Algorithm:
         ...
     def __index__(self) -> int:
         ...
-    def __init__(self, value: int) -> None:
+    def __init__(self, value: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     def __int__(self) -> int:
         ...
+    @typing.overload
+    def __ne__(self, other: Algorithm) -> bool:
+        ...
+    @typing.overload
     def __ne__(self, other: typing.Any) -> bool:
         ...
     def __repr__(self) -> str:
         ...
-    def __setstate__(self, state: int) -> None:
+    def __setstate__(self, state: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     def __str__(self) -> str:
         ...
@@ -72,14 +80,12 @@ class Algorithm:
     @property
     def value(self) -> int:
         ...
-class CompressError(Exception):
-    pass
 class CompressStream:
     """
     Streaming compression. Feed chunks via .compress(b); flush with .finish().
     Safe to share between threads: calls on one stream run one at a time.
     """
-    def __init__(self, algorithm: typing.Any, level: int = 5) -> None:
+    def __init__(self, algorithm: typing.Any, level: typing.SupportsInt | typing.SupportsIndex = 5) -> None:
         ...
     def compress(self, data: typing_extensions.Buffer) -> bytes:
         ...
@@ -96,11 +102,13 @@ class DecompressStream:
         ...
     def finish(self) -> bytes:
         ...
-def compress(data: typing_extensions.Buffer, algorithm: typing.Any, level: int = 5) -> bytes:
+class CompressError(Exception):
+    pass
+def compress(data: typing_extensions.Buffer, algorithm: typing.Any, level: typing.SupportsInt | typing.SupportsIndex = 5) -> bytes:
     """
     Compress bytes/buffer using the given algorithm (string or Algorithm).
     """
-def decompress(data: typing_extensions.Buffer, algorithm: typing.Any, expected_size: int | None = None) -> bytes:
+def decompress(data: typing_extensions.Buffer, algorithm: typing.Any, expected_size: typing.SupportsInt | typing.SupportsIndex | None = None) -> bytes:
     """
     Decompress bytes/buffer using the given algorithm.
     
@@ -110,19 +118,19 @@ def decompress(data: typing_extensions.Buffer, algorithm: typing.Any, expected_s
     """
 def is_available(algorithm: typing.Any) -> bool:
     ...
-def set_max_decompressed_size(bytes: int) -> None:
+def set_max_decompressed_size(bytes: typing.SupportsInt | typing.SupportsIndex) -> None:
     ...
 def version() -> str:
     ...
-brotli: Algorithm  # value = <Algorithm.brotli: 1>
-bz2: Algorithm  # value = <Algorithm.bz2: 3>
-deflate: Algorithm  # value = <Algorithm.deflate: 9>
-gzip: Algorithm  # value = <Algorithm.gzip: 8>
-lz4: Algorithm  # value = <Algorithm.lz4: 4>
-lz4_raw: Algorithm  # value = <Algorithm.lz4_raw: 10>
-lzma: Algorithm  # value = <Algorithm.lzma: 6>
-lzo: Algorithm  # value = <Algorithm.lzo: 11>
-snappy: Algorithm  # value = <Algorithm.snappy: 7>
-xz: Algorithm  # value = <Algorithm.xz: 5>
-zlib: Algorithm  # value = <Algorithm.zlib: 2>
-zstd: Algorithm  # value = <Algorithm.zstd: 0>
+brotli: Algorithm
+bz2: Algorithm
+deflate: Algorithm
+gzip: Algorithm
+lz4: Algorithm
+lz4_raw: Algorithm
+lzma: Algorithm
+lzo: Algorithm
+snappy: Algorithm
+xz: Algorithm
+zlib: Algorithm
+zstd: Algorithm

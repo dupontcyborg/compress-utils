@@ -9,7 +9,9 @@ one-shot decompress and vice versa).
 
 import pathlib
 import random
+import subprocess
 import sys
+import sysconfig
 import threading
 import time
 import unittest
@@ -171,6 +173,17 @@ GIL_RANDOM = random.Random(1).randbytes(1024 * 1024)  # incompressible
 
 
 class TestThreading(unittest.TestCase):
+    @unittest.skipUnless(sysconfig.get_config_var("Py_GIL_DISABLED"), "not a free-threaded build")
+    def test_import_keeps_the_gil_disabled(self):
+        # On free-threaded Python, importing a module that doesn't declare
+        # free-threading support turns the GIL back on. Check in a fresh
+        # interpreter, since other tests may import libraries that do that.
+        result = subprocess.run(
+            [sys.executable, "-c", "import compress_utils, sys; print(sys._is_gil_enabled())"],
+            capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(result.stdout.strip(), "False", result.stderr)
+
     def test_large_calls_release_the_gil(self):
         # With a 10 s switch interval, a thread holding the GIL is never made
         # to give it up, so the helper can only count while a call has

@@ -54,12 +54,13 @@ foreach(ALGO IN LISTS CU_WASM_ALGOS)
     set(_PROJ wasm_${ALGO})
     set(_PREFIX ${CMAKE_BINARY_DIR}/wasm-${ALGO})
 
-    # No BUILD_ALWAYS: rely on ExternalProject's stamp files. The wasm
-    # subproject's POST_BUILD custom command re-runs whenever the target
-    # itself is rebuilt, which is what wires the staged .wasm to the
-    # underlying .c sources. To force a re-stage, delete the build dir.
+    # BUILD_ALWAYS: the parent can't see the C sources each child compiles, so
+    # its stamp files alone would never rebuild a .wasm after a source change.
+    # Running the child build every time lets the child's own dependency
+    # tracking decide; when nothing changed it's a quick no-op.
     ExternalProject_Add(${_PROJ}
         PREFIX           ${_PREFIX}
+        BUILD_ALWAYS     ON
         SOURCE_DIR       ${_CU_WASM_SRC}
         BINARY_DIR       ${_PREFIX}/build
         INSTALL_COMMAND  ""
