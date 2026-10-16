@@ -91,6 +91,37 @@ func (w *Writer) Write(p []byte) (int, error) {
 	}
 }
 
+// Flush writes everything a decoder needs to recover all data written so far
+// to the sink, keeping the frame open for more writes; use it to deliver a
+// message on a long-lived stream. Like compress/flate's Writer.Flush, it does
+// not flush the sink itself. Each flush costs a few bytes of output.
+//
+// Snappy and Bz2 can't flush mid-stream and return an *Error with code
+// ErrUnsupported.
+func (w *Writer) Flush() error {
+	if w.closed {
+		return errClosed
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	for {
+		outLen := C.size_t(len(w.scratch))
+		st := C.cu_compress_stream_flush(w.stream, bytePtr(w.scratch), &outLen)
+		if n := int(outLen); n > 0 {
+			if _, err := w.sink.Write(w.scratch[:n]); err != nil {
+				return err
+			}
+		}
+		if st == C.CU_OK {
+			return nil
+		}
+		if Status(st) != ErrBufTooSmall {
+			return statusErr(st)
+		}
+	}
+}
+
 // Close flushes any buffered data, finalizes the frame, and releases the
 // underlying C stream. It is safe to call more than once.
 func (w *Writer) Close() error {

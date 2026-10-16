@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 )
 
 // allAlgos is every algorithm the binding knows about. Tests skip any that
@@ -275,5 +276,72 @@ func TestLzo(t *testing.T) {
 	var ce *Error
 	if _, err := Compress(Lzo, []byte("hello"), DefaultLevel); !errors.As(err, &ce) || ce.Code != ErrUnsupported {
 		t.Fatalf("Compress: want ErrUnsupported, got %v", err)
+	}
+}
+
+// TestFlush sends messages over a pipe, flushing after each: the reader must
+// recover every message from the bytes flushed so far. If the decoder needed
+// more input, ReadFull would block, so a timeout fails the test instead.
+func TestFlush(t *testing.T) {
+	messages := [][]byte{bytes.Repeat([]byte{'A'}, 131072), payloads()["binary32k"], []byte("B")}
+	for _, a := range allAlgos {
+		if !Available(a) {
+			continue
+		}
+		t.Run(a.Name(), func(t *testing.T) {
+			pr, pw := io.Pipe()
+			w, err := NewWriter(pw, a, DefaultLevel)
+			if err != nil {
+				t.Fatalf("NewWriter: %v", err)
+			}
+			if a == Snappy || a == Bz2 {
+				go func() { io.Copy(io.Discard, pr) }()
+				w.Write([]byte("abc"))
+				var ce *Error
+				if err := w.Flush(); !errors.As(err, &ce) || ce.Code != ErrUnsupported {
+					t.Fatalf("Flush: got %v, want ErrUnsupported", err)
+				}
+				w.Close()
+				pw.Close()
+				return
+			}
+			r, err := NewReader(pr, a)
+			if err != nil {
+				t.Fatalf("NewReader: %v", err)
+			}
+			defer r.Close()
+			for i, m := range messages {
+				sent := make(chan error, 1)
+				go func() {
+					if _, err := w.Write(m); err != nil {
+						sent <- err
+						return
+					}
+					sent <- w.Flush()
+				}()
+				got := make([]byte, len(m))
+				read := make(chan error, 1)
+				go func() { _, err := io.ReadFull(r, got); read <- err }()
+				select {
+				case err := <-read:
+					if err != nil {
+						t.Fatalf("message %d: ReadFull: %v", i, err)
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatalf("message %d: reader blocked; the flushed bytes didn't decode it", i)
+				}
+				if err := <-sent; err != nil {
+					t.Fatalf("message %d: Write/Flush: %v", i, err)
+				}
+				if !bytes.Equal(got, m) {
+					t.Fatalf("message %d mismatch", i)
+				}
+			}
+			go func() { w.Close(); pw.Close() }()
+			rest, err := io.ReadAll(r)
+			if err != nil || len(rest) != 0 {
+				t.Fatalf("after Close: %d bytes, err %v", len(rest), err)
+			}
+		})
 	}
 }

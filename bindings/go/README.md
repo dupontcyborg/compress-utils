@@ -47,6 +47,8 @@ defer r.Close()
 io.Copy(dst, r)
 ```
 
+`Writer.Flush()` writes everything a decoder needs to recover the data written so far, without ending the frame. Use it to deliver each message on a long-lived connection: after `w.Write(request)` and `w.Flush()`, the peer's `Reader` can read all of `request` without waiting for more input. Like `compress/flate`'s `Flush`, it doesn't flush the sink itself. Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. Snappy and Bz2 can't flush mid-stream and return an `*Error` with code `ErrUnsupported`.
+
 ## Algorithms
 
 `Zstd`, `Brotli`, `Zlib`, `Gzip`, `Bz2`, `Lz4`, `Xz` (alias `Lzma`), `Snappy`,
