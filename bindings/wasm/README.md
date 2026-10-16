@@ -3,9 +3,10 @@
 [![npm version](https://img.shields.io/npm/v/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
 [![npm downloads](https://img.shields.io/npm/dm/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
 [![types: built-in](https://img.shields.io/badge/types-built--in-blue.svg)](https://www.npmjs.com/package/compress-utils)
+[![WASM build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_wasm.yml?label=wasm)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_wasm.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified WebAssembly bindings for eight compression algorithms: Brotli, bzip2, LZ4, XZ/LZMA, zlib, Zstandard, Snappy, and gzip. Same API for every algorithm, in every JavaScript runtime, with tree-shakeable imports so bundlers ship only what you use.
+Unified WebAssembly bindings for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm, in every JavaScript runtime, with tree-shakeable imports so bundlers ship only what you use.
 
 ## Installation
 
@@ -16,39 +17,38 @@ npm install compress-utils
 
 ### CDN (no bundler)
 
-The package is published as ESM. You can pull it straight from a CDN — no install step, no build step.
+The package is published as ESM. You can pull it straight from a CDN, with no install step and no build step.
 
 ```html
 <script type="module">
-    import { compress, decompress } from 
-      "https://esm.sh/compress-utils/zstd";
+  import { compress, decompress } from "https://esm.sh/compress-utils/zstd";
 
-    const out = await compress(
-      new TextEncoder().encode("hello")
-      );
+  const out = await compress(new TextEncoder().encode("hello"));
 </script>
 ```
 
-| CDN        | Per-algo URL                                                          |
-|------------|-----------------------------------------------------------------------|
-| esm.sh     | `https://esm.sh/compress-utils/<algo>`                                |
-| jsDelivr   | `https://cdn.jsdelivr.net/npm/compress-utils/dist/algorithms/<algo>/index.js` |
-| unpkg      | `https://unpkg.com/compress-utils/dist/algorithms/<algo>/index.js`    |
+| CDN      | Per-algo URL                                                                  |
+|----------|-------------------------------------------------------------------------------|
+| esm.sh   | `https://esm.sh/compress-utils/<algo>`                                        |
+| jsDelivr | `https://cdn.jsdelivr.net/npm/compress-utils/dist/algorithms/<algo>/index.js` |
+| unpkg    | `https://unpkg.com/compress-utils/dist/algorithms/<algo>/index.js`            |
 
 ## Quick start
 
-Each algorithm is its own subpath import. Pick the one you need; the rest stay out of your bundle.
+Each algorithm is its own subpath import. Pick the one you need, and the rest stay out of your bundle.
 
 ```ts
 import { compress, decompress } from "compress-utils/zstd";
 
-const input = new TextEncoder().encode("the quick brown fox " .repeat(50));
+const input = new TextEncoder().encode("the quick brown fox ".repeat(50));
 
 const compressed = await compress(input, { level: 9 });
 const restored   = await decompress(compressed);
 ```
 
-Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`, `/gzip`. Identical surface across all eight. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm` — see [Bundle size](#bundle-size).
+Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`, `/gzip`, plus the raw block formats `/deflate`, `/lz4_raw` and `/lzo/decompress`. The surface is identical across all of them. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm`; see [Bundle size](#bundle-size).
+
+## Streaming
 
 ### Web Streams
 
@@ -72,104 +72,70 @@ chunks.push(cs.finish());
 // cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
 ```
 
-### Flushing a long-lived stream
-
-`cs.flush()` returns the bytes a decoder needs to recover everything written so far, and keeps the stream open. Use it to deliver each message on a long-lived connection such as a WebSocket. With Web Streams, `compressionStream({ flushEachChunk: true })` flushes after every chunk, so each output chunk decodes on arrival:
-
-```ts
-socket.send(cs.write(request));
-socket.send(cs.flush());  // after both, the peer's ds.write() calls have returned all of `request`
-```
-
-Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. `finish()` still ends the stream. Snappy and bz2 can't flush mid-stream and throw `CompressError`.
-
-If `using` isn't available in your toolchain, call `cs.destroy()` explicitly — or rely on the GC backstop (a `FinalizationRegistry` frees the C-side handle eventually).
+If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
 
 ## Supported algorithms
 
-| Algorithm | Subpath                  | Wire format produced                       |
-|-----------|--------------------------|--------------------------------------------|
-| zlib      | `compress-utils/zlib`    | zlib wrapper (RFC 1950)                    |
-| bzip2     | `compress-utils/bz2`     | bzip2 stream                               |
-| XZ/LZMA   | `compress-utils/xz`      | XZ stream with CRC64                       |
-| LZ4       | `compress-utils/lz4`     | LZ4 frame (compatible with `.lz4` files)   |
-| Zstandard | `compress-utils/zstd`    | ZSTD frame with content size               |
-| Brotli    | `compress-utils/brotli`  | raw Brotli stream                          |
-| Snappy    | `compress-utils/snappy`  | Raw Snappy block                           |
-| gzip      | `compress-utils/gzip`    | gzip stream (RFC 1952)                     |
-| DEFLATE   | `compress-utils/deflate` | Raw DEFLATE (RFC 1951), no wrapper         |
-| LZ4 block | `compress-utils/lz4_raw` | Raw LZ4 block, no frame or size prefix (pass `{expectedSize}` when known: it's much faster) |
-| LZO       | `compress-utils/lzo/decompress` | Raw LZO1X block (decompress only; pass `{expectedSize}` when known to skip a sizing pass) |
+<!-- BEGIN:algorithms -->
+<!-- Generated by tools/check-readmes.py from docs/readme/manifest.json. Edit the manifest and run `tools/check-readmes.py --fix`, not this block. -->
 
-Imports are independent — `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files marked `"sideEffects": false` so unused exports are tree-shaken aggressively. For per-module `.wasm` sizes (and the smaller decode-only / encode-only builds), see **[Bundle size](#bundle-size)**.
+| Algorithm | Subpath                         | Wire format                                                                              |
+|-----------|---------------------------------|------------------------------------------------------------------------------------------|
+| Zstandard | `compress-utils/zstd`           | ZSTD frame with content size                                                             |
+| Brotli    | `compress-utils/brotli`         | Raw Brotli stream                                                                        |
+| zlib      | `compress-utils/zlib`           | zlib wrapper (RFC 1950)                                                                  |
+| gzip      | `compress-utils/gzip`           | gzip stream (RFC 1952)                                                                   |
+| bzip2     | `compress-utils/bz2`            | bzip2 stream                                                                             |
+| LZ4       | `compress-utils/lz4`            | LZ4 frame (interoperable with the `lz4` CLI and `.lz4` files)                            |
+| XZ / LZMA | `compress-utils/xz`             | XZ stream with CRC64                                                                     |
+| Snappy    | `compress-utils/snappy`         | Raw Snappy block (interoperable with reference snappy and python-snappy)                 |
+| DEFLATE   | `compress-utils/deflate`        | Raw DEFLATE (RFC 1951), no wrapper                                                       |
+| LZ4 block | `compress-utils/lz4_raw`        | Raw LZ4 block, no frame or size prefix (one-shot compression, incremental decompression) |
+| LZO1X     | `compress-utils/lzo/decompress` | Raw LZO1X block (decompression only)                                                     |
+<!-- END:algorithms -->
 
-## Bundle size
+Imports are independent: `import "compress-utils/zstd"` and `import "compress-utils/brotli"` pull in two separate `.wasm` modules, not a combined bundle. Files are marked `"sideEffects": false` so unused exports are tree-shaken aggressively. For per-module `.wasm` sizes, and the smaller decode-only and encode-only builds, see [Bundle size](#bundle-size).
 
-Importing `compress-utils/<algo>` gives you the **full** codec — compress *and* decompress. If you only need one direction (a browser that just *decompresses* fetched assets is the common case), import a directional subpath and the other half is dead-stripped from the `.wasm` entirely:
+### Raw blocks and output capacity
+
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass `expectedSize`, an upper bound on the output, and the result holds only the bytes actually decoded:
 
 ```ts
-// decoder only, 90 KB
-import { decompress } from "compress-utils/zstd/decompress"; 
+import { decompress } from "compress-utils/lz4_raw";
 
-// or, encoder only:
-import { compress }   from "compress-utils/zstd/compress";
+const page = await decompress(block, { expectedSize: uncompressedPageSize });
 ```
 
-- **`/decompress`** exposes `decompress`, `createDecompressStream`, `decompressionStream`, `setMaxDecompressedSize`, `version`.
-- **`/compress`** exposes `compress`, `createCompressStream`, `compressionStream`, `version`.
-- The default subpath keeps **both**
-
-Comparison of the gzipped sizes:
-
-| algo   | full          | decompress-only       | compress-only         |
-|--------|--------------:|----------------------:|----------------------:|
-| zstd   | 128K  | 36K    | 106K           |
-| brotli | 169K  | 84K    | 154K           |
-| lz4    | 39K   | 15K    | 35K             |
-| bz2    | 33K   | 22K    | 25K             |
-| xz     | 62K   | 43K    | 51K            |
-| zlib   | 33K   | 25K    | 26K             |
-| snappy | 36K   | 32K    | 28K             |
-| gzip   | 80K   | 52K    | 60K             |
-
-The `.wasm` is the bulk of what ships; the JS glue is a few KB, shared, and tree-shaken to the methods you import.
+Without `expectedSize`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is much slower, so pass it when you know the size. Every other algorithm accepts it too, which skips a sizing pass and decodes straight into a buffer of that size.
 
 ## Compression levels
 
-Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps that to each algorithm's native range internally — you don't need to know that Zstandard goes 1–22 or zlib goes 1–9. Defaults to `5`.
+Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps that to each algorithm's native range internally, so you don't need to know that Zstandard goes 1–22 and zlib goes 1–9. The default is `5`.
 
 ```ts
 await compress(input, { level: 1 });   // fastest
 await compress(input, { level: 10 });  // smallest
 ```
 
-## Runtime support
+## Errors and limits
 
-Tested in CI on every release:
-
-| Runtime              | Status |
-|----------------------|--------|
-| Node 20, 22, 24      | ✅     |
-| Bun                  | ✅     |
-| Deno 2.x             | ✅     |
-| Chromium / Firefox / WebKit (Playwright) | ✅ |
-
-## TypeScript
-
-The package is TypeScript-first. `.d.ts` files ship alongside the JS for every subpath; no `@types/` package needed.
+Every failure throws a `CompressError`, which carries the underlying C status code and the algorithm name:
 
 ```ts
-import { compress, type CompressOptions, type CompressError } from "compress-utils/zstd";
+import { compress, decompress, CompressError } from "compress-utils/zstd";
 
-const opts: CompressOptions = { level: 7 };
-const compressed: Uint8Array = await compress(input, opts);
+try {
+    await decompress(garbage);
+} catch (e) {
+    if (e instanceof CompressError) console.error(e.algorithm, e.code, e.message);
+}
 ```
+
+`await version()` returns the library version (for example `"0.9.0"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
 
 ## Preloading and synchronous calls
 
-Each algorithm and direction-specific subpath exports `preload()`. It loads and
-initializes that subpath's WASM module once; concurrent calls share initialization.
-A failed initialization can be retried. No codec work is performed by preload.
+Each algorithm and direction-specific subpath exports `preload()`. It loads and initializes that subpath's WASM module once, and concurrent calls share initialization. A failed initialization can be retried. No codec work is performed by preload.
 
 ```ts
 import { preload, compressSync, decompressSync } from "compress-utils/zlib";
@@ -178,13 +144,68 @@ const compressed = compressSync(new TextEncoder().encode("hello"));
 const restored = decompressSync(compressed);
 ```
 
-`compressSync`, `decompressSync`, `createCompressStreamSync`, and
-`createDecompressStreamSync` are available for the directions exposed by the
-subpath. They throw with a `preload()` instruction before initialization completes.
-Existing asynchronous APIs initialize automatically and also enable subsequent
-synchronous calls. Initializing one subpath does not initialize another: encoder
-and decoder subpaths use different WASM modules. Sync calls block the calling
-thread; use a worker for expensive operations.
+`compressSync`, `decompressSync`, `createCompressStreamSync`, and `createDecompressStreamSync` are available for the directions exposed by the subpath. They throw with a `preload()` instruction before initialization completes. Existing asynchronous APIs initialize automatically and also enable subsequent synchronous calls. Initializing one subpath does not initialize another, because encoder and decoder subpaths use different WASM modules.
+
+## Concurrency
+
+Each WASM module instance runs on the thread that loaded it, so nothing is shared between workers: every Worker initializes its own instance and keeps its own streams. Synchronous calls block the calling thread, so run expensive ones in a Worker. A stream handle holds state inside its module instance, so feed each stream from one logical flow rather than from interleaved callers.
+
+## Bundle size
+
+Importing `compress-utils/<algo>` gives you the **full** codec, compress *and* decompress. If you only need one direction (a browser that just *decompresses* fetched assets is the common case), import a directional subpath and the other half is dead-stripped from the `.wasm` entirely:
+
+```ts
+// decoder only, 36 KB gzipped for zstd
+import { decompress } from "compress-utils/zstd/decompress";
+
+// or, encoder only:
+import { compress } from "compress-utils/zstd/compress";
+```
+
+- **`/decompress`** exposes `decompress`, `createDecompressStream`, `decompressionStream`, `setMaxDecompressedSize` and `version`.
+- **`/compress`** exposes `compress`, `createCompressStream`, `compressionStream` and `version`.
+- The default subpath keeps **both**.
+
+Gzipped `.wasm` sizes:
+
+| algo   | full | decompress-only | compress-only |
+|--------|-----:|----------------:|--------------:|
+| zstd   | 128K | 36K             | 106K          |
+| brotli | 169K | 84K             | 154K          |
+| lz4    | 39K  | 15K             | 35K           |
+| bz2    | 33K  | 22K             | 25K           |
+| xz     | 62K  | 43K             | 51K           |
+| zlib   | 33K  | 25K             | 26K           |
+| snappy | 36K  | 32K             | 28K           |
+| gzip   | 80K  | 52K             | 60K           |
+
+The `.wasm` is the bulk of what ships. The JS glue is a few KB, shared, and tree-shaken to the methods you import.
+
+## Runtime support
+
+Tested in CI on every release:
+
+| Runtime                                  | Status |
+|------------------------------------------|--------|
+| Node 20, 22, 24                          | ✅     |
+| Bun                                      | ✅     |
+| Deno 2.x                                 | ✅     |
+| Chromium / Firefox / WebKit (Playwright) | ✅     |
+
+## TypeScript
+
+The package is TypeScript-first. `.d.ts` files ship alongside the JS for every subpath, so no `@types/` package is needed.
+
+```ts
+import { compress, type CompressOptions, type CompressError } from "compress-utils/zstd";
+
+const opts: CompressOptions = { level: 7 };
+const compressed: Uint8Array = await compress(input, opts);
+```
+
+## Performance
+
+Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
 ## License
 
@@ -192,4 +213,4 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 
 ---
 
-Built by [Nico Dupont](https://nico.codes).
+Part of [compress-utils](https://github.com/dupontcyborg/compress-utils). Built by [Nico Dupont](https://nico.codes).

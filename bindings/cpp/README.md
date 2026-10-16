@@ -1,19 +1,11 @@
-# compress-utils — C++ API
+# compress-utils (C++)
 
+[![C/C++ build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml?label=c%2Fc%2B%2B)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_c_cpp.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified C++ interface for eight compression algorithms — Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, and gzip — over a single high-performance C core. Same API for every algorithm.
+Unified C++ interface for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
 
-The binding is a **header-only** RAII wrapper (`bindings/cpp/include/compress_utils.hpp`) over the C ABI in [`include/compress_utils.h`](../../include/compress_utils.h). There is no separate C++ library to build — include the header and link the C library. It requires **C++20** (for `std::span`).
-
-## Table of contents
-
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Supported algorithms](#supported-algorithms)
-- [Streaming API](#streaming-api)
-- [Introspection & limits](#introspection--limits)
-- [Error handling](#error-handling)
+The binding is a **header-only** RAII wrapper (`bindings/cpp/include/compress_utils.hpp`) over the C ABI in [`include/compress_utils.h`](https://github.com/dupontcyborg/compress-utils/blob/main/include/compress_utils.h). There is no separate C++ library to build: include the header and link the C library. It requires **C++20** (for `std::span`).
 
 ## Installation
 
@@ -24,10 +16,7 @@ add_subdirectory(compress-utils)          # provides compress_utils + compress_u
 target_link_libraries(your_app PRIVATE compress_utils_cpp)
 ```
 
-`compress_utils_cpp` is an `INTERFACE` target: it adds the include path, links the
-`compress_utils` C library, and requires C++20. If you build outside CMake, add
-`bindings/cpp/include` and `include/` to your include path and link
-`-lcompress_utils`.
+`compress_utils_cpp` is an `INTERFACE` target: it adds the include path, links the `compress_utils` C library, and requires C++20. If you build outside CMake, add `bindings/cpp/include` and `include/` to your include path and link `-lcompress_utils`.
 
 ## Quick start
 
@@ -45,51 +34,16 @@ std::vector<std::uint8_t> compressed = cu::compress(cu::Algorithm::Zstd, data, 5
 std::vector<std::uint8_t> restored   = cu::decompress(cu::Algorithm::Zstd, compressed);
 ```
 
-`compress` / `decompress` take a `std::span<const std::uint8_t>`, so they bind to a
-`std::vector`, a C array, or a raw pointer + size without copying:
+`compress` and `decompress` take a `std::span<const std::uint8_t>`, so they bind to a `std::vector`, a C array, or a raw pointer plus size without copying:
 
 ```cpp
 std::span<const std::uint8_t> view(ptr, size);
 auto compressed = cu::compress(cu::Algorithm::Zstd, view);
 ```
 
-## Supported algorithms
+## Streaming
 
-`cu::Algorithm` selects the codec. All expose the same 1–10 level scale (mapped to
-each codec's native range; codecs with no levels ignore it).
-
-| Algorithm | Enum                    | Wire format produced                                   |
-|-----------|-------------------------|--------------------------------------------------------|
-| Zstandard | `cu::Algorithm::Zstd`   | ZSTD frame with content size                            |
-| Brotli    | `cu::Algorithm::Brotli` | Raw Brotli stream                                       |
-| zlib      | `cu::Algorithm::Zlib`   | zlib wrapper (RFC 1950)                                 |
-| bzip2     | `cu::Algorithm::Bz2`    | bzip2 stream                                            |
-| LZ4       | `cu::Algorithm::Lz4`    | LZ4 frame (compatible with the `lz4` CLI / `.lz4`)      |
-| XZ/LZMA   | `cu::Algorithm::Xz`     | XZ stream with CRC64 (`cu::Algorithm::Lzma` is an alias)|
-| Snappy    | `cu::Algorithm::Snappy` | Raw Snappy block (interoperable with reference snappy)  |
-| gzip      | `cu::Algorithm::Gzip`   | gzip stream (RFC 1952)                                  |
-| DEFLATE   | `cu::Algorithm::Deflate`| Raw DEFLATE (RFC 1951), no wrapper                      |
-| LZ4 block | `cu::Algorithm::Lz4Raw` | Raw LZ4 block, no frame or size prefix                  |
-| LZO1X     | `cu::Algorithm::Lzo`    | Raw LZO1X block (decompression only)                    |
-
-Use `cu::is_available(algo)` to check whether a codec was compiled into the build.
-
-### Raw blocks and output capacity
-
-Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass an output capacity, an upper bound on the output; the result holds only the bytes actually decoded:
-
-```cpp
-auto page = cu::decompress(cu::Algorithm::Lz4Raw, block, uncompressed_page_size);
-```
-
-Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
-
-## Streaming API
-
-For data that arrives incrementally or doesn't fit in memory, use the RAII stream
-classes. `write()` and `finish()` each return a `std::vector<std::uint8_t>` — the
-binding runs the C ABI's "fill buffer, drain" loop internally, so you never see
-`BUF_TOO_SMALL`.
+For data that arrives incrementally or doesn't fit in memory, use the RAII stream classes. `write()` and `finish()` each return a `std::vector<std::uint8_t>`: the binding runs the C ABI's "fill buffer, drain" loop internally, so you never see `BUF_TOO_SMALL`.
 
 ```cpp
 // Compression
@@ -110,42 +64,50 @@ body.insert(body.end(), rest.begin(), rest.end());
 ```
 
 Notes:
-- Always call `finish()` to flush trailing data; `DecompressStream::finish()` also
-  verifies the input ended on a frame boundary (throws `cu::Error` with
-  `CU_ERR_TRUNCATED` otherwise).
-- Streams are movable but not copyable; they free their C handle on destruction.
-- Snappy's raw block format isn't incrementally codable, so its streams buffer the
-  whole input and encode on `finish()` — output stays byte-identical to the
-  one-shot path, but memory scales with input size.
 
-### Flushing a long-lived stream
+- Always call `finish()` to flush trailing data. `DecompressStream::finish()` also verifies the input ended on a frame boundary, and throws `cu::Error` with `CU_ERR_TRUNCATED` otherwise.
+- Streams are movable but not copyable, and they free their C handle on destruction.
+- Snappy's raw block format isn't incrementally codable, so its streams buffer the whole input and encode on `finish()`. Output stays byte-identical to the one-shot path, but memory scales with input size.
 
-`flush()` returns the bytes a decoder needs to recover everything written so far, without ending the frame. Use it to deliver each message on a long-lived connection, such as a request/response protocol:
+## Supported algorithms
+
+<!-- BEGIN:algorithms -->
+<!-- Generated by tools/check-readmes.py from docs/readme/manifest.json. Edit the manifest and run `tools/check-readmes.py --fix`, not this block. -->
+
+| Algorithm | Enum                             | Wire format                                                                              |
+|-----------|----------------------------------|------------------------------------------------------------------------------------------|
+| Zstandard | `cu::Algorithm::Zstd`            | ZSTD frame with content size                                                             |
+| Brotli    | `cu::Algorithm::Brotli`          | Raw Brotli stream                                                                        |
+| zlib      | `cu::Algorithm::Zlib`            | zlib wrapper (RFC 1950)                                                                  |
+| gzip      | `cu::Algorithm::Gzip`            | gzip stream (RFC 1952)                                                                   |
+| bzip2     | `cu::Algorithm::Bz2`             | bzip2 stream                                                                             |
+| LZ4       | `cu::Algorithm::Lz4`             | LZ4 frame (interoperable with the `lz4` CLI and `.lz4` files)                            |
+| XZ / LZMA | `cu::Algorithm::Xz` (alias Lzma) | XZ stream with CRC64                                                                     |
+| Snappy    | `cu::Algorithm::Snappy`          | Raw Snappy block (interoperable with reference snappy and python-snappy)                 |
+| DEFLATE   | `cu::Algorithm::Deflate`         | Raw DEFLATE (RFC 1951), no wrapper                                                       |
+| LZ4 block | `cu::Algorithm::Lz4Raw`          | Raw LZ4 block, no frame or size prefix (one-shot compression, incremental decompression) |
+| LZO1X     | `cu::Algorithm::Lzo`             | Raw LZO1X block (decompression only)                                                     |
+<!-- END:algorithms -->
+
+`cu::Algorithm::Lzma` is an alias for `Xz`. Use `cu::is_available(algo)` to check whether a codec was compiled into the build, and `cu::algorithm_name(algo)` for its short name (for example `"zstd"`).
+
+### Raw blocks and output capacity
+
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass an output capacity, an upper bound on the output, and the result holds only the bytes actually decoded:
 
 ```cpp
-auto wire = cs.write(request);
-auto tail = cs.flush();
-wire.insert(wire.end(), tail.begin(), tail.end());
-send(wire);  // the peer's DecompressStream::write(wire) returns all of `request`
+auto page = cu::decompress(cu::Algorithm::Lz4Raw, block, uncompressed_page_size);
 ```
 
-Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. `finish()` still ends the stream. Snappy and Bz2 can't flush mid-stream: `flush()` throws `cu::Error` with `CU_ERR_UNSUPPORTED_ALGO`.
+Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
-## Introspection & limits
+## Compression levels
 
-```cpp
-std::string v   = cu::version();                    // e.g. "0.7.1"
-bool        ok  = cu::is_available(cu::Algorithm::Zstd);
-std::string nm  = cu::algorithm_name(cu::Algorithm::Zstd);   // "zstd"
+Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C core maps it to each codec's native range, so you don't need to know that Zstandard goes 1–22 and zlib goes 1–9. The default is 5. Codecs without levels (Snappy) ignore it.
 
-// Bound one-shot decompression output (default 1 GiB; 0 = unbounded).
-cu::set_max_decompressed_size(256 * 1024 * 1024);
-```
+## Errors and limits
 
-## Error handling
-
-Every failure throws `cu::Error` (derived from `std::runtime_error`). It carries the
-underlying C status code via `.code()`:
+Every failure throws `cu::Error` (derived from `std::runtime_error`). It carries the underlying C status code via `.code()`:
 
 ```cpp
 try {
@@ -154,3 +116,27 @@ try {
     std::fprintf(stderr, "decompress failed (%d): %s\n", e.code(), e.what());
 }
 ```
+
+```cpp
+std::string v  = cu::version();                    // e.g. "0.9.0"
+bool        ok = cu::is_available(cu::Algorithm::Zstd);
+
+// Bound one-shot decompression output (default 1 GiB; 0 = unbounded).
+cu::set_max_decompressed_size(256 * 1024 * 1024);
+```
+
+## Concurrency
+
+The one-shot `cu::compress` and `cu::decompress` functions, and `cu::set_max_decompressed_size`, are thread-safe. A `CompressStream` or `DecompressStream` is not thread-safe, so use one stream per thread. Error details are reported through thread-local state, so a `cu::Error` always describes the failing call on the thread that caught it.
+
+## Performance
+
+Matches native C: the binding is header-only and calls straight into the C core, so there is no binding overhead to measure. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
+
+## License
+
+MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
+
+---
+
+Part of [compress-utils](https://github.com/dupontcyborg/compress-utils). Built by [Nico Dupont](https://nico.codes).

@@ -1,0 +1,44 @@
+name: README alignment check
+
+# Keeps the root and per-binding READMEs aligned with each other and with the
+# source of truth: algorithm and language tables (docs/readme/manifest.json),
+# version (CMakeLists.txt DEFAULT_VERSION), codec count (codec-versions.json),
+# the cu_algorithm_t enum, section order (docs/readme-skeleton.md), links and
+# package metadata. Pure Python, no build needed, so it runs on its own and
+# stays fast. Fix locally with `python3 tools/check-readmes.py --fix`.
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "README.md"
+      - "bindings/*/README.md"
+      - "docs/readme/**"
+      - "docs/readme-skeleton.md"
+      - "include/compress_utils.h"
+      - "CMakeLists.txt"
+      - "codec-versions.json"
+      - "Cargo.toml"
+      - "bindings/python/pyproject.toml"
+      - "bindings/wasm/package.json"
+      - "tools/check-readmes.py"
+      - ".github/workflows/readme-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readme-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check READMEs
+        run: python3 tools/check-readmes.py
