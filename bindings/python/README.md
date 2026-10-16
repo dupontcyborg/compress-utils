@@ -116,7 +116,9 @@ For applications that round-trip many small payloads with the same algorithm, pr
 
 ### Threads
 
-Calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
+Wheels are also published for free-threaded Python 3.14 (`python3.14t`), where the module runs without the GIL and calls on different threads run in parallel whatever their size.
+
+On regular Python, calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
 
 A `CompressStream` or `DecompressStream` can be shared between threads: calls on one stream run one at a time. Don't resize a `bytearray` while it's being passed to a call; Python raises `BufferError` if you try.
 

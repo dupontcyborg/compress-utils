@@ -31,8 +31,9 @@ jobs:
     - name: Install Python Dependencies
       # zstandard/brotli/lz4/python-snappy are the canonical references for
       # the interop suite (test_interop_py); without them those algorithms
-      # self-skip.
-      run: pip install pybind11 pytest zstandard brotli lz4 python-snappy
+      # self-skip. pybind11 and pybind11-stubgen match the pins in
+      # bindings/python/pyproject.toml, so the build regenerates the same stub.
+      run: pip install pybind11==3.1.0 pybind11-stubgen==3.0.0 pytest zstandard brotli lz4 python-snappy
 
     - name: Install codec CLIs for interop cross-check (Linux)
       if: runner.os == 'Linux'
@@ -54,10 +55,17 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
+      shell: bash
 
     - name: Build All Languages
       run: cmake --build build --config Release -j 4
+
+    - name: Check the committed Python stub is up to date
+      # The build regenerates compress_utils_py.pyi in place; wheels ship the
+      # generated one. Commit the regenerated stub if this fails.
+      if: runner.os == 'Linux'
+      run: git diff --exit-code -- bindings/python/compress_utils/compress_utils_py.pyi
 
     - name: Install Bindings
       run: cmake --install build
@@ -66,3 +74,33 @@ jobs:
       run: |
         cd build
         ctest --output-on-failure -C Release
+
+  # Free-threaded Python (3.14t): the module declares it doesn't need the GIL,
+  # so the threading tests run without anything serializing calls. Only pytest
+  # is installed: most interop reference libraries have no free-threaded
+  # wheels, and brotli/lz4 re-enable the GIL when imported.
+  python_free_threaded:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up free-threaded Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.14t"
+
+    - name: Install Python Dependencies
+      run: pip install pybind11==3.1.0 pytest
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_CPP_BINDINGS=OFF
+        -DPython3_EXECUTABLE="$(which python)"
+        -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
+
+    - name: Build
+      run: cmake --build build --config Release -j 4
+
+    - name: Test the Python binding
+      run: ctest --test-dir build --output-on-failure -C Release -R "_py$"

@@ -1,8 +1,11 @@
 [build-system]
 requires = [
     "scikit-build-core>=0.8",
-    "pybind11>=2.11",
-    "pybind11-stubgen>=2.5",
+    # Exact pins: the wheel ships a .pyi generated at build time, and the PR
+    # workflow checks it matches the committed one, so the generator must not
+    # drift. Bump both deliberately and commit the regenerated stub.
+    "pybind11==3.1.0",
+    "pybind11-stubgen==3.0.0",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -25,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: C++",
     "Operating System :: OS Independent",
     "Topic :: System :: Archiving :: Compression",
@@ -88,8 +92,8 @@ local_scheme = "no-local-version"
 # Skip 32-bit builds and other unsupported platforms
 skip = "*-win32 *-musllinux* *_i686 *_ppc64le *_s390x *_armv7l"
 
-# Build for Python 3.10+
-build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+# Build for Python 3.10+, plus free-threaded 3.14 (cp314t)
+build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
 
 # Set parallel build environment variable
 environment = {CMAKE_BUILD_PARALLEL_LEVEL = "4"}
@@ -105,6 +109,14 @@ test-requires = "pytest zstandard brotli lz4 python-snappy"
 
 # Run tests
 test-command = "pytest {project}/bindings/python/tests -v"
+
+# Free-threaded wheels test without the interop reference libraries: most have
+# no cp314t wheels, and brotli/lz4 turn the GIL back on for the whole process
+# when imported, which would hide free-threading bugs. Their interop tests
+# skip when the library is missing.
+[[tool.cibuildwheel.overrides]]
+select = "cp314t-*"
+test-requires = "pytest"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64", "aarch64"]
