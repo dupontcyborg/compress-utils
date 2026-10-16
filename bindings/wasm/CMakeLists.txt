@@ -108,7 +108,7 @@ set(_CU_EXPORTS_COMMON
 set(_CU_EXPORTS_COMPRESS
     cu_compress_bound cu_compress
     cu_compress_stream_create cu_compress_stream_write
-    cu_compress_stream_finish cu_compress_stream_destroy)
+    cu_compress_stream_flush cu_compress_stream_finish cu_compress_stream_destroy)
 set(_CU_EXPORTS_DECOMPRESS
     cu_decompress cu_decompress_size_hint cu_set_max_decompressed_size
     cu_decompress_stream_create cu_decompress_stream_write

@@ -206,7 +206,11 @@ static cu_status_t cstream_pump(brotli_cstream_state_t* st, BrotliEncoderOperati
             *out_len = written;
             return CU_ERR_BUF_TOO_SMALL;
         }
-        if (avail_in == 0 && !BrotliEncoderHasMoreOutput(st->enc)) {
+        /* Process and flush are done once input is consumed and nothing is
+         * held. Finish isn't done until the encoder says so: a call that only
+         * completes an earlier flush leaves it unfinished. */
+        if (op != BROTLI_OPERATION_FINISH && avail_in == 0 &&
+            !BrotliEncoderHasMoreOutput(st->enc)) {
             st->pending_len = 0;
             *out_len = written;
             return CU_OK;
@@ -236,6 +240,21 @@ static cu_status_t brotli_cstream_finish(
     st->finishing = 1;
     if (st->finished) { *out_len = 0; return CU_OK; }
     return cstream_pump(st, BROTLI_OPERATION_FINISH, out, out_len);
+}
+
+/* BROTLI_OPERATION_FLUSH ends the current meta-block, so everything written
+ * so far can be decoded; the stream stays open. It is complete once all
+ * input is consumed and the encoder holds no output, which is when the pump
+ * returns CU_OK. */
+static cu_status_t brotli_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    brotli_cstream_state_t* st = (brotli_cstream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("brotli: flush after finish");
+        return CU_ERR_STREAM_STATE;
+    }
+    return cstream_pump(st, BROTLI_OPERATION_FLUSH, out, out_len);
 }
 
 static void brotli_cstream_destroy(void* state) {
@@ -313,10 +332,12 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
             return CU_OK;
         }
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
-            /* All pending consumed. */
+            /* All pending consumed. Brotli reports this even when the output
+             * filled with decoded data still held back; the drain call then
+             * collects it. */
             st->pending_len = 0;
             *out_len = written;
-            return CU_OK;
+            return BrotliDecoderHasMoreOutput(st->dec) ? CU_ERR_BUF_TOO_SMALL : CU_OK;
         }
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
             /* Buffer full; shift pending tail. */
@@ -383,6 +404,7 @@ const cu_algorithm_vtbl_t cu_brotli_vtbl = {
     .compress_stream_create    = brotli_cstream_create,
     .compress_stream_write     = brotli_cstream_write,
     .compress_stream_finish    = brotli_cstream_finish,
+    .compress_stream_flush     = brotli_cstream_flush,
     .compress_stream_destroy   = brotli_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

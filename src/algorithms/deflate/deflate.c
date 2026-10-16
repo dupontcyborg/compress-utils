@@ -29,6 +29,7 @@ const cu_algorithm_vtbl_t cu_deflate_vtbl = {
     .compress_stream_create    = raw_deflate_cstream_create,
     .compress_stream_write     = dfl_cstream_write,
     .compress_stream_finish    = dfl_cstream_finish,
+    .compress_stream_flush     = dfl_cstream_flush,
     .compress_stream_destroy   = dfl_stream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

@@ -71,6 +71,16 @@ export interface CompressOptions {
     level?: number;
 }
 
+export interface CompressionStreamOptions extends CompressOptions {
+    /**
+     * Flush after every chunk, so each output chunk is decodable on arrival
+     * while the stream stays open: for request/response or message streams
+     * such as a WebSocket. Costs a few bytes per chunk. Not supported by
+     * snappy and bz2, which can't flush mid-stream.
+     */
+    flushEachChunk?: boolean;
+}
+
 export interface DecompressOptions {
     /**
      * Decompressed size in bytes if known by the caller. Skips the

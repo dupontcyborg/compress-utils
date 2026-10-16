@@ -51,6 +51,14 @@ ds = DecompressStream("zstd")
 restored = ds.decompress(compressed) + ds.finish()
 ```
 
+`CompressStream.flush()` returns the bytes a decoder needs to recover everything compressed so far, and keeps the stream open. Use it to deliver each message on a long-lived connection:
+
+```python
+sock.sendall(cs.compress(request) + cs.flush())  # the peer's ds.decompress() returns all of `request`
+```
+
+Unlike the standard library's `zlib` `flush()`, it doesn't end the stream; `finish()` does. Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. Snappy and bz2 can't flush mid-stream and raise `CompressError`.
+
 ## Supported algorithms
 
 | Algorithm | Spelling                | Notes                                          |

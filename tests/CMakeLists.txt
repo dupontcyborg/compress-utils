@@ -35,6 +35,22 @@ if(ENABLE_TESTS)
     add_test(NAME test_concat_streams COMMAND test_concat_streams)
 endif()
 
+# Stream drain contract: nothing a codec could already emit is left inside it
+# once a drained write returns. Skips any codec that isn't compiled in.
+add_executable(test_stream_drain test_stream_drain.c)
+target_link_libraries(test_stream_drain PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_stream_drain COMMAND test_stream_drain)
+endif()
+
+# Nonterminal flush: every checkpoint decodes completely from the bytes so
+# far, on the same open stream. Skips any codec that isn't compiled in.
+add_executable(test_stream_flush test_stream_flush.c)
+target_link_libraries(test_stream_flush PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_stream_flush COMMAND test_stream_flush)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses the pure-C andikleen port. This is a C++ target on

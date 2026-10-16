@@ -3,8 +3,12 @@ package compressutils
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand"
+	"sync"
 	"testing"
+	"time"
 )
 
 // allAlgos is every algorithm the binding knows about. Tests skip any that
@@ -275,5 +279,147 @@ func TestLzo(t *testing.T) {
 	var ce *Error
 	if _, err := Compress(Lzo, []byte("hello"), DefaultLevel); !errors.As(err, &ce) || ce.Code != ErrUnsupported {
 		t.Fatalf("Compress: want ErrUnsupported, got %v", err)
+	}
+}
+
+// bufferedPipe is an in-memory connection. Writes never block, like a
+// socket's send buffer; reads block until data arrives or the pipe closes,
+// and return at most limit bytes each when limit > 0, like a fragmenting
+// transport.
+type bufferedPipe struct {
+	mu      sync.Mutex
+	cond    *sync.Cond
+	buf     bytes.Buffer
+	closed  bool
+	limit   int
+	written int
+}
+
+func newBufferedPipe(limit int) *bufferedPipe {
+	p := &bufferedPipe{limit: limit}
+	p.cond = sync.NewCond(&p.mu)
+	return p
+}
+
+func (p *bufferedPipe) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.buf.Write(b)
+	p.written += len(b)
+	p.cond.Broadcast()
+	return len(b), nil
+}
+
+func (p *bufferedPipe) Read(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for p.buf.Len() == 0 && !p.closed {
+		p.cond.Wait()
+	}
+	if p.buf.Len() == 0 {
+		return 0, io.EOF
+	}
+	if p.limit > 0 && len(b) > p.limit {
+		b = b[:p.limit]
+	}
+	return p.buf.Read(b)
+}
+
+func (p *bufferedPipe) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	p.cond.Broadcast()
+	return nil
+}
+
+func (p *bufferedPipe) Written() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.written
+}
+
+// TestFlush sends messages over a pipe, flushing after each: the reader must
+// recover every message from the bytes flushed so far, however the transport
+// fragments them. If the decoder needed more input, ReadFull would block, so a
+// timeout fails the test instead.
+func TestFlush(t *testing.T) {
+	random := make([]byte, 65537)
+	rand.New(rand.NewSource(7)).Read(random)
+	// The random message doesn't compress, so flushing it takes more than one
+	// 64 KiB output buffer: Flush's drain loop must run again.
+	messages := [][]byte{bytes.Repeat([]byte{'A'}, 131072), random, []byte("B")}
+	for _, a := range allAlgos {
+		if !Available(a) {
+			continue
+		}
+		if a == Snappy || a == Bz2 {
+			t.Run(a.Name(), func(t *testing.T) {
+				w, err := NewWriter(io.Discard, a, DefaultLevel)
+				if err != nil {
+					t.Fatalf("NewWriter: %v", err)
+				}
+				w.Write([]byte("abc"))
+				var ce *Error
+				if err := w.Flush(); !errors.As(err, &ce) || ce.Code != ErrUnsupported {
+					t.Fatalf("Flush: got %v, want ErrUnsupported", err)
+				}
+				w.Close()
+			})
+			continue
+		}
+		for _, limit := range []int{0, 1, 4093} {
+			t.Run(fmt.Sprintf("%s/read_limit_%d", a.Name(), limit), func(t *testing.T) {
+				pipe := newBufferedPipe(limit)
+				w, err := NewWriter(pipe, a, DefaultLevel)
+				if err != nil {
+					t.Fatalf("NewWriter: %v", err)
+				}
+				r, err := NewReader(pipe, a)
+				if err != nil {
+					t.Fatalf("NewReader: %v", err)
+				}
+				defer r.Close()
+				for i, m := range messages {
+					if _, err := w.Write(m); err != nil {
+						t.Fatalf("message %d: Write: %v", i, err)
+					}
+					before := pipe.Written()
+					if err := w.Flush(); err != nil {
+						t.Fatalf("message %d: Flush: %v", i, err)
+					}
+					if n := pipe.Written() - before; a == Zstd && len(m) == len(random) && n <= streamScratch {
+						t.Fatalf("zstd flush of random data wrote only %d bytes", n)
+					}
+					got := make([]byte, len(m))
+					read := make(chan error, 1)
+					go func() { _, err := io.ReadFull(r, got); read <- err }()
+					select {
+					case err := <-read:
+						if err != nil {
+							t.Fatalf("message %d: ReadFull: %v", i, err)
+						}
+					case <-time.After(10 * time.Second):
+						pipe.Close() // unblock the reader before r.Close runs
+						<-read
+						t.Fatalf("message %d: reader blocked; the flushed bytes didn't decode it", i)
+					}
+					if !bytes.Equal(got, m) {
+						t.Fatalf("message %d mismatch", i)
+					}
+				}
+				if err := w.Close(); err != nil {
+					t.Fatalf("Close: %v", err)
+				}
+				pipe.Close()
+				rest, err := io.ReadAll(r)
+				if err != nil || len(rest) != 0 {
+					t.Fatalf("after Close: %d bytes, err %v", len(rest), err)
+				}
+				if err := w.Flush(); err != errClosed {
+					t.Fatalf("Flush after Close: got %v, want errClosed", err)
+				}
+			})
+		}
 	}
 }

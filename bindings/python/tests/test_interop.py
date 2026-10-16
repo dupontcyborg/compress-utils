@@ -55,7 +55,10 @@ canonical decoder chosen here must match that format exactly:
              both sides need the decompressed size, so it has its own test
 """
 
+import itertools
+import random
 import unittest
+import zlib
 
 import compress_utils as cu
 
@@ -172,6 +175,178 @@ REFERENCES = {
 }
 
 
+# --- mid-stream flushing senders --------------------------------------------
+#
+# Each returns send(payload) -> the bytes a canonical encoder emits for that
+# payload followed by a nonterminal flush, all in one open stream, or None if
+# the reference isn't installed. bz2 and lzma have no nonterminal flush.
+
+def _zstd_flushing():
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    enc = zstd.ZstdCompressor(level=11).compressobj()
+    return lambda data: enc.compress(data) + enc.flush(zstd.COMPRESSOBJ_FLUSH_BLOCK)
+
+
+def _zstd_flushing_minimal_frame():
+    # The issue's real-world sender: level 3, 4 MiB window, no content size,
+    # no checksum.
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    params = zstd.ZstdCompressionParameters.from_level(
+        3, window_log=22, write_content_size=False, write_checksum=False)
+    enc = zstd.ZstdCompressor(compression_params=params).compressobj()
+    return lambda data: enc.compress(data) + enc.flush(zstd.COMPRESSOBJ_FLUSH_BLOCK)
+
+
+def _lz4_flushing():
+    try:
+        import lz4.frame as lz4f
+    except ImportError:
+        return None
+    # auto_flush emits each compress() call's blocks: LZ4F's mid-stream flush.
+    # (python-lz4's flush() ends the frame.)
+    enc = lz4f.LZ4FrameCompressor(block_linked=True, auto_flush=True)
+    header = [enc.begin()]
+    return lambda data: (header.pop() if header else b"") + enc.compress(data)
+
+
+def _brotli_flushing():
+    try:
+        import brotli
+    except ImportError:
+        return None
+    enc = brotli.Compressor()
+    return lambda data: enc.process(data) + enc.flush()
+
+
+def _zlib_flushing(wbits):
+    def make():
+        enc = zlib.compressobj(6, zlib.DEFLATED, wbits)
+        return lambda data: enc.compress(data) + enc.flush(zlib.Z_SYNC_FLUSH)
+    return make
+
+
+# Each returns receive(chunk) -> the bytes a canonical streaming decoder emits
+# for that chunk, or None if the reference isn't installed.
+
+def _zstd_receiver():
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    return zstd.ZstdDecompressor().decompressobj().decompress
+
+
+def _lz4_receiver():
+    try:
+        import lz4.frame as lz4f
+    except ImportError:
+        return None
+    # Plain decompress() keeps output LZ4F still holds once input runs out,
+    # even for python-lz4's own auto-flushed streams; max_length mode drains it.
+    dec = lz4f.LZ4FrameDecompressor()
+
+    def receive(data):
+        out = dec.decompress(data, max_length=1 << 20)
+        while not dec.needs_input:
+            more = dec.decompress(b"", max_length=1 << 20)
+            if not more:
+                break
+            out += more
+        return out
+    return receive
+
+
+def _brotli_receiver():
+    try:
+        import brotli
+    except ImportError:
+        return None
+    # process() hands out decoded output in portions; empty calls get the rest.
+    dec = brotli.Decompressor()
+
+    def receive(data):
+        out = dec.process(data)
+        while True:
+            more = dec.process(b"")
+            if not more:
+                return out
+            out += more
+    return receive
+
+
+def _xz_receiver():
+    import lzma
+    return lzma.LZMADecompressor().decompress
+
+
+def _zlib_receiver(wbits):
+    return lambda: zlib.decompressobj(wbits).decompress
+
+
+FLUSHING_RECEIVERS = {
+    "zstd": _zstd_receiver,
+    "lz4": _lz4_receiver,
+    "brotli": _brotli_receiver,
+    "xz": _xz_receiver,
+    "zlib": _zlib_receiver(15),
+    "gzip": _zlib_receiver(31),
+    "deflate": _zlib_receiver(-15),
+}
+
+
+# (label, algorithm, sender factory)
+FLUSHING_SENDERS = [
+    ("zstd", "zstd", _zstd_flushing),
+    ("zstd, level 3, no size or checksum", "zstd", _zstd_flushing_minimal_frame),
+    ("lz4", "lz4", _lz4_flushing),
+    ("brotli", "brotli", _brotli_flushing),
+    ("zlib", "zlib", _zlib_flushing(15)),
+    ("gzip", "gzip", _zlib_flushing(31)),
+    ("deflate", "deflate", _zlib_flushing(-15)),
+]
+
+
+def _flush_sequences():
+    """The issue's message patterns, each a list of messages flushed in turn."""
+    rng = random.Random(54)
+    record = rng.randbytes(422)
+    return {
+        "issue repro": [b"A" * 131072, b"B" * 37],
+        "64K/128K mix": [b"A" * 65535, rng.randbytes(65536), b"A" * 65537,
+                         rng.randbytes(131071), b"A" * 131072, rng.randbytes(131073), b"x"],
+        "record, 65537, 37": [record, b"A" * 65537, b"B" * 37],
+        "record + 100 small": [record] + [b"msg %05d " % i + rng.randbytes(88) for i in range(100)],
+    }
+
+
+# The issue's transport profiles: compressed bytes per receiver call, cycled
+# across the whole stream. None = each flushed batch in one call.
+TRANSPORTS = {
+    "whole": lambda: None,
+    "4096": lambda: itertools.repeat(4096),
+    "1,3,7,97,4093": lambda: itertools.cycle([1, 3, 7, 97, 4093]),
+    "1": lambda: itertools.repeat(1),
+}
+
+
+def _deliver(wire, transport, receive):
+    """Hands `wire` to `receive` sliced by the transport; returns the output."""
+    if transport is None:
+        return receive(wire)
+    out, pos = b"", 0
+    while pos < len(wire):
+        step = next(transport)
+        out += receive(wire[pos:pos + step])
+        pos += step
+    return out
+
+
 class TestCanonicalInterop(unittest.TestCase):
     """ours <-> canonical reference, both directions, every algorithm."""
 
@@ -211,6 +386,54 @@ class TestCanonicalInterop(unittest.TestCase):
                         f"({case}, {len(data)} bytes -> {len(blob)} compressed)",
                     )
 
+
+    def test_inbound_flush_checkpoints(self):
+        """A canonical encoder's mid-stream flushes decode completely at every
+        checkpoint, with no further input and no finish(), under every
+        transport profile (issue #54). Empty calls afterwards return nothing."""
+        for label, algo, make in FLUSHING_SENDERS:
+            for seq_name, messages in _flush_sequences().items():
+                for transport_name, transport in TRANSPORTS.items():
+                    with self.subTest(sender=label, sequence=seq_name, transport=transport_name):
+                        if not cu.is_available(algo):
+                            self.skipTest(f"{algo} not compiled into this build")
+                        send = make()
+                        if send is None:
+                            self.skipTest(f"canonical reference library for {algo} not installed")
+                        receiver = cu.DecompressStream(algo)
+                        slices = transport()
+                        got = want = b""
+                        for i, data in enumerate(messages):
+                            got += _deliver(send(data), slices, receiver.decompress)
+                            want += data
+                            self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                            self.assertEqual(got, want, f"checkpoint {i}")
+                            for _ in range(3):
+                                self.assertEqual(receiver.decompress(b""), b"")
+
+    def test_outbound_flush_checkpoints(self):
+        """After our flush(), a canonical streaming decoder recovers everything
+        written so far, with the stream still open, under every transport
+        profile (issue #54)."""
+        for algo, make in FLUSHING_RECEIVERS.items():
+            for seq_name, messages in _flush_sequences().items():
+                for transport_name, transport in TRANSPORTS.items():
+                    with self.subTest(algorithm=algo, sequence=seq_name, transport=transport_name):
+                        if not cu.is_available(algo):
+                            self.skipTest(f"{algo} not compiled into this build")
+                        receive = make()
+                        if receive is None:
+                            self.skipTest(f"canonical reference library for {algo} not installed")
+                        sender = cu.CompressStream(algo)
+                        slices = transport()
+                        got = want = b""
+                        for i, data in enumerate(messages):
+                            got += _deliver(sender.compress(data) + sender.flush(), slices, receive)
+                            want += data
+                            self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                            self.assertEqual(got, want, f"checkpoint {i}")
+                        got += _deliver(sender.finish(), slices, receive)
+                        self.assertEqual(got, want)
 
     def test_lz4_raw(self):
         """Raw LZ4 blocks interoperate with lz4.block in both directions."""

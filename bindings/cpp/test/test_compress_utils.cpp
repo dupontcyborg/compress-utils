@@ -36,6 +36,16 @@ static std::vector<std::uint8_t> sample(std::size_t n) {
     return v;
 }
 
+/* Deterministic incompressible bytes. */
+static std::vector<std::uint8_t> pseudo_random(std::size_t n, std::uint32_t seed) {
+    std::vector<std::uint8_t> v(n);
+    for (auto& b : v) {
+        seed = seed * 1103515245u + 12345u;
+        b = static_cast<std::uint8_t>(seed >> 16);
+    }
+    return v;
+}
+
 static int test_freefn_roundtrip() {
     auto in = sample(32 * 1024);
     for (auto a : ALL) {
@@ -108,6 +118,49 @@ static int test_capacity() {
     return 0;
 }
 
+static int test_flush() {
+    // Each flush delivers everything written so far, on one open stream.
+    for (auto a : ALL) {
+        if (!cu::is_available(a)) continue;
+        cu::CompressStream cs(a, 5);
+        if (a == cu::Algorithm::Snappy || a == cu::Algorithm::Bz2) {
+            (void)cs.write(std::span<const std::uint8_t>(sample(16)));
+            try {
+                (void)cs.flush();
+                CHECK(false, "%s flush must throw", cu::algorithm_name(a).c_str());
+            } catch (const cu::Error& e) {
+                CHECK(e.code() == CU_ERR_UNSUPPORTED_ALGO, "%s flush: code %d",
+                      cu::algorithm_name(a).c_str(), static_cast<int>(e.code()));
+            }
+            continue;
+        }
+        cu::DecompressStream ds(a);
+        std::vector<std::uint8_t> sent, received;
+        // The random message doesn't compress, so flushing it takes more than
+        // one 64 KiB output buffer: the binding's drain loop must run again.
+        for (auto message : {sample(131072), pseudo_random(65537, 7), sample(37)}) {
+            auto wire = cs.write(std::span<const std::uint8_t>(message));
+            auto tail = cs.flush();
+            if (a == cu::Algorithm::Zstd && message.size() == 65537) {
+                CHECK(tail.size() > 64 * 1024, "zstd flush of random data: only %zu bytes",
+                      tail.size());
+            }
+            wire.insert(wire.end(), tail.begin(), tail.end());
+            auto got = ds.write(std::span<const std::uint8_t>(wire));
+            sent.insert(sent.end(), message.begin(), message.end());
+            received.insert(received.end(), got.begin(), got.end());
+            CHECK(received == sent, "%s: %zu of %zu bytes after flush",
+                  cu::algorithm_name(a).c_str(), received.size(), sent.size());
+        }
+        auto end = cs.finish();
+        auto rest = ds.write(std::span<const std::uint8_t>(end));
+        auto last = ds.finish();
+        CHECK(rest.empty() && last.empty(), "%s: output after finish",
+              cu::algorithm_name(a).c_str());
+    }
+    return 0;
+}
+
 static int test_raw_formats() {
     if (cu::is_available(cu::Algorithm::Lz4Raw)) {
         auto in = sample(32 * 1024);
@@ -149,6 +202,7 @@ int main() {
     if (test_stream_roundtrip())  return 1;
     if (test_error_translation()) return 1;
     if (test_capacity())          return 1;
+    if (test_flush())             return 1;
     if (test_raw_formats())       return 1;
     std::printf("OK\n");
     return 0;

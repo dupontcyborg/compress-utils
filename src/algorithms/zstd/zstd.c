@@ -236,9 +236,10 @@ static cu_status_t zstd_decompress_size_hint(
 
 typedef struct {
     ZSTD_CStream* cs;
-    /* Pending unconsumed bytes from the previous write call. Heap-allocated;
-     * may be NULL when empty. */
+    /* Unconsumed bytes from a previous write call; live bytes are
+     * [pending_off, pending_len). Heap-allocated; may be NULL when empty. */
     uint8_t* pending;
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
     int      finishing;  /* set once cu_compress_stream_finish() begins draining */
@@ -268,11 +269,17 @@ static cu_status_t zstd_cstream_create(int level, void** out_state) {
 }
 
 /*
- * Append `n` bytes of `src` to the pending buffer, growing as needed.
+ * Append `n` bytes of `src` to the live pending bytes, first moving them to
+ * the front, and growing as needed.
  */
 static cu_status_t pending_append(zstd_cstream_state_t* st, const uint8_t* src, size_t n) {
     /* Avoid the trivial case (no-op append shouldn't trigger realloc). */
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -290,6 +297,43 @@ static cu_status_t pending_append(zstd_cstream_state_t* st, const uint8_t* src, 
     return CU_OK;
 }
 
+/* Feed `ib` to the encoder until it's consumed or `ob` fills. A full `ob`
+ * returns BUF_TOO_SMALL even when all input was consumed, since zstd may still
+ * hold compressed output; the drain call then runs the encoder again. */
+static cu_status_t cstream_pump(zstd_cstream_state_t* st, ZSTD_inBuffer* ib, ZSTD_outBuffer* ob) {
+    for (;;) {
+        size_t r = ZSTD_compressStream2(st->cs, ob, ib, ZSTD_e_continue);
+        if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
+        if (ob->pos == ob->size) return CU_ERR_BUF_TOO_SMALL;
+        if (ib->pos == ib->size) return CU_OK;
+    }
+}
+
+/* Encodes retained input first, then `in`; keeps whatever is left unconsumed
+ * when the output fills. */
+static cu_status_t cstream_feed(zstd_cstream_state_t* st, const uint8_t* in, size_t in_len,
+                                ZSTD_outBuffer* ob) {
+    cu_status_t s;
+    if (st->pending_off < st->pending_len) {
+        ZSTD_inBuffer ib = { st->pending + st->pending_off, st->pending_len - st->pending_off, 0 };
+        s = cstream_pump(st, &ib, ob);
+        st->pending_off += ib.pos;
+        if (s == CU_ERR_BUF_TOO_SMALL) {
+            cu_status_t a = pending_append(st, in, in_len);
+            return a != CU_OK ? a : s;
+        }
+        if (s != CU_OK) return s;
+        st->pending_off = st->pending_len = 0;
+    }
+    ZSTD_inBuffer ib = { in, in_len, 0 };
+    s = cstream_pump(st, &ib, ob);
+    if (s == CU_ERR_BUF_TOO_SMALL) {
+        cu_status_t a = pending_append(st, in + ib.pos, in_len - ib.pos);
+        if (a != CU_OK) return a;
+    }
+    return s;
+}
+
 static cu_status_t zstd_cstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -299,77 +343,30 @@ static cu_status_t zstd_cstream_write(
         cu_set_last_error("zstd: write after finish started");
         return CU_ERR_STREAM_STATE;
     }
-    size_t cap = *out_len;
-    ZSTD_outBuffer ob = { out, cap, 0 };
-
-    /* Drain any previously-buffered tail first. */
-    if (st->pending_len > 0) {
-        ZSTD_inBuffer ib = { st->pending, st->pending_len, 0 };
-        while (ib.pos < ib.size) {
-            size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, ZSTD_e_continue);
-            if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
-            if (ob.pos == ob.size && ib.pos < ib.size) {
-                /* Output filled; shift remaining tail to front and surface. */
-                size_t consumed = ib.pos;
-                memmove(st->pending, st->pending + consumed, ib.size - consumed);
-                st->pending_len = ib.size - consumed;
-                /* Also stash all of new input since we never started it. */
-                cu_status_t s = pending_append(st, in, in_len);
-                if (s != CU_OK) return s;
-                *out_len = ob.pos;
-                return CU_ERR_BUF_TOO_SMALL;
-            }
-        }
-        st->pending_len = 0;
-    }
-
-    /* Feed new input. */
-    ZSTD_inBuffer ib = { in, in_len, 0 };
-    while (ib.pos < ib.size) {
-        size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, ZSTD_e_continue);
-        if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
-        if (ob.pos == ob.size && ib.pos < ib.size) {
-            /* Output filled; stash unconsumed tail. */
-            cu_status_t s = pending_append(st, in + ib.pos, in_len - ib.pos);
-            if (s != CU_OK) return s;
-            *out_len = ob.pos;
-            return CU_ERR_BUF_TOO_SMALL;
-        }
-    }
-
+    ZSTD_outBuffer ob = { out, *out_len, 0 };
+    cu_status_t s = cstream_feed(st, in, in_len, &ob);
     *out_len = ob.pos;
-    return CU_OK;
+    return s;
 }
 
-static cu_status_t zstd_cstream_finish(
-    void* state, uint8_t* out, size_t* out_len
-) {
-    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
-    st->finishing = 1;
-    size_t cap = *out_len;
-    ZSTD_outBuffer ob = { out, cap, 0 };
+/* Feeds retained input, then runs `directive` (ZSTD_e_flush or ZSTD_e_end)
+ * until zstd reports nothing left to write. */
+static cu_status_t cstream_drain(zstd_cstream_state_t* st, ZSTD_EndDirective directive,
+                                 uint8_t* out, size_t* out_len) {
+    ZSTD_outBuffer ob = { out, *out_len, 0 };
 
-    /* Drain any pending tail first. */
-    if (st->pending_len > 0) {
-        ZSTD_inBuffer ib = { st->pending, st->pending_len, 0 };
-        while (ib.pos < ib.size) {
-            size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, ZSTD_e_continue);
-            if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
-            if (ob.pos == ob.size && ib.pos < ib.size) {
-                size_t consumed = ib.pos;
-                memmove(st->pending, st->pending + consumed, ib.size - consumed);
-                st->pending_len = ib.size - consumed;
-                *out_len = ob.pos;
-                return CU_ERR_BUF_TOO_SMALL;
-            }
+    /* Feed any retained input first; the directive below flushes the rest. */
+    if (st->pending_off < st->pending_len) {
+        cu_status_t s = cstream_feed(st, NULL, 0, &ob);
+        if (s != CU_OK) {
+            *out_len = ob.pos;
+            return s;
         }
-        st->pending_len = 0;
     }
 
-    /* End the frame, looping until ZSTD reports nothing remaining. */
     ZSTD_inBuffer ib = { NULL, 0, 0 };
     for (;;) {
-        size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, ZSTD_e_end);
+        size_t r = ZSTD_compressStream2(st->cs, &ob, &ib, directive);
         if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_COMPRESSION);
         if (r == 0) {
             *out_len = ob.pos;
@@ -382,6 +379,27 @@ static cu_status_t zstd_cstream_finish(
         }
         /* r > 0 with room remaining: loop and write more. */
     }
+}
+
+static cu_status_t zstd_cstream_finish(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
+    st->finishing = 1;
+    return cstream_drain(st, ZSTD_e_end, out, out_len);
+}
+
+/* Ends the current block, so everything written so far can be decoded; the
+ * frame stays open. */
+static cu_status_t zstd_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    zstd_cstream_state_t* st = (zstd_cstream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("zstd: flush after finish started");
+        return CU_ERR_STREAM_STATE;
+    }
+    return cstream_drain(st, ZSTD_e_flush, out, out_len);
 }
 
 static void zstd_cstream_destroy(void* state) {
@@ -545,6 +563,7 @@ const cu_algorithm_vtbl_t cu_zstd_vtbl = {
     .compress_stream_create   = zstd_cstream_create,
     .compress_stream_write    = zstd_cstream_write,
     .compress_stream_finish   = zstd_cstream_finish,
+    .compress_stream_flush    = zstd_cstream_flush,
     .compress_stream_destroy  = zstd_cstream_destroy,
 #endif
 #ifndef CU_OMIT_DECOMPRESS

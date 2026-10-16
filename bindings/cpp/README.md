@@ -118,6 +118,19 @@ Notes:
   whole input and encode on `finish()` — output stays byte-identical to the
   one-shot path, but memory scales with input size.
 
+### Flushing a long-lived stream
+
+`flush()` returns the bytes a decoder needs to recover everything written so far, without ending the frame. Use it to deliver each message on a long-lived connection, such as a request/response protocol:
+
+```cpp
+auto wire = cs.write(request);
+auto tail = cs.flush();
+wire.insert(wire.end(), tail.begin(), tail.end());
+send(wire);  // the peer's DecompressStream::write(wire) returns all of `request`
+```
+
+Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. `finish()` still ends the stream. Snappy and Bz2 can't flush mid-stream: `flush()` throws `cu::Error` with `CU_ERR_UNSUPPORTED_ALGO`.
+
 ## Introspection & limits
 
 ```cpp

@@ -243,8 +243,9 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
     size_t written = 0;
     int z_ret = Z_OK;
 
-    /* Drain pending tail first. */
-    if (st->pending_len > 0) {
+    /* Deflate pending input first. Without a flush this also runs with no
+     * input, so a drain call collects output deflate still holds. */
+    if (st->pending_len > 0 || flush_flag == Z_NO_FLUSH) {
         st->strm.next_in  = st->pending;
         st->strm.avail_in = (uInt)st->pending_len;
         st->strm.next_out  = out + written;
@@ -257,9 +258,11 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
             return dfl_map_error(z_ret, CU_ERR_COMPRESSION);
         }
         size_t consumed = st->pending_len - st->strm.avail_in;
-        if (st->strm.avail_in > 0) {
-            /* Output filled with pending data unconsumed. */
-            memmove(st->pending, st->pending + consumed, st->strm.avail_in);
+        if (st->strm.avail_in > 0 || st->strm.avail_out == 0) {
+            /* Output filled: input may remain, and deflate may hold output. */
+            if (st->strm.avail_in > 0) {
+                memmove(st->pending, st->pending + consumed, st->strm.avail_in);
+            }
             st->pending_len = st->strm.avail_in;
             *out_len = written;
             return CU_ERR_BUF_TOO_SMALL;
@@ -325,6 +328,19 @@ static cu_status_t dfl_cstream_finish(
         return CU_OK;
     }
     return dfl_cstream_pump(st, Z_FINISH, out, out_len);
+}
+
+/* Z_SYNC_FLUSH: byte-aligns the output and ends with an empty stored block,
+ * so everything written so far can be inflated; the stream stays open. */
+static cu_status_t dfl_cstream_flush(
+    void* state, uint8_t* out, size_t* out_len
+) {
+    dfl_stream_state_t* st = (dfl_stream_state_t*)state;
+    if (st->finishing) {
+        cu_set_last_error("zlib: flush after finish");
+        return CU_ERR_STREAM_STATE;
+    }
+    return dfl_cstream_pump(st, Z_SYNC_FLUSH, out, out_len);
 }
 
 static void dfl_stream_destroy(void* state);  /* fwd — shared by both dirs */

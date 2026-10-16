@@ -3,7 +3,10 @@
 //! These prove the binding wires the C ABI correctly; interop.rs proves the
 //! wire formats match independent implementations.
 
-use std::io::{Read, Write};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::io::{self, Read, Write};
+use std::rc::Rc;
 
 use compress_utils::{
     compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor, Status,
@@ -255,4 +258,108 @@ fn lzo_decodes_only() {
     );
     let err = compress(Algorithm::Lzo, b"hello", 5).unwrap_err();
     assert_eq!(err.code, Status::UnsupportedAlgo, "{err}");
+}
+
+/// One end of an in-memory pipe that behaves like a non-blocking socket: the
+/// reader gets the bytes written so far, at most `limit` per read when it's
+/// nonzero (like a fragmenting transport), `WouldBlock` when there are none
+/// yet, and end of stream once the writer is closed.
+#[derive(Clone, Default)]
+struct Pipe {
+    state: Rc<RefCell<(VecDeque<u8>, bool)>>,
+    limit: usize,
+}
+
+impl Pipe {
+    fn with_limit(limit: usize) -> Self {
+        Pipe {
+            limit,
+            ..Pipe::default()
+        }
+    }
+    fn pending(&self) -> usize {
+        self.state.borrow().0.len()
+    }
+    fn close(&self) {
+        self.state.borrow_mut().1 = true;
+    }
+}
+
+impl Write for Pipe {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.state.borrow_mut().0.extend(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for Pipe {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut state = self.state.borrow_mut();
+        if state.0.is_empty() {
+            return if state.1 {
+                Ok(0)
+            } else {
+                Err(io::ErrorKind::WouldBlock.into())
+            };
+        }
+        let mut n = buf.len().min(state.0.len());
+        if self.limit > 0 {
+            n = n.min(self.limit);
+        }
+        for (dst, src) in buf.iter_mut().zip(state.0.drain(..n)) {
+            *dst = src;
+        }
+        Ok(n)
+    }
+}
+
+#[test]
+fn flush_delivers_each_message() {
+    // The random message doesn't compress, so flushing it takes more than one
+    // 64 KiB output buffer: flush()'s drain loop must run again.
+    let messages = [
+        vec![b'A'; 131_072],
+        pseudo_random(65_537, 3),
+        b"B".repeat(37),
+    ];
+    for algo in available(ALGOS) {
+        if matches!(algo, Algorithm::Snappy | Algorithm::Bz2) {
+            let mut tx = Compressor::new(Pipe::default(), algo, 5).unwrap();
+            tx.write_all(b"abc").unwrap();
+            let err = tx.flush().expect_err("flush must fail");
+            assert_eq!(err.kind(), io::ErrorKind::Unsupported, "{algo:?}");
+            continue;
+        }
+        for limit in [0, 1, 4093] {
+            let pipe = Pipe::with_limit(limit);
+            let mut tx = Compressor::new(pipe.clone(), algo, 5).unwrap();
+            let mut rx = Decompressor::new(pipe.clone(), algo).unwrap();
+            for (i, message) in messages.iter().enumerate() {
+                tx.write_all(message).unwrap();
+                let before = pipe.pending();
+                tx.flush().unwrap();
+                if algo == Algorithm::Zstd && message.len() == 65_537 {
+                    let flushed = pipe.pending() - before;
+                    assert!(flushed > 64 * 1024, "zstd flush wrote only {flushed} bytes");
+                }
+                // Only the flushed bytes are available: reading would block if
+                // the decoder needed anything more to produce this message.
+                let mut got = vec![0u8; message.len()];
+                rx.read_exact(&mut got)
+                    .unwrap_or_else(|e| panic!("{algo:?} read limit {limit}, message {i}: {e}"));
+                assert_eq!(&got, message, "{algo:?} read limit {limit}, message {i}");
+            }
+            tx.finish().unwrap();
+            pipe.close();
+            let mut rest = Vec::new();
+            rx.read_to_end(&mut rest).unwrap();
+            assert!(
+                rest.is_empty(),
+                "{algo:?} read limit {limit}: output after finish"
+            );
+        }
+    }
 }
