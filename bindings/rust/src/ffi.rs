@@ -106,6 +106,11 @@ extern "C" {
         out: *mut u8,
         out_len: *mut usize,
     ) -> c_int;
+    pub fn cu_compress_stream_flush(
+        stream: *mut cu_compress_stream,
+        out: *mut u8,
+        out_len: *mut usize,
+    ) -> c_int;
     pub fn cu_compress_stream_destroy(stream: *mut cu_compress_stream);
 
     pub fn cu_decompress_stream_create(

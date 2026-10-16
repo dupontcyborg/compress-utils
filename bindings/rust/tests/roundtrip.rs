@@ -3,7 +3,10 @@
 //! These prove the binding wires the C ABI correctly; interop.rs proves the
 //! wire formats match independent implementations.
 
-use std::io::{Read, Write};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::io::{self, Read, Write};
+use std::rc::Rc;
 
 use compress_utils::{
     compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor, Status,
@@ -255,4 +258,73 @@ fn lzo_decodes_only() {
     );
     let err = compress(Algorithm::Lzo, b"hello", 5).unwrap_err();
     assert_eq!(err.code, Status::UnsupportedAlgo, "{err}");
+}
+
+/// One end of an in-memory pipe that behaves like a non-blocking socket: the
+/// reader gets the bytes written so far, `WouldBlock` when there are none yet,
+/// and end of stream once the writer is closed.
+#[derive(Clone, Default)]
+struct Pipe(Rc<RefCell<(VecDeque<u8>, bool)>>);
+
+impl Write for Pipe {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.borrow_mut().0.extend(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for Pipe {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut state = self.0.borrow_mut();
+        if state.0.is_empty() {
+            return if state.1 {
+                Ok(0)
+            } else {
+                Err(io::ErrorKind::WouldBlock.into())
+            };
+        }
+        let n = buf.len().min(state.0.len());
+        for (dst, src) in buf.iter_mut().zip(state.0.drain(..n)) {
+            *dst = src;
+        }
+        Ok(n)
+    }
+}
+
+#[test]
+fn flush_delivers_each_message() {
+    let messages = [
+        vec![b'A'; 131_072],
+        pseudo_random(65_537, 3),
+        b"B".repeat(37),
+    ];
+    for algo in available(ALGOS) {
+        let pipe = Pipe::default();
+        let mut tx = Compressor::new(pipe.clone(), algo, 5).unwrap();
+        if matches!(algo, Algorithm::Snappy | Algorithm::Bz2) {
+            tx.write_all(b"abc").unwrap();
+            let err = tx.flush().expect_err("flush must fail");
+            assert_eq!(err.kind(), io::ErrorKind::Unsupported, "{algo:?}");
+            continue;
+        }
+        let mut rx = Decompressor::new(pipe.clone(), algo).unwrap();
+        for (i, message) in messages.iter().enumerate() {
+            tx.write_all(message).unwrap();
+            tx.flush().unwrap();
+            // Only the flushed bytes are available: reading would block if the
+            // decoder needed anything more to produce this message.
+            let mut got = vec![0u8; message.len()];
+            rx.read_exact(&mut got)
+                .unwrap_or_else(|e| panic!("{algo:?} message {i}: {e}"));
+            assert_eq!(&got, message, "{algo:?} message {i}");
+        }
+        tx.finish().unwrap();
+        pipe.0.borrow_mut().1 = true;
+        let mut rest = Vec::new();
+        rx.read_to_end(&mut rest).unwrap();
+        assert!(rest.is_empty(), "{algo:?}: output after finish");
+    }
 }

@@ -53,6 +53,8 @@ r.read_to_end(&mut out)?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+`Write::flush()` on a `Compressor` flushes the codec and then the sink, as flate2 does: everything written so far reaches the sink in decodable form, and the frame stays open. Use it to deliver each message on a long-lived connection; the peer's `Decompressor` can then read all of it without waiting for more input. Each flush costs a few bytes and some compression ratio, so flush once per message rather than after every small write. Snappy and Bz2 can't flush mid-stream and return an `io::ErrorKind::Unsupported` error.
+
 ## Algorithms
 
 `Zstd`, `Brotli`, `Zlib`, `Gzip`, `Bz2`, `Lz4`, `Xz` (alias `Lzma`), `Snappy`,

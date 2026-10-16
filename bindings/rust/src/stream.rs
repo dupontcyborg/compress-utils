@@ -182,15 +182,39 @@ impl<W: Write> Write for Compressor<W> {
         }
     }
 
+    /// Flushes the codec, then the sink: everything written so far reaches
+    /// the sink in decodable form, and the frame stays open for more writes
+    /// (as flate2's `flush` does). Each flush costs a few bytes of output.
+    ///
+    /// Returns an [`io::ErrorKind::Unsupported`] error for Snappy and Bz2,
+    /// which can't flush mid-stream.
     fn flush(&mut self) -> io::Result<()> {
-        // Data is forwarded to the sink on every write; the C compress stream
-        // has no mid-stream flush that keeps the frame open, so we only flush
-        // the sink. Call finish() to finalize the frame.
-        if let Some(sink) = self.sink.as_mut() {
-            sink.flush()
-        } else {
-            Ok(())
+        let Some(sink) = self.sink.as_mut() else {
+            return Ok(());
+        };
+        while !self.finished {
+            let mut out_len = self.scratch.len();
+            // SAFETY: valid handle + scratch buffer; out_len is in/out.
+            let st = unsafe {
+                ffi::cu_compress_stream_flush(self.stream, self.scratch.as_mut_ptr(), &mut out_len)
+            };
+            if out_len > 0 {
+                sink.write_all(&self.scratch[..out_len])?;
+            }
+            match st {
+                ffi::CU_OK => break,
+                ffi::CU_ERR_BUF_TOO_SMALL if out_len == 0 => return Err(stuck_error()),
+                ffi::CU_ERR_BUF_TOO_SMALL => {}
+                ffi::CU_ERR_UNSUPPORTED_ALGO => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        crate::make_error(st),
+                    ))
+                }
+                other => return Err(crate::make_error(other).into()),
+            }
         }
+        sink.flush()
     }
 }
 
