@@ -162,10 +162,15 @@ static cu_status_t pending_append(xz_stream_state_t* st, const uint8_t* src, siz
     return CU_OK;
 }
 
+/* Runs lzma_code on the pending input until it's consumed or the output
+ * fills. A full output returns BUF_TOO_SMALL even when all input was consumed,
+ * since liblzma may still hold output; the drain call then runs it again.
+ * Unconsumed input stays pending. */
 static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
                                uint8_t* out, size_t* out_len) {
     size_t cap = *out_len;
     size_t written = 0;
+    cu_status_t s;
 
     st->strm.next_in = st->pending;
     st->strm.avail_in = st->pending_len;
@@ -179,54 +184,57 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
 
         if (r == LZMA_STREAM_END) {
             st->stream_end = 1;
-            size_t consumed = st->pending_len - st->strm.avail_in;
-            if (consumed > 0 && st->strm.avail_in > 0) {
-                memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-            }
-            st->pending_len = st->strm.avail_in;
-            *out_len = written;
-            return CU_OK;
+            s = CU_OK;
+            break;
         }
         if (r == LZMA_OK) {
-            if (st->strm.avail_out == 0 && (st->strm.avail_in > 0 || action != LZMA_RUN)) {
-                /* Out full and more to write. */
-                size_t consumed = st->pending_len - st->strm.avail_in;
-                if (consumed > 0 && st->strm.avail_in > 0) {
-                    memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-                }
-                st->pending_len = st->strm.avail_in;
-                *out_len = written;
-                return CU_ERR_BUF_TOO_SMALL;
+            if (st->strm.avail_out == 0) {
+                s = CU_ERR_BUF_TOO_SMALL;
+                break;
             }
+            /* Input consumed with output room left: nothing is held back. */
             if (action == LZMA_RUN && st->strm.avail_in == 0) {
-                st->pending_len = 0;
-                *out_len = written;
-                return CU_OK;
+                s = CU_OK;
+                break;
             }
             /* FINISH, output not full, but the codec produced nothing and has no
              * input left → it cannot make progress (truncated/incomplete stream).
              * Stop, leaving stream_end unset; the *_finish caller turns that into
              * CU_ERR_TRUNCATED. Continuing would spin forever. */
             if (produced == 0 && st->strm.avail_in == 0) {
-                st->pending_len = 0;
-                *out_len = written;
-                return CU_OK;
+                s = CU_OK;
+                break;
             }
             continue;
         }
         if (r == LZMA_BUF_ERROR) {
-            /* No forward progress. Output-buffer-full is handled above (LZMA_OK +
-             * avail_out==0), so this is the input side: the stream ended before
-             * the codec was done. This MUST be terminal — mapping it to
-             * CU_ERR_BUF_TOO_SMALL (as map_lzma_error does) tells the caller to
-             * drain-and-retry, which never terminates with no more input/output
-             * (the xz decompression hang). Report truncation directly.  */
+            /* No forward progress twice in a row, with output room (a full output
+             * returned above), so the codec needs more input. While running, that
+             * just means "write more" — a drain call or repeated empty writes get
+             * here. At FINISH the stream ended before the codec was done, and this
+             * MUST be terminal: mapping it to CU_ERR_BUF_TOO_SMALL (as
+             * map_lzma_error does) tells the caller to drain-and-retry, which
+             * never terminates (the xz decompression hang). */
+            if (action == LZMA_RUN) {
+                s = CU_OK;
+                break;
+            }
             st->pending_len = st->strm.avail_in;
             *out_len = written;
+            cu_set_last_error("xz: truncated stream");
             return CU_ERR_TRUNCATED;
         }
+        *out_len = written;
         return map_lzma_error(r, action == LZMA_RUN ? CU_ERR_COMPRESSION : CU_ERR_DECOMPRESSION);
     }
+
+    size_t consumed = st->pending_len - st->strm.avail_in;
+    if (consumed > 0 && st->strm.avail_in > 0) {
+        memmove(st->pending, st->pending + consumed, st->strm.avail_in);
+    }
+    st->pending_len = st->strm.avail_in;
+    *out_len = written;
+    return s;
 }
 
 /* ============================================================================

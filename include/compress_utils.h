@@ -332,9 +332,9 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * filled exactly with output still held inside the decoder, so keep
  * draining until a call returns CU_OK.
  *
- * Concatenated zstd frames (including skippable frames) and gzip members
- * (with any zero padding between them) decode as one stream, here and in
- * cu_decompress, as the zstd and gzip CLIs do. zlib rejects data after the
+ * Concatenated zstd and LZ4 frames (including skippable frames) and gzip
+ * members (with any zero padding between them) decode as one stream, here
+ * and in cu_decompress, as the zstd, lz4 and gzip CLIs do. zlib rejects data after the
  * end of its stream with CU_ERR_DECOMPRESSION; raw DEFLATE ignores it, since
  * it usually belongs to an enclosing container.
  *

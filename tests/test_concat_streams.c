@@ -1,10 +1,10 @@
 /*
- * Concatenated zstd frames and gzip members, data after the end of zlib and
- * raw DEFLATE streams, flushing when the output fills exactly, and new input
- * arriving while earlier input is still retained.
+ * Concatenated zstd and LZ4 frames and gzip members, data after the end of
+ * zlib and raw DEFLATE streams, flushing when the output fills exactly, and
+ * new input arriving while earlier input is still retained.
  *
- * zstd and gzip decode every frame/member and append the output, as the zstd
- * and gzip CLIs do; zlib rejects trailing data; raw DEFLATE ignores it.
+ * zstd, LZ4 and gzip decode every frame/member and append the output, as
+ * their CLIs do; zlib rejects trailing data; raw DEFLATE ignores it.
  */
 #include "compress_utils.h"
 
@@ -164,31 +164,39 @@ static void test_concatenated(cu_algorithm_t algo) {
     /* A truncated last frame/member, and garbage after a complete one. */
     size_t n = build(algo, 2, 0, 0, 0, in, text);
     fails_everywhere(algo, in, n - 1, CU_ERR_TRUNCATED);
+    for (size_t cut = 1; cut <= 9; cut += 4) {
+        uint8_t out[MAX_OUT];
+        size_t len = sizeof(out);
+        CHECK(cu_decompress(algo, in, n - cut, out, &len) != CU_OK);
+    }
     in[n] = 0x42;
-    /* One stray byte: zstd rejects a partial magic number at once; gzip needs
-     * two header bytes before it can tell. */
+    /* One stray byte: zstd rejects a partial magic number at once; gzip and
+     * LZ4 wait for more header bytes before they can tell. */
     fails_everywhere(algo, in, n + 1,
                      algo == CU_ALGO_ZSTD ? CU_ERR_DECOMPRESSION : CU_ERR_TRUNCATED);
     memcpy(in + n, "garbage!", 8);
     fails_everywhere(algo, in, n + 8, CU_ERR_DECOMPRESSION);
 }
 
-static void test_zstd_skippable(void) {
+/* zstd and LZ4 share the skippable frame format. */
+static void test_skippable(cu_algorithm_t algo) {
     uint8_t in[2048];
     char text[512];
-    size_t n = compress_into(CU_ALGO_ZSTD, PARTS[0], in);
+    size_t n = compress_into(algo, PARTS[0], in);
     /* Skippable frame: magic 0x184D2A50 (little-endian), 4-byte size, payload. */
     const uint8_t skippable[] = {0x50, 0x2A, 0x4D, 0x18, 3, 0, 0, 0, 'x', 'y', 'z'};
     memcpy(in + n, skippable, sizeof(skippable));
     n += sizeof(skippable);
-    n += compress_into(CU_ALGO_ZSTD, PARTS[1], in + n);
+    n += compress_into(algo, PARTS[1], in + n);
     strcpy(text, PARTS[0]);
     strcat(text, PARTS[1]);
-    decodes_everywhere(CU_ALGO_ZSTD, in, n, (const uint8_t*)text, strlen(text));
+    decodes_everywhere(algo, in, n, (const uint8_t*)text, strlen(text));
     uint8_t out[MAX_OUT];
     size_t len = sizeof(out);
-    CHECK(cu_decompress(CU_ALGO_ZSTD, in, n, out, &len) == CU_OK);
+    CHECK(cu_decompress(algo, in, n, out, &len) == CU_OK);
     CHECK(len == strlen(text) && !memcmp(out, text, len));
+    size_t hint = 0;
+    CHECK(cu_decompress_size_hint(algo, in, n, &hint) == CU_OK && hint == strlen(text));
 }
 
 static void test_gzip_zero_padding(void) {
@@ -286,13 +294,19 @@ static void test_write_without_draining(cu_algorithm_t algo) {
 }
 
 int main(void) {
-    const cu_algorithm_t pending_algos[] = {CU_ALGO_ZSTD, CU_ALGO_GZIP, CU_ALGO_ZLIB, CU_ALGO_DEFLATE};
+    const cu_algorithm_t pending_algos[] = {CU_ALGO_ZSTD, CU_ALGO_LZ4, CU_ALGO_GZIP, CU_ALGO_ZLIB,
+                                            CU_ALGO_DEFLATE};
     for (size_t i = 0; i < sizeof(pending_algos) / sizeof(pending_algos[0]); i++)
         if (cu_algorithm_available(pending_algos[i])) test_write_without_draining(pending_algos[i]);
     if (cu_algorithm_available(CU_ALGO_ZSTD)) {
         test_concatenated(CU_ALGO_ZSTD);
-        test_zstd_skippable();
+        test_skippable(CU_ALGO_ZSTD);
         test_exact_output_flush(CU_ALGO_ZSTD);
+    }
+    if (cu_algorithm_available(CU_ALGO_LZ4)) {
+        test_concatenated(CU_ALGO_LZ4);
+        test_skippable(CU_ALGO_LZ4);
+        test_exact_output_flush(CU_ALGO_LZ4);
     }
     if (cu_algorithm_available(CU_ALGO_GZIP)) {
         test_concatenated(CU_ALGO_GZIP);

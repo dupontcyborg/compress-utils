@@ -55,7 +55,9 @@ canonical decoder chosen here must match that format exactly:
              both sides need the decompressed size, so it has its own test
 """
 
+import random
 import unittest
+import zlib
 
 import compress_utils as cu
 
@@ -172,6 +174,59 @@ REFERENCES = {
 }
 
 
+# --- mid-stream flushing senders --------------------------------------------
+#
+# Each returns send(payload) -> the bytes a canonical encoder emits for that
+# payload followed by a nonterminal flush, all in one open stream, or None if
+# the reference isn't installed. bz2 and lzma have no nonterminal flush.
+
+def _zstd_flushing():
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    enc = zstd.ZstdCompressor(level=11).compressobj()
+    return lambda data: enc.compress(data) + enc.flush(zstd.COMPRESSOBJ_FLUSH_BLOCK)
+
+
+def _lz4_flushing():
+    try:
+        import lz4.frame as lz4f
+    except ImportError:
+        return None
+    # auto_flush emits each compress() call's blocks: LZ4F's mid-stream flush.
+    # (python-lz4's flush() ends the frame.)
+    enc = lz4f.LZ4FrameCompressor(block_linked=True, auto_flush=True)
+    header = [enc.begin()]
+    return lambda data: (header.pop() if header else b"") + enc.compress(data)
+
+
+def _brotli_flushing():
+    try:
+        import brotli
+    except ImportError:
+        return None
+    enc = brotli.Compressor()
+    return lambda data: enc.process(data) + enc.flush()
+
+
+def _zlib_flushing(wbits):
+    def make():
+        enc = zlib.compressobj(6, zlib.DEFLATED, wbits)
+        return lambda data: enc.compress(data) + enc.flush(zlib.Z_SYNC_FLUSH)
+    return make
+
+
+FLUSHING_SENDERS = {
+    "zstd": _zstd_flushing,
+    "lz4": _lz4_flushing,
+    "brotli": _brotli_flushing,
+    "zlib": _zlib_flushing(15),
+    "gzip": _zlib_flushing(31),
+    "deflate": _zlib_flushing(-15),
+}
+
+
 class TestCanonicalInterop(unittest.TestCase):
     """ours <-> canonical reference, both directions, every algorithm."""
 
@@ -211,6 +266,31 @@ class TestCanonicalInterop(unittest.TestCase):
                         f"({case}, {len(data)} bytes -> {len(blob)} compressed)",
                     )
 
+
+    def test_inbound_flush_checkpoints(self):
+        """A canonical encoder's mid-stream flushes decode completely at every
+        checkpoint, with no further input and no finish() (issue #54)."""
+        rng = random.Random(54)
+        payloads = [b"A" * 131072, rng.randbytes(65537), b"B" * 37,
+                    rng.randbytes(131073), b"A" * 65536, b"tail"]
+        for algo, make in FLUSHING_SENDERS.items():
+            for transport in (None, 7, 4093):
+                with self.subTest(algorithm=algo, transport=transport or "whole"):
+                    if not cu.is_available(algo):
+                        self.skipTest(f"{algo} not compiled into this build")
+                    send = make()
+                    if send is None:
+                        self.skipTest(f"canonical reference library for {algo} not installed")
+                    receiver = cu.DecompressStream(algo)
+                    got = want = b""
+                    for i, data in enumerate(payloads):
+                        wire = send(data)
+                        want += data
+                        step = transport or max(len(wire), 1)
+                        for k in range(0, len(wire), step):
+                            got += receiver.decompress(wire[k:k + step])
+                        self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                        self.assertEqual(got, want, f"checkpoint {i}")
 
     def test_lz4_raw(self):
         """Raw LZ4 blocks interoperate with lz4.block in both directions."""

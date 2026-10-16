@@ -313,10 +313,12 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
             return CU_OK;
         }
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
-            /* All pending consumed. */
+            /* All pending consumed. Brotli reports this even when the output
+             * filled with decoded data still held back; the drain call then
+             * collects it. */
             st->pending_len = 0;
             *out_len = written;
-            return CU_OK;
+            return BrotliDecoderHasMoreOutput(st->dec) ? CU_ERR_BUF_TOO_SMALL : CU_OK;
         }
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
             /* Buffer full; shift pending tail. */

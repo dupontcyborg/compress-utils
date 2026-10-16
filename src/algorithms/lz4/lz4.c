@@ -9,9 +9,11 @@
  * interoperable with the standard `lz4` CLI / .lz4 files.
  *
  * Size hint: LZ4 frames optionally carry the content size if the
- * content-size flag is set at encode time. We always set it on encode,
- * so cu_decompress_size_hint succeeds for frames produced by this
- * library.
+ * content-size flag is set at encode time. One-shot encoding always sets
+ * it, so cu_decompress_size_hint succeeds for those frames.
+ *
+ * Concatenated frames (and skippable frames) decode as one output, as the
+ * lz4 CLI does; input must end exactly at the end of a frame.
  */
 
 #include "algorithm_registry.h"
@@ -84,6 +86,76 @@ static cu_status_t lz4_compress(
     return CU_OK;
 }
 
+static uint32_t lz4_read32(const uint8_t* p) {
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+/* Walks the frame and block headers of every frame in the input, without
+ * decoding. Returns CU_OK with the summed content size when every frame
+ * records one, CU_ERR_SIZE_UNKNOWN when one doesn't, or an error for input
+ * that isn't a complete sequence of frames. Skippable frames count as empty. */
+static cu_status_t lz4_frames_content_size(const uint8_t* in, size_t in_len,
+                                           unsigned long long* total) {
+    size_t pos = 0;
+    unsigned long long sum = 0;
+    int known = 1;
+    while (pos < in_len) {
+        if (in_len - pos < 8) return CU_ERR_TRUNCATED;
+        uint32_t magic = lz4_read32(in + pos);
+        if ((magic & 0xFFFFFFF0u) == 0x184D2A50u) {  /* skippable frame */
+            size_t skip = lz4_read32(in + pos + 4);
+            if (in_len - pos - 8 < skip) return CU_ERR_TRUNCATED;
+            pos += 8 + skip;
+            continue;
+        }
+        if (magic != 0x184D2204u) return CU_ERR_DECOMPRESSION;
+        uint8_t flg = in[pos + 4];
+        int block_checksum = flg & 0x10, has_size = flg & 0x08, content_checksum = flg & 0x04;
+        size_t header = 7 + (has_size ? 8 : 0) + (flg & 0x01 ? 4 : 0);
+        if (in_len - pos < header) return CU_ERR_TRUNCATED;
+        if (has_size) {
+            unsigned long long n = lz4_read32(in + pos + 6) |
+                                   (unsigned long long)lz4_read32(in + pos + 10) << 32;
+            if (n > ~0ULL - sum) return CU_ERR_SIZE_LIMIT;
+            sum += n;
+        } else {
+            known = 0;
+        }
+        pos += header;
+        for (;;) {  /* data blocks, up to the end mark */
+            if (in_len - pos < 4) return CU_ERR_TRUNCATED;
+            uint32_t block = lz4_read32(in + pos);
+            pos += 4;
+            if (block == 0) break;
+            size_t body = (block & 0x7FFFFFFFu) + (block_checksum ? 4 : 0);
+            if (in_len - pos < body) return CU_ERR_TRUNCATED;
+            pos += body;
+        }
+        if (content_checksum) {
+            if (in_len - pos < 4) return CU_ERR_TRUNCATED;
+            pos += 4;
+        }
+    }
+    if (!known) return CU_ERR_SIZE_UNKNOWN;
+    *total = sum;
+    return CU_OK;
+}
+
+/* The first frame's declared content size, or 0 when it has none. */
+static cu_status_t lz4_first_frame_size(const uint8_t* in, size_t in_len,
+                                        unsigned long long* size) {
+    LZ4F_dctx* dctx = NULL;
+    size_t r = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
+    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_OOM);
+    LZ4F_frameInfo_t info;
+    size_t probe = in_len;
+    r = LZ4F_getFrameInfo(dctx, &info, in, &probe);
+    LZ4F_freeDecompressionContext(dctx);
+    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
+    *size = info.contentSize;
+    return CU_OK;
+}
+
 static cu_status_t lz4_decompress(
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -92,40 +164,39 @@ static cu_status_t lz4_decompress(
         cu_set_last_error("lz4: empty input");
         return CU_ERR_TRUNCATED;
     }
-    LZ4F_dctx* dctx = NULL;
-    size_t r = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
-    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_OOM);
-
-    /* Probe content size if available; check against caller buffer/cap. */
-    LZ4F_frameInfo_t info;
-    size_t in_size_probe = in_len;
-    r = LZ4F_getFrameInfo(dctx, &info, in, &in_size_probe);
-    if (LZ4F_isError(r)) {
-        LZ4F_freeDecompressionContext(dctx);
-        return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
+    /* With every frame's size known, check it against the caller buffer and
+     * cap up front. Otherwise decode into the buffer and let the decoder
+     * report malformed or truncated input. */
+    unsigned long long total = 0;
+    cu_status_t sized = lz4_frames_content_size(in, in_len, &total);
+    if (sized == CU_ERR_SIZE_LIMIT) {
+        cu_set_last_error("lz4: declared sizes overflow");
+        return sized;
+    }
+    if (sized != CU_OK && sized != CU_ERR_SIZE_UNKNOWN) {
+        cu_status_t s = lz4_first_frame_size(in, in_len, &total);
+        if (s != CU_OK) return s;
     }
     size_t cap_limit = cu_get_max_decompressed_size();
-    if (info.contentSize > 0) {
-        if (cap_limit > 0 && info.contentSize > cap_limit) {
-            cu_set_last_errorf("lz4: declared size %llu exceeds cap %zu",
-                               (unsigned long long)info.contentSize, cap_limit);
-            LZ4F_freeDecompressionContext(dctx);
+    if (sized == CU_OK || total > 0) {
+        if (cap_limit > 0 && total > cap_limit) {
+            cu_set_last_errorf("lz4: declared size %llu exceeds cap %zu", total, cap_limit);
             return CU_ERR_SIZE_LIMIT;
         }
-        if (*out_len < info.contentSize) {
-            *out_len = (size_t)info.contentSize;
-            LZ4F_freeDecompressionContext(dctx);
+        if (*out_len < total) {
+            *out_len = (size_t)total;
             return CU_ERR_BUF_TOO_SMALL;
         }
     }
 
-    /* Decompress the rest. */
-    size_t src_remaining = in_len - in_size_probe;
-    const uint8_t* src = in + in_size_probe;
-    size_t dst_remaining = *out_len;
+    LZ4F_dctx* dctx = NULL;
+    size_t r = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
+    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_OOM);
+    const uint8_t* src = in;
+    size_t src_remaining = in_len;
     uint8_t* dst = out;
-    size_t total_out = 0;
-
+    size_t dst_remaining = *out_len;
+    int at_frame_end = 0;
     while (src_remaining > 0) {
         size_t src_size = src_remaining;
         size_t dst_size = dst_remaining;
@@ -134,24 +205,28 @@ static cu_status_t lz4_decompress(
             LZ4F_freeDecompressionContext(dctx);
             return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
         }
-        total_out += dst_size;
-        dst += dst_size;
-        dst_remaining -= dst_size;
         src += src_size;
         src_remaining -= src_size;
-        if (r == 0) break;  /* frame complete */
-        if (dst_remaining == 0 && src_remaining > 0) {
+        dst += dst_size;
+        dst_remaining -= dst_size;
+        at_frame_end = r == 0;  /* any input left starts the next frame */
+        if (src_size == 0 && dst_size == 0) {
+            /* No progress with input left: the output is full. */
             LZ4F_freeDecompressionContext(dctx);
-            if (info.contentSize == 0) {
+            if (sized != CU_OK) {
                 cu_set_last_error("lz4: output buffer too small (size not in frame)");
                 return CU_ERR_SIZE_UNKNOWN;
             }
-            *out_len = (size_t)info.contentSize;
+            *out_len = (size_t)total;
             return CU_ERR_BUF_TOO_SMALL;
         }
     }
     LZ4F_freeDecompressionContext(dctx);
-    *out_len = total_out;
+    if (!at_frame_end) {
+        cu_set_last_error("lz4: truncated frame");
+        return CU_ERR_TRUNCATED;
+    }
+    *out_len = (size_t)(dst - out);
     return CU_OK;
 }
 
@@ -159,24 +234,22 @@ static cu_status_t lz4_decompress_size_hint(
     const uint8_t* in, size_t in_len, size_t* out_size
 ) {
     if (in_len == 0) return CU_ERR_TRUNCATED;
-    LZ4F_dctx* dctx = NULL;
-    size_t r = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
-    if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_OOM);
-
-    LZ4F_frameInfo_t info;
-    size_t in_probe = in_len;
-    r = LZ4F_getFrameInfo(dctx, &info, in, &in_probe);
-    cu_status_t ret;
-    if (LZ4F_isError(r)) {
-        ret = map_lz4f_err(r, CU_ERR_DECOMPRESSION);
-    } else if (info.contentSize > 0) {
-        *out_size = (size_t)info.contentSize;
-        ret = CU_OK;
-    } else {
-        ret = CU_ERR_SIZE_UNKNOWN;
+    unsigned long long n = 0;
+    cu_status_t s = lz4_frames_content_size(in, in_len, &n);
+    if (s == CU_ERR_SIZE_UNKNOWN) return s;
+    if (s != CU_OK) {
+        /* Malformed or truncated: report what the first frame declares, and
+         * let decompression say what is wrong. */
+        s = lz4_first_frame_size(in, in_len, &n);
+        if (s != CU_OK) return s;
+        if (n == 0) return CU_ERR_SIZE_UNKNOWN;
     }
-    LZ4F_freeDecompressionContext(dctx);
-    return ret;
+    if (n > (size_t)-1) {
+        cu_set_last_error("lz4: declared size exceeds size_t");
+        return CU_ERR_SIZE_LIMIT;
+    }
+    *out_size = (size_t)n;
+    return CU_OK;
 }
 
 /* ============================================================================
@@ -400,10 +473,11 @@ static void lz4_cstream_destroy(void* state) {
 
 typedef struct {
     LZ4F_dctx* dctx;
-    uint8_t* pending;
+    uint8_t* pending;       /* unconsumed input; live bytes are [pending_off, pending_len) */
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
-    int      frame_done;
+    int      at_frame_end;  /* the last input consumed completed a frame */
 } lz4_dstream_state_t;
 
 static cu_status_t lz4_dstream_create(void** out_state) {
@@ -419,47 +493,51 @@ static cu_status_t lz4_dstream_create(void** out_state) {
     return CU_OK;
 }
 
-static cu_status_t dstream_pump(lz4_dstream_state_t* st,
-                                uint8_t* out, size_t* out_len) {
-    size_t cap = *out_len;
-    size_t written = 0;
-
-    while (st->pending_len > 0 && !st->frame_done) {
-        size_t avail = cap - written;
-        if (avail == 0) {
+/* Decodes `src` into `out` until the input is consumed or the output fills,
+ * continuing across frames. A full `out` returns BUF_TOO_SMALL even when all
+ * input was consumed, since LZ4F may still hold decoded output; the drain
+ * call then runs the decoder again. Reports the input consumed. */
+static cu_status_t dstream_decode(lz4_dstream_state_t* st, const uint8_t* src, size_t src_len,
+                                  size_t* consumed, uint8_t* out, size_t* out_len) {
+    static const uint8_t empty = 0;
+    size_t cap = *out_len, written = 0;
+    *consumed = 0;
+    if (!src) src = &empty;
+    for (;;) {
+        size_t src_size = src_len - *consumed, dst_size = cap - written;
+        size_t r = LZ4F_decompress(st->dctx, out + written, &dst_size, src + *consumed,
+                                   &src_size, NULL);
+        if (LZ4F_isError(r)) {
             *out_len = written;
-            return CU_ERR_BUF_TOO_SMALL;
+            return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
         }
-        size_t src_size = st->pending_len;
-        size_t dst_size = avail;
-        size_t r = LZ4F_decompress(st->dctx,
-                                   out + written, &dst_size,
-                                   st->pending, &src_size, NULL);
-        if (LZ4F_isError(r)) return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
+        *consumed += src_size;
         written += dst_size;
-        /* Consume src_size bytes from pending. */
-        if (src_size > 0) {
-            memmove(st->pending, st->pending + src_size, st->pending_len - src_size);
-            st->pending_len -= src_size;
-        }
-        if (r == 0) {
-            st->frame_done = 1;
-            break;
-        }
+        /* 0 ends a frame, with its output fully flushed, and the decoder then
+         * expects the next one; any other value after consuming input means a
+         * frame is in progress. */
+        if (r == 0) st->at_frame_end = 1;
+        else if (src_size > 0) st->at_frame_end = 0;
+        *out_len = written;
+        if (*consumed == src_len && (r == 0 || written < cap)) return CU_OK;
+        if (written == cap) return CU_ERR_BUF_TOO_SMALL;
         if (src_size == 0 && dst_size == 0) {
-            /* Decoder needs more input — pending is empty after consume,
-             * caller should provide more. */
-            break;
+            cu_set_last_error("lz4: decoder made no progress");
+            return CU_ERR_DECOMPRESSION;
         }
     }
-
-    *out_len = written;
-    return CU_OK;
 }
 
+/* Appends to the live pending bytes, first moving them to the front. Draining
+ * only advances pending_off, so each byte is moved at most once per append. */
 static cu_status_t dstream_pending_append(lz4_dstream_state_t* st,
                                           const uint8_t* src, size_t n) {
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -474,27 +552,43 @@ static cu_status_t dstream_pending_append(lz4_dstream_state_t* st,
     return CU_OK;
 }
 
+/* Decodes retained input first, then `in`; keeps whatever is left unconsumed
+ * when the output fills. */
+static cu_status_t dstream_pump(lz4_dstream_state_t* st, const uint8_t* in, size_t in_len,
+                                uint8_t* out, size_t* out_len) {
+    size_t consumed = 0;
+    cu_status_t s;
+    if (st->pending_off < st->pending_len) {
+        s = dstream_pending_append(st, in, in_len);
+        if (s != CU_OK) return s;
+        size_t live = st->pending_len - st->pending_off;
+        s = dstream_decode(st, st->pending + st->pending_off, live, &consumed, out, out_len);
+        if (s == CU_ERR_BUF_TOO_SMALL) st->pending_off += consumed;
+        else st->pending_off = st->pending_len = 0;
+        return s;
+    }
+    s = dstream_decode(st, in, in_len, &consumed, out, out_len);
+    if (s == CU_ERR_BUF_TOO_SMALL && consumed < in_len) {
+        cu_status_t a = dstream_pending_append(st, in + consumed, in_len - consumed);
+        if (a != CU_OK) return a;
+    }
+    return s;
+}
+
 static cu_status_t lz4_dstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
 ) {
-    lz4_dstream_state_t* st = (lz4_dstream_state_t*)state;
-    if (st->frame_done && in_len > 0) {
-        cu_set_last_error("lz4: data after end of frame");
-        return CU_ERR_DECOMPRESSION;
-    }
-    cu_status_t s = dstream_pending_append(st, in, in_len);
-    if (s != CU_OK) return s;
-    return dstream_pump(st, out, out_len);
+    return dstream_pump((lz4_dstream_state_t*)state, in, in_len, out, out_len);
 }
 
 static cu_status_t lz4_dstream_finish(
     void* state, uint8_t* out, size_t* out_len
 ) {
     lz4_dstream_state_t* st = (lz4_dstream_state_t*)state;
-    cu_status_t s = dstream_pump(st, out, out_len);
+    cu_status_t s = dstream_pump(st, NULL, 0, out, out_len);
     if (s != CU_OK) return s;
-    if (!st->frame_done) {
+    if (!st->at_frame_end) {
         cu_set_last_error("lz4: truncated frame at finish");
         return CU_ERR_TRUNCATED;
     }

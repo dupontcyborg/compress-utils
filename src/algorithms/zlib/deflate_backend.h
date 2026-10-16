@@ -243,8 +243,9 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
     size_t written = 0;
     int z_ret = Z_OK;
 
-    /* Drain pending tail first. */
-    if (st->pending_len > 0) {
+    /* Deflate pending input first. Without a flush this also runs with no
+     * input, so a drain call collects output deflate still holds. */
+    if (st->pending_len > 0 || flush_flag == Z_NO_FLUSH) {
         st->strm.next_in  = st->pending;
         st->strm.avail_in = (uInt)st->pending_len;
         st->strm.next_out  = out + written;
@@ -257,9 +258,11 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
             return dfl_map_error(z_ret, CU_ERR_COMPRESSION);
         }
         size_t consumed = st->pending_len - st->strm.avail_in;
-        if (st->strm.avail_in > 0) {
-            /* Output filled with pending data unconsumed. */
-            memmove(st->pending, st->pending + consumed, st->strm.avail_in);
+        if (st->strm.avail_in > 0 || st->strm.avail_out == 0) {
+            /* Output filled: input may remain, and deflate may hold output. */
+            if (st->strm.avail_in > 0) {
+                memmove(st->pending, st->pending + consumed, st->strm.avail_in);
+            }
             st->pending_len = st->strm.avail_in;
             *out_len = written;
             return CU_ERR_BUF_TOO_SMALL;

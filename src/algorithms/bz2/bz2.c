@@ -193,9 +193,18 @@ static cu_status_t cstream_pump(bz2_cstream_state_t* st, int action,
             *out_len = written;
             return CU_OK;
         }
+        /* While running, a call that makes no progress (a drain call with
+         * nothing held back) reports BZ_PARAM_ERROR: nothing more to emit. */
+        if (r == BZ_PARAM_ERROR && action == BZ_RUN && st->strm.avail_in == 0 && produced == 0) {
+            st->pending_len = 0;
+            *out_len = written;
+            return CU_OK;
+        }
         if (r == BZ_RUN_OK || r == BZ_FINISH_OK || r == BZ_FLUSH_OK) {
-            /* Output buffer might be full and more to do, or input exhausted. */
-            if (st->strm.avail_out == 0 && (st->strm.avail_in > 0 || action != BZ_RUN)) {
+            /* A full output returns BUF_TOO_SMALL even when all input was
+             * consumed, since bzip2 may still hold output; the drain call then
+             * runs it again. */
+            if (st->strm.avail_out == 0) {
                 size_t consumed = st->pending_len - st->strm.avail_in;
                 if (consumed > 0 && st->strm.avail_in > 0) {
                     memmove(st->pending, st->pending + consumed, st->strm.avail_in);
@@ -302,10 +311,12 @@ static cu_status_t dstream_pump(bz2_dstream_state_t* st,
             return CU_OK;
         }
         if (r == BZ_OK) {
-            if (st->strm.avail_out == 0 && st->strm.avail_in > 0) {
-                /* output full, more input remaining */
+            /* A full output returns BUF_TOO_SMALL even when all input was
+             * consumed: bzip2 decodes a whole block (up to 900 KB) at once and
+             * may still hold most of it. The drain call then runs it again. */
+            if (st->strm.avail_out == 0) {
                 size_t consumed = st->pending_len - st->strm.avail_in;
-                if (consumed > 0) {
+                if (consumed > 0 && st->strm.avail_in > 0) {
                     memmove(st->pending, st->pending + consumed, st->strm.avail_in);
                 }
                 st->pending_len = st->strm.avail_in;
@@ -330,9 +341,14 @@ static cu_status_t bz2_dstream_write(
     uint8_t* out, size_t* out_len
 ) {
     bz2_dstream_state_t* st = (bz2_dstream_state_t*)state;
-    if (st->stream_end && in_len > 0) {
-        cu_set_last_error("bz2: data after end of stream");
-        return CU_ERR_DECOMPRESSION;
+    if (st->stream_end) {
+        if (in_len > 0) {
+            cu_set_last_error("bz2: data after end of stream");
+            return CU_ERR_DECOMPRESSION;
+        }
+        /* Nothing left; BZ2_bzDecompress would return BZ_SEQUENCE_ERROR. */
+        *out_len = 0;
+        return CU_OK;
     }
     cu_status_t s = pending_append(&st->pending, &st->pending_len, &st->pending_cap, in, in_len);
     if (s != CU_OK) return s;
