@@ -20,6 +20,10 @@
  *       for (auto& out : cs.write(chunk)) sink.push(out);
  *   }
  *   for (auto& out : cs.finish()) sink.push(out);
+ *
+ *   // Long-lived stream: flush() delivers each message without ending it.
+ *   sink.send(cs.write(message));
+ *   sink.send(cs.flush());
  */
 
 #ifndef COMPRESS_UTILS_HPP
@@ -190,6 +194,17 @@ public:
     std::vector<std::uint8_t> finish() {
         return drain_loop([&](std::uint8_t* out, std::size_t* out_len, bool) {
             return cu_compress_stream_finish(stream_, out, out_len);
+        });
+    }
+
+    /*
+     * Nonterminal flush: returns the bytes a decoder needs to recover all
+     * input written so far, and keeps the frame open for more writes. Throws
+     * cu::Error with CU_ERR_UNSUPPORTED_ALGO for Snappy and Bz2.
+     */
+    std::vector<std::uint8_t> flush() {
+        return drain_loop([&](std::uint8_t* out, std::size_t* out_len, bool) {
+            return cu_compress_stream_flush(stream_, out, out_len);
         });
     }
 
