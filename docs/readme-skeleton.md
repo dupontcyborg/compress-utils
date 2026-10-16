@@ -22,7 +22,7 @@ Required, in this order. Extra sections may go anywhere between them. Headings a
 
 | # | Section | Heading must match | Contents |
 |---|---------|--------------------|----------|
-| 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Registry badges where the package is published (version, downloads, language versions, license), CI and license badges otherwise. |
+| 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Markdown badges only, in this order: registry badges where the package is published (version, downloads, language versions), the CI status badge for the binding's workflow, then the license badge. |
 | 2 | Installation | `Install…` | The one command, then what the build needs (toolchain, wheel contents, runtimes). |
 | 3 | Quick start | `Quick start` | A complete one-shot compress and decompress that runs as pasted. |
 | 4 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
@@ -31,20 +31,23 @@ Required, in this order. Extra sections may go anywhere between them. Headings a
 | 7 | Compression levels | `…levels` | `1` fastest to `10` smallest, default `5`, mapped to each codec's native range. |
 | 8 | Errors and limits | `Error…` | The error type and how to read the status code, `version()`, `set_max_decompressed_size` and its default. |
 | 9 | Concurrency | `…concurrency…` or `…thread…` | What is safe to share between threads, goroutines or workers, and what the binding does about locks. A short paragraph is fine, but it must exist: the bindings differ, and readers compare them. |
-| 10 | License | `License` | `MIT. See LICENSE.` and the byline. |
+| 10 | Performance | `Performance` | See below. |
+| 11 | License | `License` | `MIT. See LICENSE.`, then a `---` rule and the footer line. |
 
-Optional, and positioned after Concurrency when present: **Performance** and **Platform support**.
+**Platform support** (runtimes, operating systems) is optional and goes between Concurrency and Performance when present.
 
 ### Performance
 
-Short and specific. The required line is "overhead versus native C is X to Yx" with a link to the benchmarks. Add only what is true of this binding (GIL release threshold, cgo call cost, bundle size). Add a table against the language's ecosystem alternatives only once a baseline driver for that language exists in `benchmarks/`, and only with numbers we are willing to stand behind. Do not repeat the cross-language chart here; it lives in the root README and the benchmarks README.
+Required, short and specific. The required line is "overhead versus native C is X to Yx" with a link to the benchmarks. Add only what is true of this binding (GIL release threshold, cgo call cost, bundle size). Add a table against the language's ecosystem alternatives only once a baseline driver for that language exists in `benchmarks/`, and only with numbers we are willing to stand behind. Do not repeat the cross-language chart here; it lives in the root README and the benchmarks README.
 
 ## Root README sections
 
-Required, in this order: **Supported languages** (generated), **Supported algorithms** (generated), **Benchmarks**, **Building from source**, **License**. The title, badges, pitch and diagram come first. Other sections may sit between them.
+Required, in this order: **Supported languages** (generated), **Supported algorithms** (generated), **Benchmarks**, **Building from source**, **License**. The title, badges, pitch and diagram come first. Acknowledgments goes before License. Other sections may sit between them.
 
 ## Rules that apply to every README
 
+- **Same header and footer.** Badges are markdown, not HTML, and always include a CI status badge and a license badge. Every README ends with a `---` rule and a line ending `Built by [Nico Dupont](https://nico.codes).`, and binding READMEs start that line with `Part of [compress-utils](https://github.com/dupontcyborg/compress-utils).`
+- **No table of contents.** GitHub, PyPI and npm render their own outline, and the READMEs are short enough to scan.
 - **One paragraph or list item per line.** No hard wrapping; editors and email clients wrap for you.
 - **Version examples match the source of truth.** `version()` examples carry the `DEFAULT_VERSION` from `CMakeLists.txt`, or no literal at all. `tools/sync-versions.py` and `version-check.yml` keep that value aligned with the git tag.
 - **Counts match the manifest.** "Eight algorithms" is the number of `core` entries, "seven upstream libraries" is the number of entries in `codec-versions.json`, and the `algorithms-N` and `languages-N` badges follow the manifest.

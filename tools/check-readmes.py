@@ -58,6 +58,7 @@ BINDING_SECTIONS = [
     ("Compression levels", r"levels"),
     ("Errors and limits", r"^errors?\b"),
     ("Concurrency", r"concurrency|thread"),
+    ("Performance", r"^performance"),
     ("License", r"^license"),
 ]
 ROOT_SECTIONS = [
@@ -300,11 +301,32 @@ def check_versions_and_counts(manifest: dict, rel: str, lines: list[str], proble
                     problems.append(f"{rel}:{i + 1}: {kind} badge says {m.group(1)}, manifest has {want}")
 
 
+FOOTER_RE = re.compile(r"Built by \[Nico Dupont\]\(https://nico\.codes\)\.\s*$")
+
+
+def check_header_and_footer(rel: str, lines: list[str], problems: list[str]) -> None:
+    head = lines[:20]
+    for i, line in enumerate(head):
+        if re.match(r'^\s*(<p\b|<img\b|<div\b)', line):
+            problems.append(f"{rel}:{i + 1}: use markdown badges, not HTML, in the header")
+    text = "\n".join(head)
+    if not re.search(r"\[!\[License", text):
+        problems.append(f"{rel}: header is missing the license badge")
+    if not re.search(r"img\.shields\.io/github/actions/workflow/status/", text):
+        problems.append(f"{rel}: header is missing a CI status badge")
+    tail = [l for l in lines if l.strip()]
+    if len(tail) < 2 or tail[-2].strip() != "---" or not FOOTER_RE.search(tail[-1]):
+        problems.append(f"{rel}: must end with a '---' rule and a line ending 'Built by [Nico Dupont](https://nico.codes).'")
+
+
 def check_sections(rel: str, key: str, lines: list[str], problems: list[str]) -> None:
     required = ROOT_SECTIONS if key == "root" else BINDING_SECTIONS
     if key == "c":
         return
     heads = [(i, text) for i, level, text in headings(lines) if level >= 2]
+    for i, text in heads:
+        if re.match(r"^(table of contents|contents|toc)$", text.strip().lower()):
+            problems.append(f"{rel}:{i + 1}: remove the table of contents; READMEs don't carry one (see docs/readme-skeleton.md)")
     pos = -1
     for name, pattern in required:
         hit = next((n for n, (i, text) in enumerate(heads) if re.search(pattern, text.strip().lower())), None)
@@ -428,6 +450,7 @@ def main() -> int:
             problems = [p for p in problems if not (p.startswith(f"{rel}:") and "out of date" in p)]
             lines = new_lines
         check_versions_and_counts(manifest, rel, lines, problems)
+        check_header_and_footer(rel, lines, problems)
         check_sections(rel, key, lines, problems)
         check_hard_wrap(rel, lines, problems)
         check_links(rel, key, path, lines, problems)
