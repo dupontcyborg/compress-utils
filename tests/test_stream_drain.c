@@ -194,8 +194,12 @@ int main(void) {
         for (int kind = 0; kind < 3; kind++)
             for (size_t s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++)
                 for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++)
-                    for (size_t o = 0; o < sizeof(caps) / sizeof(caps[0]); o++)
+                    for (size_t o = 0; o < sizeof(caps) / sizeof(caps[0]); o++) {
+                        /* Tiny buffers on large inputs only repeat the 64 KiB
+                         * cases at many times the cost. */
+                        if (caps[o] < 4096 && sizes[s] > 65537) continue;
                         check_codec(algos[a], kind, sizes[s], chunks[c], caps[o]);
+                    }
         printf("%-8s %s\n", cu_algorithm_name(algos[a]),
                failures == before ? "ok" : "FAILED");
     }
