@@ -7,7 +7,8 @@
  * Calls on large inputs release the GIL so other Python threads keep running
  * while the codec works. Stream objects serialize their calls with a mutex,
  * so sharing one between threads can't corrupt it (as with stdlib zlib, bz2
- * and lzma objects).
+ * and lzma objects). That also makes the module safe without a GIL, so it
+ * declares free-threading support.
  *
  * Module name: compress_utils_py. Imported by the compress_utils package's
  * __init__.py.
@@ -149,7 +150,7 @@ static std::vector<std::uint8_t> run_locked(Locked<Stream>& self, bool release, 
 
 /* ---- Module ---- */
 
-PYBIND11_MODULE(compress_utils_py, m) {
+PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
     m.doc() = "Python bindings for compress-utils library (C-core).";
 
     /* Algorithm enum — lowercase names match the legacy Python API. */
@@ -240,13 +241,7 @@ PYBIND11_MODULE(compress_utils_py, m) {
             return to_bytes(run_locked(self, true, [](cu::DecompressStream& s) { return s.finish(); }));
         });
 
-    /* Translate cu::Error to a Python exception. */
-    static py::exception<cu::Error> cu_error_exc(m, "CompressError");
-    py::register_exception_translator([](std::exception_ptr p) {
-        try {
-            if (p) std::rethrow_exception(p);
-        } catch (const cu::Error& e) {
-            PyErr_SetString(cu_error_exc.ptr(), e.what());
-        }
-    });
+    /* Translate cu::Error to a Python exception. register_exception stores the
+     * exception type safely for free-threaded builds. */
+    py::register_exception<cu::Error>(m, "CompressError");
 }
