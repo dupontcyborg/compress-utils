@@ -64,7 +64,7 @@ restored = ds.decompress(compressed) + ds.finish()
 | Snappy    | `"snappy"`              | Raw Snappy block format.                       |
 | gzip      | `"gzip"`                | gzip stream (RFC 1952; .gz files, `gzip` CLI). |
 | DEFLATE   | `"deflate"`             | Raw DEFLATE (RFC 1951), no wrapper.            |
-| LZ4 block | `"lz4_raw"`             | Raw LZ4 block, no frame or size prefix. One-shot only; decompress needs `expected_size`. |
+| LZ4 block | `"lz4_raw"`             | Raw LZ4 block, no frame or size prefix.        |
 | LZO1X     | `"lzo"`                 | Raw LZO1X block. Decompression only.           |
 
 `cu.is_available(name_or_enum)` returns `True` for algorithms compiled into the installed wheel.
@@ -77,7 +77,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
 
-Passing `expected_size` selects caller-sized one-shot decoding; omitted raw LZ4 sizes use incremental decoding. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+Without `expected_size`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is slower, so pass it when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other helpful APIs
 

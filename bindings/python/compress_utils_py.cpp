@@ -111,18 +111,12 @@ PYBIND11_MODULE(compress_utils_py, m) {
         if (expected_size) {
             return to_bytes(cu::decompress(algo, as_span(data), *expected_size));
         }
-        try {
-            return to_bytes(cu::decompress(algo, as_span(data)));
-        } catch (const cu::Error& e) {
-            if (e.code() != CU_ERR_SIZE_UNKNOWN) throw;
-            throw cu::Error(e.code(), cu::algorithm_name(algo) +
-                ": the input doesn't record its decompressed size; pass expected_size");
-        }
+        return to_bytes(cu::decompress(algo, as_span(data)));
     }, py::arg("data"), py::arg("algorithm"), py::arg("expected_size") = py::none(),
        "Decompress bytes/buffer using the given algorithm.\n\n"
        "expected_size is an upper bound on the output size; the result holds the\n"
-       "bytes actually decoded. It is required for lz4_raw, and skips the size\n"
-       "probe for every other algorithm.");
+       "bytes actually decoded. It skips the size probe, and for lz4_raw it skips\n"
+       "the much slower streaming fallback.");
 
     /* Streaming. */
     py::class_<cu::CompressStream>(m, "CompressStream",

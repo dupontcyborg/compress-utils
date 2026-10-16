@@ -64,7 +64,7 @@ Raw block formats such as those inside Parquet and ORC pages don't record their 
 page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
 ```
 
-It is required for `Lz4Raw`, which has no streaming decoder; `Decompress` on an `Lz4Raw` block returns an `*Error` with code `ErrSizeUnknown`. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+Without a capacity, `Decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Other API
 

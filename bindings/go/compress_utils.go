@@ -23,7 +23,6 @@ import "C"
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -184,14 +183,9 @@ func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 		return out, nil
 	}
 
-	// Wire format does not carry the size (zlib, gzip, brotli, bz2):
+	// Wire format does not carry the size (zlib, gzip, brotli, bz2, raw LZ4):
 	// stream-decompress the whole buffer.
 	r, err := NewReader(bytes.NewReader(data), algo)
-	var ce *Error
-	if errors.As(err, &ce) && ce.Code == ErrUnsupported {
-		return nil, &Error{Code: ErrSizeUnknown, Msg: algo.Name() +
-			": the input doesn't record its decompressed size and can't be streamed; use DecompressWithCapacity"}
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -201,9 +195,8 @@ func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 
 // DecompressWithCapacity decompresses data into at most capacity bytes. The
 // capacity is an upper bound on the output, allocated up front; the result
-// holds only the bytes written. It is required for formats that don't record
-// their size and can't be streamed (Lz4Raw), and skips the size probe for
-// every other algorithm.
+// holds only the bytes written. It skips the size probe and the streaming
+// fallback, which is much faster than Decompress for Lz4Raw.
 func DecompressWithCapacity(algo Algorithm, data []byte, capacity int) ([]byte, error) {
 	if capacity < 0 {
 		return nil, &Error{Code: ErrInvalidArg, Msg: "compress-utils: negative capacity"}

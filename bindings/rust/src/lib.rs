@@ -271,23 +271,12 @@ pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
     match decompress_one_shot(algo, data)? {
         Some(out) => Ok(out),
         // Wire format does not carry the size (zlib, gzip, brotli, bz2,
-        // snappy): stream-decompress the whole buffer, bounded by the same
+        // snappy, raw LZ4): stream-decompress the whole buffer, bounded by the same
         // cap the C one-shot path enforces so a malformed bomb can't run us out
         // of memory here.
         None => {
             use std::io::Read;
-            let mut r = match Decompressor::new(data, algo) {
-                Err(e) if e.code == Status::UnsupportedAlgo => {
-                    return Err(Error {
-                        code: Status::SizeUnknown,
-                        message: format!(
-                            "{algo}: the input doesn't record its decompressed size and \
-                             can't be streamed; use decompress_with_capacity"
-                        ),
-                    });
-                }
-                r => r?,
-            };
+            let mut r = Decompressor::new(data, algo)?;
             let mut out = Vec::new();
             let cap = MAX_DECOMPRESSED.load(Ordering::Relaxed);
             if cap == usize::MAX {

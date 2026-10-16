@@ -15,7 +15,7 @@
 #   version()                       → "MAJOR.MINOR.PATCH"
 #   is_available(algorithm)         → bool
 #   set_max_decompressed_size(b)    → cap one-shot decompression
-#   decompress(..., expected_size=n) → decode into at most n bytes (required for lz4_raw)
+#   decompress(..., expected_size=n) → decode into at most n bytes (skips the size probe)
 
 from .compress_utils_py import (
     Algorithm,

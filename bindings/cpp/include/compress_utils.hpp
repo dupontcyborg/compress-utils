@@ -29,7 +29,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -297,19 +296,10 @@ inline std::vector<std::uint8_t> decompress(
     }
     if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
 
-    // Unknown size: stream-decompress. A format with neither a recorded size
-    // nor a streaming decoder can only be decoded with a capacity.
-    std::optional<DecompressStream> ds;
-    try {
-        ds.emplace(a);
-    } catch (const Error& e) {
-        if (e.code() != CU_ERR_UNSUPPORTED_ALGO) throw;
-        throw Error(CU_ERR_SIZE_UNKNOWN, algorithm_name(a) +
-            ": the input doesn't record its decompressed size and can't be "
-            "streamed; pass an output capacity");
-    }
-    auto first = ds->write(in);
-    auto last  = ds->finish();
+    // Unknown size (zlib, gzip, brotli, bz2, raw LZ4): stream-decompress.
+    DecompressStream ds(a);
+    auto first = ds.write(in);
+    auto last  = ds.finish();
     first.insert(first.end(), last.begin(), last.end());
     return first;
 }

@@ -103,8 +103,8 @@ def decompress(data: typing_extensions.Buffer, algorithm: typing.Any, expected_s
     Decompress bytes/buffer using the given algorithm.
     
     expected_size is an upper bound on the output size; the result holds the
-    bytes actually decoded. It is required for lz4_raw, and skips the size
-    probe for every other algorithm.
+    bytes actually decoded. It skips the size probe, and for lz4_raw it skips
+    the much slower streaming fallback.
     """
 def is_available(algorithm: typing.Any) -> bool:
     ...

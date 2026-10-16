@@ -28,8 +28,8 @@ CASES = {
 }
 
 
-# Raw block formats: one-shot only, so they skip the generic streaming tests.
-# lz4_raw needs expected_size to decompress; lzo has no encoder.
+# Raw block formats skip the generic round-trip tests: lz4_raw has no streaming
+# encoder and lzo has no encoder at all.
 RAW_FORMATS = {"lz4_raw", "lzo"}
 
 # Independent LZO1X block: five literals ("hello") then the end marker.
