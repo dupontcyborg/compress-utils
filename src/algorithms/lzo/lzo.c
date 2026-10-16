@@ -1,4 +1,5 @@
 /* Raw LZO1X adapter; the MIT-licensed decoder lives in third_party/lzokay. */
+#define CU_RAW_STREAM_LZO_ONLY /* leave out the LZ4 fast path */
 #include "../../raw_block_stream.h"
 #include "algorithm_registry.h"
 #include "lzokay.h"
