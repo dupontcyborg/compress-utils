@@ -132,6 +132,28 @@ class TestCompressUtils(unittest.TestCase):
             with self.assertRaises(cu.CompressError):
                 cu.decompress(cu.compress(a, "zlib") + cu.compress(b, "zlib"), "zlib")
 
+    def test_flush(self):
+        # flush() delivers everything so far without ending the stream.
+        messages = [b"A" * 131072, bytes(range(256)) * 300, b"B" * 37]
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                cs = cu.CompressStream(name)
+                if name in ("snappy", "bz2"):
+                    cs.compress(b"abc")
+                    with self.assertRaises(cu.CompressError):
+                        cs.flush()
+                    continue
+                ds = cu.DecompressStream(name)
+                sent = received = b""
+                for message in messages:
+                    wire = cs.compress(message) + cs.flush()
+                    sent += message
+                    received += ds.decompress(wire)
+                    self.assertEqual(received, sent)
+                    self.assertEqual(cs.flush(), b"")  # nothing new to flush
+                received += ds.decompress(cs.finish()) + ds.finish()
+                self.assertEqual(received, sent)
+
     @unittest.skipUnless(cu.is_available("lz4_raw"), "lz4_raw not compiled in")
     def test_lz4_raw(self):
         for case_name, data in CASES.items():

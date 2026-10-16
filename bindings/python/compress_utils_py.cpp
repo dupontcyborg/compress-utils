@@ -205,11 +205,12 @@ PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
        "bytes actually decoded. It skips the size probe, and for lz4_raw it skips\n"
        "the much slower streaming fallback.");
 
-    /* Streaming. finish() always releases the GIL: it can flush a lot of
-     * buffered work (e.g. a whole Snappy stream). */
+    /* Streaming. flush() and finish() always release the GIL: they can
+     * compress a lot of buffered work (e.g. a whole Snappy stream). */
     using PyCompressStream = Locked<cu::CompressStream>;
     py::class_<PyCompressStream>(m, "CompressStream",
-        "Streaming compression. Feed chunks via .compress(b); flush with .finish().\n"
+        "Streaming compression. Feed chunks via .compress(b); .flush() delivers\n"
+        "everything so far and keeps the stream open; .finish() ends it.\n"
         "Safe to share between threads: calls on one stream run one at a time.")
         .def(py::init([](const py::object& algorithm, int level) {
             return new PyCompressStream(parse_algorithm(algorithm), level);
@@ -220,13 +221,20 @@ PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
                                   [&](cu::CompressStream& s) { return s.write(in.span()); });
             return to_bytes(out);
         }, py::arg("data"))
+        .def("flush", [](PyCompressStream& self) {
+            return to_bytes(run_locked(self, true, [](cu::CompressStream& s) { return s.flush(); }));
+        },
+             "Return the bytes a decoder needs to recover everything compressed so far,\n"
+             "keeping the stream open for more data. Unlike zlib's flush(), this does\n"
+             "not end the stream; use finish() for that. Each flush costs a few bytes.\n"
+             "Raises CompressError for snappy and bz2, which can't flush mid-stream.")
         .def("finish", [](PyCompressStream& self) {
             return to_bytes(run_locked(self, true, [](cu::CompressStream& s) { return s.finish(); }));
         });
 
     using PyDecompressStream = Locked<cu::DecompressStream>;
     py::class_<PyDecompressStream>(m, "DecompressStream",
-        "Streaming decompression. Feed chunks via .decompress(b); flush with .finish().\n"
+        "Streaming decompression. Feed chunks via .decompress(b); end with .finish().\n"
         "Safe to share between threads: calls on one stream run one at a time.")
         .def(py::init([](const py::object& algorithm) {
             return new PyDecompressStream(parse_algorithm(algorithm));

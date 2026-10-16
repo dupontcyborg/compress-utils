@@ -217,6 +217,75 @@ def _zlib_flushing(wbits):
     return make
 
 
+# Each returns receive(chunk) -> the bytes a canonical streaming decoder emits
+# for that chunk, or None if the reference isn't installed.
+
+def _zstd_receiver():
+    try:
+        import zstandard as zstd
+    except ImportError:
+        return None
+    return zstd.ZstdDecompressor().decompressobj().decompress
+
+
+def _lz4_receiver():
+    try:
+        import lz4.frame as lz4f
+    except ImportError:
+        return None
+    # Plain decompress() keeps output LZ4F still holds once input runs out,
+    # even for python-lz4's own auto-flushed streams; max_length mode drains it.
+    dec = lz4f.LZ4FrameDecompressor()
+
+    def receive(data):
+        out = dec.decompress(data, max_length=1 << 20)
+        while not dec.needs_input:
+            more = dec.decompress(b"", max_length=1 << 20)
+            if not more:
+                break
+            out += more
+        return out
+    return receive
+
+
+def _brotli_receiver():
+    try:
+        import brotli
+    except ImportError:
+        return None
+    # process() hands out decoded output in portions; empty calls get the rest.
+    dec = brotli.Decompressor()
+
+    def receive(data):
+        out = dec.process(data)
+        while True:
+            more = dec.process(b"")
+            if not more:
+                return out
+            out += more
+    return receive
+
+
+def _xz_receiver():
+    import lzma
+    return lzma.LZMADecompressor().decompress
+
+
+def _zlib_receiver(wbits):
+    return lambda: zlib.decompressobj(wbits).decompress
+
+
+FLUSHING_RECEIVERS = {
+    "zstd": _zstd_receiver,
+    "lz4": _lz4_receiver,
+    "brotli": _brotli_receiver,
+    "xz": _xz_receiver,
+    "zlib": _zlib_receiver(15),
+    "gzip": _zlib_receiver(31),
+    "deflate": _zlib_receiver(-15),
+}
+
+
 FLUSHING_SENDERS = {
     "zstd": _zstd_flushing,
     "lz4": _lz4_flushing,
@@ -291,6 +360,33 @@ class TestCanonicalInterop(unittest.TestCase):
                             got += receiver.decompress(wire[k:k + step])
                         self.assertEqual(len(got), len(want), f"checkpoint {i}")
                         self.assertEqual(got, want, f"checkpoint {i}")
+
+    def test_outbound_flush_checkpoints(self):
+        """After our flush(), a canonical streaming decoder recovers everything
+        written so far, with the stream still open (issue #54)."""
+        rng = random.Random(55)
+        payloads = [b"A" * 131072, rng.randbytes(65537), b"B" * 37,
+                    rng.randbytes(131073), b"A" * 65536, b"tail"]
+        for algo, make in FLUSHING_RECEIVERS.items():
+            for transport in (None, 7, 4093):
+                with self.subTest(algorithm=algo, transport=transport or "whole"):
+                    if not cu.is_available(algo):
+                        self.skipTest(f"{algo} not compiled into this build")
+                    receive = make()
+                    if receive is None:
+                        self.skipTest(f"canonical reference library for {algo} not installed")
+                    sender = cu.CompressStream(algo)
+                    got = want = b""
+                    for i, data in enumerate(payloads):
+                        wire = sender.compress(data) + sender.flush()
+                        want += data
+                        step = transport or max(len(wire), 1)
+                        for k in range(0, len(wire), step):
+                            got += receive(wire[k:k + step])
+                        self.assertEqual(len(got), len(want), f"checkpoint {i}")
+                        self.assertEqual(got, want, f"checkpoint {i}")
+                    got += receive(sender.finish())
+                    self.assertEqual(got, want)
 
     def test_lz4_raw(self):
         """Raw LZ4 blocks interoperate with lz4.block in both directions."""

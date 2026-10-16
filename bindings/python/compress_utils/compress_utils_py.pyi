@@ -82,7 +82,8 @@ class Algorithm:
         ...
 class CompressStream:
     """
-    Streaming compression. Feed chunks via .compress(b); flush with .finish().
+    Streaming compression. Feed chunks via .compress(b); .flush() delivers
+    everything so far and keeps the stream open; .finish() ends it.
     Safe to share between threads: calls on one stream run one at a time.
     """
     def __init__(self, algorithm: typing.Any, level: typing.SupportsInt | typing.SupportsIndex = 5) -> None:
@@ -91,9 +92,16 @@ class CompressStream:
         ...
     def finish(self) -> bytes:
         ...
+    def flush(self) -> bytes:
+        """
+        Return the bytes a decoder needs to recover everything compressed so far,
+        keeping the stream open for more data. Unlike zlib's flush(), this does
+        not end the stream; use finish() for that. Each flush costs a few bytes.
+        Raises CompressError for snappy and bz2, which can't flush mid-stream.
+        """
 class DecompressStream:
     """
-    Streaming decompression. Feed chunks via .decompress(b); flush with .finish().
+    Streaming decompression. Feed chunks via .decompress(b); end with .finish().
     Safe to share between threads: calls on one stream run one at a time.
     """
     def __init__(self, algorithm: typing.Any) -> None:
