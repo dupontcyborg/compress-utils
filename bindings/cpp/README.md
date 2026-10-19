@@ -1,5 +1,6 @@
 # compress-utils (C++)
 
+[![Release](https://img.shields.io/github/v/release/dupontcyborg/compress-utils)](https://github.com/dupontcyborg/compress-utils/releases)
 [![C/C++ build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml?label=c%2Fc%2B%2B)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_c_cpp.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -118,7 +119,7 @@ try {
 ```
 
 ```cpp
-std::string v  = cu::version();                    // e.g. "0.9.0"
+std::string v  = cu::version();                    // e.g. "0.10.1"
 bool        ok = cu::is_available(cu::Algorithm::Zstd);
 
 // Bound one-shot decompression output (default 1 GiB; 0 = unbounded).
