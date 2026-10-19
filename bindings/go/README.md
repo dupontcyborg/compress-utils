@@ -1,5 +1,6 @@
 # compress-utils (Go)
 
+[![Go module version](https://img.shields.io/github/v/tag/dupontcyborg/compress-utils?sort=semver&label=version)](https://github.com/dupontcyborg/compress-utils/tags)
 [![Go Reference](https://pkg.go.dev/badge/github.com/dupontcyborg/compress-utils/bindings/go.svg)](https://pkg.go.dev/github.com/dupontcyborg/compress-utils/bindings/go)
 [![Go build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_go.yml?label=go)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_go.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -84,7 +85,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 ## Errors and limits
 
 ```go
-cu.Version()                              // e.g. "0.9.0"
+cu.Version()                              // e.g. "0.10.1"
 cu.SetMaxDecompressedSize(256 << 20)      // cap one-shot Decompress (default 1 GiB; 0 = unbounded)
 
 var e *cu.Error                           // errors carry the C status code

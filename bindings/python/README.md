@@ -1,6 +1,6 @@
 # compress-utils
 
-[![PyPI version](https://badge.fury.io/py/compress-utils.svg)](https://badge.fury.io/py/compress-utils)
+[![PyPI version](https://img.shields.io/pypi/v/compress-utils.svg)](https://pypi.org/project/compress-utils/)
 [![PyPI Downloads](https://static.pepy.tech/badge/compress-utils)](https://pepy.tech/projects/compress-utils)
 [![Python Versions](https://img.shields.io/pypi/pyversions/compress-utils.svg)](https://pypi.org/project/compress-utils/)
 [![Python build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_python.yml?label=python)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_python.yml)
@@ -91,7 +91,7 @@ Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The bin
 ## Errors and limits
 
 ```python
-cu.version()                                  # e.g. "0.9.0"
+cu.version()                                  # e.g. "0.10.1"
 cu.set_max_decompressed_size(256 * 1024**2)   # bound one-shot decompression
                                               # (default: 1 GiB; 0 = unbounded)
 

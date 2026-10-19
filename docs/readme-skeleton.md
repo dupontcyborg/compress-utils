@@ -22,7 +22,7 @@ Required, in this order. Extra sections may go anywhere between them. Headings a
 
 | # | Section | Heading must match | Contents |
 |---|---------|--------------------|----------|
-| 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Markdown badges only, in this order: registry badges where the package is published (version, downloads, language versions), the CI status badge for the binding's workflow, then the license badge. |
+| 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Markdown badges only, in this order: a live version badge (the registry's `img.shields.io/{pypi,npm,crates}/v/...` where the package is published, otherwise `img.shields.io/github/v/{release,tag}/...`), other registry badges (downloads, language versions), a hosted API docs badge where the registry generates one (pkg.go.dev, docs.rs), the CI status badge for the binding's workflow, then the license badge. |
 | 2 | Installation | `Install…` | The one command, then what the build needs (toolchain, wheel contents, runtimes). |
 | 3 | Quick start | `Quick start` | A complete one-shot compress and decompress that runs as pasted. |
 | 4 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
@@ -46,10 +46,10 @@ Required, in this order: **Supported languages** (generated), **Supported algori
 
 ## Rules that apply to every README
 
-- **Same header and footer.** Badges are markdown, not HTML, and always include a CI status badge and a license badge. Every README ends with a `---` rule and a line ending `Built by [Nico Dupont](https://nico.codes).`, and binding READMEs start that line with `Part of [compress-utils](https://github.com/dupontcyborg/compress-utils).`
+- **Same header and footer.** Badges are markdown, not HTML, and always include a live version badge, a CI status badge and a license badge. Version badges are resolved by shields.io, never a hardcoded number. Every README ends with a `---` rule and a line ending `Built by [Nico Dupont](https://nico.codes).`, and binding READMEs start that line with `Part of [compress-utils](https://github.com/dupontcyborg/compress-utils).`
 - **No table of contents.** GitHub, PyPI and npm render their own outline, and the READMEs are short enough to scan.
 - **One paragraph or list item per line.** No hard wrapping; editors and email clients wrap for you.
-- **Version examples match the source of truth.** `version()` examples carry the `DEFAULT_VERSION` from `CMakeLists.txt`, or no literal at all. `tools/sync-versions.py` and `version-check.yml` keep that value aligned with the git tag.
+- **Version examples match the source of truth.** `version()` examples carry the `DEFAULT_VERSION` from `CMakeLists.txt`, or no literal at all. `tools/sync-versions.py` rewrites them on a version bump, and `version-check.yml` keeps that value aligned with the git tag.
 - **Counts match the manifest.** "Eight algorithms" is the number of `core` entries, "seven upstream libraries" is the number of entries in `codec-versions.json`, and the `algorithms-N` and `languages-N` badges follow the manifest.
 - **Links resolve.** Relative links must exist, and `#anchors` must match a heading. The Python and WASM READMEs render on PyPI and npm, which don't resolve repo-relative links, so they use absolute `https://github.com/dupontcyborg/compress-utils/blob/main/...` URLs.
 - **No rustdoc-hidden lines.** The Rust README is not compiled as rustdoc, so `# Ok::<...>` lines would show up literally. Use `?` inside a function body in the example or drop the line.

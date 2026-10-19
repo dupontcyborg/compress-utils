@@ -1,5 +1,7 @@
 # compress-utils (Rust)
 
+[![crates.io](https://img.shields.io/crates/v/compress-utils.svg)](https://crates.io/crates/compress-utils)
+[![docs.rs](https://img.shields.io/docsrs/compress-utils)](https://docs.rs/compress-utils)
 [![Rust build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_rust.yml?label=rust)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -92,7 +94,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 ## Errors and limits
 
 ```rust
-compress_utils::version();                            // e.g. "0.9.0"
+compress_utils::version();                            // e.g. "0.10.1"
 compress_utils::set_max_decompressed_size(256 << 20); // cap decompress (default 1 GiB; 0 = unbounded)
 
 // Errors carry the C status code for programmatic matching.

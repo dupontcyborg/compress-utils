@@ -2,7 +2,6 @@
 
 [![npm version](https://img.shields.io/npm/v/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
 [![npm downloads](https://img.shields.io/npm/dm/compress-utils.svg)](https://www.npmjs.com/package/compress-utils)
-[![types: built-in](https://img.shields.io/badge/types-built--in-blue.svg)](https://www.npmjs.com/package/compress-utils)
 [![WASM build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_wasm.yml?label=wasm)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_wasm.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -131,7 +130,7 @@ try {
 }
 ```
 
-`await version()` returns the library version (for example `"0.9.0"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
+`await version()` returns the library version (for example `"0.10.1"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
 
 ## Preloading and synchronous calls
 
