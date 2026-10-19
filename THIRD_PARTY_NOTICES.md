@@ -184,7 +184,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## XZ Utils (liblzma)
 
-- **Source**: https://github.com/tukaani-project/xz at `v5.8.3` (`third_party/xz/`)
+- **Source**: https://github.com/tukaani-project/xz at `v5.8.4` (`third_party/xz/`)
 - **License**: 0BSD
 - **Note**: Only liblzma is included; it is under the BSD Zero Clause License.
 

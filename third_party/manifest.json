@@ -237,8 +237,8 @@
         "src/liblzma/simple/sparc.c",
         "src/liblzma/simple/x86.c"
       ],
-      "tag": "v5.8.3",
-      "tree_sha256": "bb079f81e74fd5f5fa0350749a9b581dd1eaf4e3d3f5946719c649e8a3ac5129",
+      "tag": "v5.8.4",
+      "tree_sha256": "fbd6c7b621e02ba7a6e95074cd30390b2bf5377d414e55a33cdb601b260f345d",
       "url": "https://github.com/tukaani-project/xz.git"
     },
     "zlib": {
