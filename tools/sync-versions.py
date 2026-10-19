@@ -19,6 +19,9 @@ tree. Those are:
     builds with no git history)
   * Cargo.toml                 [package] version (the Rust crate version; also
     what build.rs injects as CU_BUILD_VERSION and matches the release asset name)
+  * README version examples    the `version()` example literals (`// e.g.
+    "0.9.0"`) in every README listed in docs/readme/manifest.json — not read by
+    any build, but tools/check-readmes.py fails CI when they lag DEFAULT_VERSION
 
 This script rewrites those from the tag so a source build reports the release
 version instead of a stale hardcoded one.
@@ -32,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -42,6 +46,7 @@ HEADER = REPO_ROOT / "include" / "compress_utils.h"
 WASM_PKG = REPO_ROOT / "bindings" / "wasm" / "package.json"
 CMAKELISTS = REPO_ROOT / "CMakeLists.txt"
 CARGO_TOML = REPO_ROOT / "Cargo.toml"
+README_MANIFEST = REPO_ROOT / "docs" / "readme" / "manifest.json"
 
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
@@ -114,15 +119,35 @@ def render_cargo_toml(text: str, version: str) -> str:
     return text
 
 
+def render_readme(text: str, version: str) -> str:
+    # Same rule tools/check-readmes.py enforces: on any line that shows a
+    # `version()` / `Version()` call, every quoted X.Y.Z literal is the version.
+    def fix_line(m: re.Match) -> str:
+        line = m.group(0)
+        if not re.search(r"[Vv]ersion\(\)", line):
+            return line
+        return re.sub(r'"\d+\.\d+\.\d+"', f'"{version}"', line)
+    return re.sub(r"(?m)^.*$", fix_line, text)
+
+
+def readme_paths() -> list[Path]:
+    readmes = json.loads(README_MANIFEST.read_text(encoding="utf-8"))["readmes"]
+    return [REPO_ROOT / rel for rel in readmes.values()]
+
+
 def targets(version: str) -> list[tuple[Path, str, str]]:
     """Return (path, committed_text, rendered_text) for every synced file."""
     ver = parse(version)
-    return [
+    out = [
         (HEADER, HEADER.read_text(), render_header(HEADER.read_text(), ver)),
         (WASM_PKG, WASM_PKG.read_text(), render_wasm_pkg(WASM_PKG.read_text(), version)),
         (CMAKELISTS, CMAKELISTS.read_text(), render_cmakelists(CMAKELISTS.read_text(), version)),
         (CARGO_TOML, CARGO_TOML.read_text(), render_cargo_toml(CARGO_TOML.read_text(), version)),
     ]
+    for path in readme_paths():
+        text = path.read_text(encoding="utf-8")
+        out.append((path, text, render_readme(text, version)))
+    return out
 
 
 def main(argv: list[str]) -> int:

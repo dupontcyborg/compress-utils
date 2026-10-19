@@ -22,6 +22,8 @@ on:
       - "bindings/wasm/package.json"
       - "CMakeLists.txt"
       - "Cargo.toml"
+      - "README.md"
+      - "bindings/*/README.md"
       - "tools/sync-versions.py"
   workflow_dispatch:
 

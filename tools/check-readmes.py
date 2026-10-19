@@ -15,6 +15,8 @@ Everything else in a README is hand-written, but is checked against the repo:
   * version literals in examples match CMakeLists.txt's DEFAULT_VERSION
   * "eight algorithms", "seven upstream libraries" and the shields.io count badges match the manifest
     and codec-versions.json
+  * every header has a live shields.io version badge (registry or GitHub release/tag), never a
+    hardcoded one, alongside the CI status and license badges
   * required sections are present and in the order docs/readme-skeleton.md prescribes
   * prose is not hard-wrapped
   * relative links resolve (and registry-published READMEs use absolute links)
@@ -302,6 +304,10 @@ def check_versions_and_counts(manifest: dict, rel: str, lines: list[str], proble
 
 
 FOOTER_RE = re.compile(r"Built by \[Nico Dupont\]\(https://nico\.codes\)\.\s*$")
+# A version badge must be live (resolved by shields.io from the registry or the
+# GitHub release/tag), never a hardcoded number that drifts on every release.
+LIVE_VERSION_BADGE_RE = re.compile(r"img\.shields\.io/(?:pypi|npm|crates|github)/v/")
+STATIC_VERSION_BADGE_RE = re.compile(r"img\.shields\.io/badge/(?:version|v|release)-v?\d|badge\.fury\.io/")
 
 
 def check_header_and_footer(rel: str, lines: list[str], problems: list[str]) -> None:
@@ -314,6 +320,13 @@ def check_header_and_footer(rel: str, lines: list[str], problems: list[str]) -> 
         problems.append(f"{rel}: header is missing the license badge")
     if not re.search(r"img\.shields\.io/github/actions/workflow/status/", text):
         problems.append(f"{rel}: header is missing a CI status badge")
+    if not LIVE_VERSION_BADGE_RE.search(text):
+        problems.append(f"{rel}: header is missing a live version badge "
+                        "(img.shields.io/{pypi,npm,crates}/v/... or github/v/{release,tag}/...)")
+    for i, line in enumerate(head):
+        if STATIC_VERSION_BADGE_RE.search(line):
+            problems.append(f"{rel}:{i + 1}: version badge must be a live img.shields.io registry/GitHub badge, "
+                            "not a hardcoded version or a third-party badge service")
     tail = [l for l in lines if l.strip()]
     if len(tail) < 2 or tail[-2].strip() != "---" or not FOOTER_RE.search(tail[-1]):
         problems.append(f"{rel}: must end with a '---' rule and a line ending 'Built by [Nico Dupont](https://nico.codes).'")
