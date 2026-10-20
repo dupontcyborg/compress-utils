@@ -16,6 +16,9 @@
  *   - zlib: an error.
  *   - raw DEFLATE: ignored, since a raw stream cut from a container can be
  *     followed by the container's own bytes.
+ * Single-stream mode (CU_DSTREAM_SINGLE) stops at the end of the first
+ * stream/member for all three, keeping everything after it (including gzip
+ * zero padding) as unused.
  *
  * This header is internal and included by exactly two .c files.
  */
@@ -26,6 +29,7 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 #include "utils/levels.h"
+#include "utils/single_stream.h"
 
 #include <zlib.h>
 
@@ -191,6 +195,8 @@ typedef struct {
     int      stream_end;
     int      kind;  /* 0 = compress, 1 = decompress */
     int      window_bits;
+    int      single;       /* CU_DSTREAM_SINGLE: stop at the first stream end */
+    cu_unused_t unused;    /* single: input received after the end */
 } dfl_stream_state_t;
 
 /* Appends to the live pending bytes, first moving them to the front. Draining
@@ -362,11 +368,19 @@ static cu_status_t dfl_dstream_create(int window_bits, void** out_state) {
     return CU_OK;
 }
 
+static cu_status_t dfl_dstream_create_single(int window_bits, void** out_state) {
+    cu_status_t s = dfl_dstream_create(window_bits, out_state);
+    if (s == CU_OK) ((dfl_stream_state_t*)*out_state)->single = 1;
+    return s;
+}
+
 /* Inflates `in` into `out`; returns the unconsumed input length in *left.
  * A full `out` returns BUF_TOO_SMALL even when all input was consumed, since
  * inflate may still hold output; the drain call then runs inflate again.
  * zlib counts in uInt, so input and output are fed in pieces of at most
- * UINT_MAX bytes. */
+ * UINT_MAX bytes. In single mode it stops at the end of the stream, leaving
+ * the rest in *left; inflate reports Z_STREAM_END only once all output is
+ * written. */
 static cu_status_t dfl_inflate(dfl_stream_state_t* st, const uint8_t* in, size_t in_len,
                                uint8_t* out, size_t* out_len, size_t* left) {
     size_t cap = *out_len > UINT_MAX ? UINT_MAX : *out_len;
@@ -383,6 +397,7 @@ static cu_status_t dfl_inflate(dfl_stream_state_t* st, const uint8_t* in, size_t
             rest -= st->strm.avail_in;
         }
         if (st->stream_end) {
+            if (st->single) break;
             if (st->strm.avail_in == 0) break;
             if (st->window_bits == CU_DFL_ZLIB_WBITS) {
                 cu_set_last_error("zlib: data after end of stream");
@@ -434,14 +449,22 @@ static cu_status_t dfl_dstream_pump(dfl_stream_state_t* st, const uint8_t* in, s
         if (s != CU_OK) return s;
         size_t live = st->pending_len - st->pending_off;
         s = dfl_inflate(st, st->pending + st->pending_off, live, out, out_len, &left);
-        if (s == CU_ERR_BUF_TOO_SMALL) st->pending_off += live - left;
-        else st->pending_off = st->pending_len = 0;
+        if (s == CU_ERR_BUF_TOO_SMALL) {
+            st->pending_off += live - left;
+            return s;
+        }
+        if (s == CU_OK && st->single && st->stream_end) {
+            s = cu_unused_append(&st->unused, st->pending + st->pending_len - left, left);
+        }
+        st->pending_off = st->pending_len = 0;
         return s;
     }
     s = dfl_inflate(st, in, in_len, out, out_len, &left);
     if (s == CU_ERR_BUF_TOO_SMALL && left > 0) {
         cu_status_t a = dfl_pending_append(st, in + (in_len - left), left);
         if (a != CU_OK) return a;
+    } else if (s == CU_OK && st->single && st->stream_end && left > 0) {
+        s = cu_unused_append(&st->unused, in + (in_len - left), left);
     }
     return s;
 }
@@ -451,6 +474,11 @@ static cu_status_t dfl_dstream_write(
     uint8_t* out, size_t* out_len
 ) {
     dfl_stream_state_t* st = (dfl_stream_state_t*)state;
+    /* Single mode past the end: inflate wrote all output before reporting it. */
+    if (st->single && st->stream_end) {
+        *out_len = 0;
+        return CU_OK;
+    }
     if (st->stream_end && in_len > 0 && st->window_bits == CU_DFL_ZLIB_WBITS) {
         cu_set_last_error("zlib: data after end of stream");
         return CU_ERR_DECOMPRESSION;
@@ -482,7 +510,15 @@ static void dfl_stream_destroy(void* state) {
         inflateEnd(&st->strm);
     }
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int dfl_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const dfl_stream_state_t* st = (const dfl_stream_state_t*)state;
+    if (!st->single || !st->stream_end) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 #endif  /* CU_DEFLATE_BACKEND_H */

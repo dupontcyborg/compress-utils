@@ -13,6 +13,7 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 #include "utils/levels.h"
+#include "utils/single_stream.h"
 
 #include <bzlib.h>
 
@@ -268,6 +269,8 @@ typedef struct {
     size_t    pending_len;
     size_t    pending_cap;
     int       stream_end;
+    int       single;      /* CU_DSTREAM_SINGLE: keep input after the end */
+    cu_unused_t unused;    /* single: input received after the end */
 } bz2_dstream_state_t;
 
 static cu_status_t bz2_dstream_create(void** out_state) {
@@ -282,6 +285,21 @@ static cu_status_t bz2_dstream_create(void** out_state) {
     st->strm_inited = 1;
     *out_state = st;
     return CU_OK;
+}
+
+static cu_status_t bz2_dstream_create_single(void** out_state) {
+    cu_status_t s = bz2_dstream_create(out_state);
+    if (s == CU_OK) ((bz2_dstream_state_t*)*out_state)->single = 1;
+    return s;
+}
+
+/* Single mode: once the stream has ended (bzip2 reports that only after all
+ * output is out), whatever input is left pending came after it. */
+static cu_status_t bz2_keep_unused(bz2_dstream_state_t* st, cu_status_t s) {
+    if (s != CU_OK || !st->single || !st->stream_end || st->pending_len == 0) return s;
+    s = cu_unused_append(&st->unused, st->pending, st->pending_len);
+    st->pending_len = 0;
+    return s;
 }
 
 static cu_status_t dstream_pump(bz2_dstream_state_t* st,
@@ -352,7 +370,7 @@ static cu_status_t bz2_dstream_write(
     }
     cu_status_t s = pending_append(&st->pending, &st->pending_len, &st->pending_cap, in, in_len);
     if (s != CU_OK) return s;
-    return dstream_pump(st, out, out_len);
+    return bz2_keep_unused(st, dstream_pump(st, out, out_len));
 }
 
 static cu_status_t bz2_dstream_finish(
@@ -365,7 +383,7 @@ static cu_status_t bz2_dstream_finish(
         *out_len = 0;
         return CU_OK;
     }
-    cu_status_t s = dstream_pump(st, out, out_len);
+    cu_status_t s = bz2_keep_unused(st, dstream_pump(st, out, out_len));
     if (s != CU_OK) return s;
     if (!st->stream_end) {
         cu_set_last_error("bz2: truncated stream at finish");
@@ -379,7 +397,15 @@ static void bz2_dstream_destroy(void* state) {
     if (!st) return;
     if (st->strm_inited) BZ2_bzDecompressEnd(&st->strm);
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int bz2_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const bz2_dstream_state_t* st = (const bz2_dstream_state_t*)state;
+    if (!st->single || !st->stream_end) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 /* ============================================================================
@@ -406,5 +432,7 @@ const cu_algorithm_vtbl_t cu_bz2_vtbl = {
     .decompress_stream_write   = bz2_dstream_write,
     .decompress_stream_finish  = bz2_dstream_finish,
     .decompress_stream_destroy = bz2_dstream_destroy,
+    .decompress_stream_create_single = bz2_dstream_create_single,
+    .decompress_stream_end     = bz2_dstream_end,
 #endif
 };

@@ -51,6 +51,14 @@ if(ENABLE_TESTS)
     add_test(NAME test_stream_flush COMMAND test_stream_flush)
 endif()
 
+# Single-stream decoding (CU_DSTREAM_SINGLE): stops at the end of the first
+# frame and hands back the input after it. Skips any codec that isn't compiled in.
+add_executable(test_single_stream test_single_stream.c)
+target_link_libraries(test_single_stream PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_single_stream COMMAND test_single_stream)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses the pure-C andikleen port. This is a C++ target on

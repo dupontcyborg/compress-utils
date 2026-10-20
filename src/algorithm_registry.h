@@ -59,6 +59,18 @@ typedef struct cu_algorithm_vtbl {
     cu_status_t (*decompress_stream_finish)(void* state,
                                             uint8_t* out, size_t* out_len);
     void        (*decompress_stream_destroy)(void* state);
+
+    /* Optional single-stream decoding (CU_DSTREAM_SINGLE); NULL for codecs
+     * without it (raw LZ4, LZO). create_single makes a state, driven by the
+     * write/finish/destroy entries above, that stops at the end of the first
+     * frame and keeps the input after it. stream_end reports whether that end
+     * has been decoded and, if so, the kept input (unused/unused_len may be
+     * NULL when only the flag is wanted). Once ended, write is only called
+     * with no input, to drain output still held back, and must return CU_OK
+     * once nothing is; finish before the end returns CU_ERR_TRUNCATED. */
+    cu_status_t (*decompress_stream_create_single)(void** out_state);
+    int         (*decompress_stream_end)(const void* state,
+                                         const uint8_t** unused, size_t* unused_len);
 } cu_algorithm_vtbl_t;
 
 /*

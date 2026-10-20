@@ -247,6 +247,9 @@ struct cu_decompress_stream {
     const cu_algorithm_vtbl_t* vtbl;
     void* state;
     int finished;
+    int single;  /* CU_DSTREAM_SINGLE */
+    int eof;     /* single: the end was decoded and all its output delivered */
+    cu_status_t failed;  /* single: the codec's first error; the stream is dead */
 };
 
 cu_status_t cu_compress_stream_create(
@@ -369,8 +372,21 @@ cu_status_t cu_decompress_stream_create(
     cu_algorithm_t algo,
     cu_decompress_stream_t** out_stream
 ) {
+    return cu_decompress_stream_create_ex(algo, 0, out_stream);
+}
+
+cu_status_t cu_decompress_stream_create_ex(
+    cu_algorithm_t algo,
+    uint32_t flags,
+    cu_decompress_stream_t** out_stream
+) {
     if (!out_stream) return CU_ERR_INVALID_ARG;
     *out_stream = NULL;
+    if (flags & ~(uint32_t)CU_DSTREAM_SINGLE) {
+        cu_set_last_errorf("unknown decompress stream flags 0x%x", (unsigned)flags);
+        return CU_ERR_INVALID_ARG;
+    }
+    int single = (flags & CU_DSTREAM_SINGLE) != 0;
 
     const cu_algorithm_vtbl_t* v;
     cu_status_t s = resolve(algo, &v);
@@ -380,6 +396,10 @@ cu_status_t cu_decompress_stream_create(
         cu_set_last_error("streaming decompress is not supported for this algorithm");
         return CU_ERR_UNSUPPORTED_ALGO;
     }
+    if (single && (!v->decompress_stream_create_single || !v->decompress_stream_end)) {
+        cu_set_last_errorf("%s: single-stream decoding is not supported", v->name);
+        return CU_ERR_UNSUPPORTED_ALGO;
+    }
 
     cu_decompress_stream_t* stream = calloc(1, sizeof(*stream));
     if (!stream) {
@@ -387,9 +407,11 @@ cu_status_t cu_decompress_stream_create(
         return CU_ERR_OOM;
     }
     stream->vtbl = v;
+    stream->single = single;
 
     cu_clear_last_error();
-    s = v->decompress_stream_create(&stream->state);
+    s = single ? v->decompress_stream_create_single(&stream->state)
+               : v->decompress_stream_create(&stream->state);
     if (s != CU_OK) {
         free(stream);
         return s;
@@ -397,6 +419,33 @@ cu_status_t cu_decompress_stream_create(
 
     *out_stream = stream;
     return CU_OK;
+}
+
+/* Single mode: the codec has decoded the end of the stream (its output may
+ * still be draining). */
+static int dstream_ended(const cu_decompress_stream_t* stream) {
+    return stream->single && stream->vtbl->decompress_stream_end(stream->state, NULL, NULL);
+}
+
+/* Single mode: a call that returned CU_OK after the end has delivered all of
+ * the stream's output. A codec error instead kills the stream, so it can never
+ * report eof with output or unused input missing (e.g. after running out of
+ * memory keeping the unused input), and the codec is never re-entered after
+ * failing. */
+static cu_status_t dstream_settle(cu_decompress_stream_t* stream, cu_status_t s) {
+    if (!stream->single) return s;
+    if (s == CU_OK && dstream_ended(stream)) stream->eof = 1;
+    else if (s != CU_OK && s != CU_ERR_BUF_TOO_SMALL) stream->failed = s;
+    return s;
+}
+
+/* Single mode: every call on a failed stream repeats its error. */
+static cu_status_t dstream_failed(const cu_decompress_stream_t* stream) {
+    if (stream->failed != CU_OK) {
+        cu_set_last_errorf("%s: stream failed earlier (%s)", stream->vtbl->name,
+                           cu_strerror(stream->failed));
+    }
+    return stream->failed;
 }
 
 cu_status_t cu_decompress_stream_write(
@@ -407,13 +456,28 @@ cu_status_t cu_decompress_stream_write(
     if (!stream || !out_len)            return CU_ERR_INVALID_ARG;
     if (in_len > 0 && !in)              return CU_ERR_INVALID_ARG;
     if (*out_len > 0 && !out)           return CU_ERR_INVALID_ARG;
+    if (stream->eof) {
+        if (in_len > 0) {
+            cu_set_last_error("write after end of stream; the input is not consumed");
+            return CU_ERR_STREAM_FINISHED;
+        }
+        *out_len = 0;
+        return CU_OK;
+    }
     if (stream->finished) {
         cu_set_last_error("write to finished decompress stream");
         return CU_ERR_STREAM_FINISHED;
     }
+    if (stream->failed != CU_OK) return dstream_failed(stream);
+    if (in_len > 0 && dstream_ended(stream)) {
+        cu_set_last_error("write after end of stream before its output was drained; "
+                          "drain with empty writes or finish");
+        return CU_ERR_STREAM_STATE;
+    }
 
     cu_clear_last_error();
-    return stream->vtbl->decompress_stream_write(stream->state, in, in_len, out, out_len);
+    cu_status_t s = stream->vtbl->decompress_stream_write(stream->state, in, in_len, out, out_len);
+    return dstream_settle(stream, s);
 }
 
 cu_status_t cu_decompress_stream_finish(
@@ -423,12 +487,41 @@ cu_status_t cu_decompress_stream_finish(
     if (!stream || !out_len)            return CU_ERR_INVALID_ARG;
     if (*out_len > 0 && !out)           return CU_ERR_INVALID_ARG;
 
+    if (stream->eof) {
+        *out_len = 0;
+        stream->finished = 1;
+        return CU_OK;
+    }
+    if (stream->failed != CU_OK) return dstream_failed(stream);
+
     cu_clear_last_error();
-    cu_status_t s = stream->vtbl->decompress_stream_finish(stream->state, out, out_len);
+    /* Single mode past the end: only output is left, which a write drains. */
+    cu_status_t s = dstream_ended(stream)
+        ? stream->vtbl->decompress_stream_write(stream->state, NULL, 0, out, out_len)
+        : stream->vtbl->decompress_stream_finish(stream->state, out, out_len);
+    s = dstream_settle(stream, s);
     if (s == CU_OK) {
         stream->finished = 1;
     }
     return s;
+}
+
+int cu_decompress_stream_eof(const cu_decompress_stream_t* stream) {
+    return stream ? stream->eof : 0;
+}
+
+cu_status_t cu_decompress_stream_unused(
+    const cu_decompress_stream_t* stream,
+    const uint8_t** data, size_t* len
+) {
+    if (!stream || !data || !len) return CU_ERR_INVALID_ARG;
+    *data = NULL;
+    *len = 0;
+    if (stream->eof) {
+        stream->vtbl->decompress_stream_end(stream->state, data, len);
+        if (*len == 0) *data = NULL;
+    }
+    return CU_OK;
 }
 
 void cu_decompress_stream_destroy(cu_decompress_stream_t* stream) {

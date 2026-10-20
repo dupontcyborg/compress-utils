@@ -18,6 +18,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/single_stream.h"
 
 #include <lz4.h>
 #include <lz4frame.h>
@@ -520,6 +521,10 @@ typedef struct {
     size_t   pending_len;
     size_t   pending_cap;
     int      at_frame_end;  /* the last input consumed completed a frame */
+    int      single;        /* CU_DSTREAM_SINGLE: stop after the first data frame */
+    int      ended;         /* single: that frame has been decoded and flushed */
+    cu_frame_magic_t magic; /* single: first bytes of the frame being decoded */
+    cu_unused_t unused;     /* single: input received after the end */
 } lz4_dstream_state_t;
 
 static cu_status_t lz4_dstream_create(void** out_state) {
@@ -535,10 +540,17 @@ static cu_status_t lz4_dstream_create(void** out_state) {
     return CU_OK;
 }
 
+static cu_status_t lz4_dstream_create_single(void** out_state) {
+    cu_status_t s = lz4_dstream_create(out_state);
+    if (s == CU_OK) ((lz4_dstream_state_t*)*out_state)->single = 1;
+    return s;
+}
+
 /* Decodes `src` into `out` until the input is consumed or the output fills,
- * continuing across frames. A full `out` returns BUF_TOO_SMALL even when all
- * input was consumed, since LZ4F may still hold decoded output; the drain
- * call then runs the decoder again. Reports the input consumed. */
+ * continuing across frames (in single mode, stopping at the end of the first
+ * data frame). A full `out` returns BUF_TOO_SMALL even when all input was
+ * consumed, since LZ4F may still hold decoded output; the drain call then
+ * runs the decoder again. Reports the input consumed. */
 static cu_status_t dstream_decode(lz4_dstream_state_t* st, const uint8_t* src, size_t src_len,
                                   size_t* consumed, uint8_t* out, size_t* out_len) {
     static const uint8_t empty = 0;
@@ -553,8 +565,22 @@ static cu_status_t dstream_decode(lz4_dstream_state_t* st, const uint8_t* src, s
             *out_len = written;
             return map_lz4f_err(r, CU_ERR_DECOMPRESSION);
         }
+        if (st->single && src_size > 0) {
+            cu_frame_magic_feed(&st->magic, src + *consumed, src_size);
+        }
         *consumed += src_size;
         written += dst_size;
+        /* Single mode: 0 also ends a skippable frame; only a data frame ends
+         * the stream. Either way its output is fully flushed. */
+        if (st->single && r == 0) {
+            if (!cu_frame_magic_skippable(&st->magic)) {
+                st->ended = 1;
+                st->at_frame_end = 1;
+                *out_len = written;
+                return CU_OK;
+            }
+            st->magic.n = 0;
+        }
         /* 0 ends a frame, with its output fully flushed, and the decoder then
          * expects the next one; any other value after consuming input means a
          * frame is in progress. */
@@ -605,14 +631,23 @@ static cu_status_t dstream_pump(lz4_dstream_state_t* st, const uint8_t* in, size
         if (s != CU_OK) return s;
         size_t live = st->pending_len - st->pending_off;
         s = dstream_decode(st, st->pending + st->pending_off, live, &consumed, out, out_len);
-        if (s == CU_ERR_BUF_TOO_SMALL) st->pending_off += consumed;
-        else st->pending_off = st->pending_len = 0;
+        if (s == CU_ERR_BUF_TOO_SMALL) {
+            st->pending_off += consumed;
+            return s;
+        }
+        if (s == CU_OK && st->ended) {
+            s = cu_unused_append(&st->unused, st->pending + st->pending_off + consumed,
+                                 live - consumed);
+        }
+        st->pending_off = st->pending_len = 0;
         return s;
     }
     s = dstream_decode(st, in, in_len, &consumed, out, out_len);
     if (s == CU_ERR_BUF_TOO_SMALL && consumed < in_len) {
         cu_status_t a = dstream_pending_append(st, in + consumed, in_len - consumed);
         if (a != CU_OK) return a;
+    } else if (s == CU_OK && st->ended && consumed < in_len) {
+        s = cu_unused_append(&st->unused, in + consumed, in_len - consumed);
     }
     return s;
 }
@@ -621,16 +656,26 @@ static cu_status_t lz4_dstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
 ) {
-    return dstream_pump((lz4_dstream_state_t*)state, in, in_len, out, out_len);
+    lz4_dstream_state_t* st = (lz4_dstream_state_t*)state;
+    /* Single mode past the end: its output was flushed when the frame ended. */
+    if (st->ended) {
+        *out_len = 0;
+        return CU_OK;
+    }
+    return dstream_pump(st, in, in_len, out, out_len);
 }
 
 static cu_status_t lz4_dstream_finish(
     void* state, uint8_t* out, size_t* out_len
 ) {
     lz4_dstream_state_t* st = (lz4_dstream_state_t*)state;
+    if (st->ended) {
+        *out_len = 0;
+        return CU_OK;
+    }
     cu_status_t s = dstream_pump(st, NULL, 0, out, out_len);
     if (s != CU_OK) return s;
-    if (!st->at_frame_end) {
+    if (st->single ? !st->ended : !st->at_frame_end) {
         cu_set_last_error("lz4: truncated frame at finish");
         return CU_ERR_TRUNCATED;
     }
@@ -642,7 +687,15 @@ static void lz4_dstream_destroy(void* state) {
     if (!st) return;
     if (st->dctx) LZ4F_freeDecompressionContext(st->dctx);
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int lz4_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const lz4_dstream_state_t* st = (const lz4_dstream_state_t*)state;
+    if (!st->ended) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 /* ============================================================================
@@ -668,5 +721,7 @@ const cu_algorithm_vtbl_t cu_lz4_vtbl = {
     .decompress_stream_write   = lz4_dstream_write,
     .decompress_stream_finish  = lz4_dstream_finish,
     .decompress_stream_destroy = lz4_dstream_destroy,
+    .decompress_stream_create_single = lz4_dstream_create_single,
+    .decompress_stream_end     = lz4_dstream_end,
 #endif
 };

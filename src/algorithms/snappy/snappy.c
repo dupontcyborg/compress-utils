@@ -39,10 +39,19 @@
  * finish and drain the result through the caller's buffer. Consequently the
  * streaming path holds the full input (and output) in memory; it does not
  * bound memory the way the natively-streaming codecs (zstd, zlib, ...) do.
+ *
+ * Single-stream decoding (CU_DSTREAM_SINGLE) finds the end of the block as
+ * input arrives by walking its element tags (lengths only — offsets are left
+ * to snappy_uncompress), then decodes it and keeps the input after it as
+ * unused. It still emits nothing until the block is complete. Because it
+ * allocates the declared length, it enforces the decompressed-size cap
+ * (captured at creation, as the raw LZ4/LZO stream decoders do) as soon as the
+ * length varint has been read.
  */
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/single_stream.h"
 
 #include <snappy.h>  /* andikleen/snappy-c: snappy_env + raw-block compress/uncompress */
 
@@ -150,6 +159,15 @@ typedef struct {
     size_t   out_head;
     size_t   out_tail;
     int      produced;   /* codec has run; out_buf is populated */
+    /* Single-stream decoding (CU_DSTREAM_SINGLE). */
+    int      single;
+    int      ended;      /* the block is complete and decoded into out_buf */
+    size_t   cap;        /* decompressed-size cap captured at creation; 0 = none */
+    size_t   scan_pos;   /* next in_buf byte the tag scan hasn't consumed */
+    int      have_len;   /* the length varint has been read */
+    uint64_t declared;   /* uncompressed length from the varint */
+    uint64_t counted;    /* output length of the elements scanned so far */
+    cu_unused_t unused;  /* input received after the end */
 } snappy_stream_state_t;
 
 static cu_status_t sn_in_append(snappy_stream_state_t* st, const uint8_t* src, size_t n) {
@@ -187,6 +205,7 @@ static void snappy_stream_destroy(void* state) {
     if (!st) return;
     free(st->in_buf);
     free(st->out_buf);
+    cu_unused_free(&st->unused);
     free(st);
 }
 
@@ -255,12 +274,133 @@ static cu_status_t snappy_dstream_create(void** out_state) {
     return CU_OK;
 }
 
+static cu_status_t snappy_dstream_create_single(void** out_state) {
+    snappy_stream_state_t* st = calloc(1, sizeof(*st));
+    if (!st) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }
+    st->single = 1;
+    st->cap = cu_get_max_decompressed_size();
+    *out_state = st;
+    return CU_OK;
+}
+
+/* Single mode: walks the elements buffered in in_buf from scan_pos, without
+ * decoding them, until their output lengths reach the declared length. Sets
+ * *end to the block's length once complete, else 0 (more input needed). An
+ * element is only consumed once all its bytes are buffered, so a later call
+ * re-reads a partial one. Rejects any length that can't fit the declared
+ * length before waiting for its bytes, so a malformed block can't make the
+ * stream buffer without bound. */
+static cu_status_t sn_scan(snappy_stream_state_t* st, size_t* end) {
+    const uint8_t* p = st->in_buf;
+    size_t n = st->in_len;
+    size_t pos = st->scan_pos;
+    *end = 0;
+
+    if (!st->have_len) {
+        uint64_t v = 0;
+        for (unsigned i = 0;; i++) {
+            if (i == 5) {
+                cu_set_last_error("snappy: invalid header (length varint too long)");
+                return CU_ERR_DECOMPRESSION;
+            }
+            if (pos + i >= n) return CU_OK;
+            uint8_t b = p[pos + i];
+            v |= (uint64_t)(b & 0x7F) << (7 * i);
+            if (!(b & 0x80)) {
+                pos += i + 1;
+                break;
+            }
+        }
+        if (v > UINT32_MAX || v > SIZE_MAX) {
+            cu_set_last_error("snappy: invalid header (length out of range)");
+            return CU_ERR_DECOMPRESSION;
+        }
+        if (st->cap > 0 && v > st->cap) {
+            cu_set_last_errorf("snappy: decompressed size %llu exceeds cap %zu",
+                               (unsigned long long)v, st->cap);
+            return CU_ERR_SIZE_LIMIT;
+        }
+        st->have_len = 1;
+        st->declared = v;
+    }
+
+    while (st->counted < st->declared && pos < n) {
+        uint8_t tag = p[pos];
+        uint64_t len, size;
+        switch (tag & 3) {
+            case 0: {  /* literal: length in the tag, or in 1-4 following bytes */
+                unsigned code = tag >> 2;
+                unsigned extra = code < 60 ? 0 : code - 59;
+                if (n - pos - 1 < extra) goto more;
+                uint64_t l = code;
+                if (extra) {
+                    l = 0;
+                    for (unsigned k = 0; k < extra; k++) l |= (uint64_t)p[pos + 1 + k] << (8 * k);
+                }
+                len = l + 1;
+                size = 1 + extra + len;
+                break;
+            }
+            case 1:  len = 4 + ((tag >> 2) & 7); size = 2; break;  /* copy, 1-byte offset */
+            case 2:  len = (tag >> 2) + 1;       size = 3; break;  /* copy, 2-byte offset */
+            default: len = (tag >> 2) + 1;       size = 5; break;  /* copy, 4-byte offset */
+        }
+        if (len > st->declared - st->counted) {
+            cu_set_last_error("snappy: element runs past the declared length");
+            return CU_ERR_DECOMPRESSION;
+        }
+        if ((uint64_t)(n - pos) < size) break;
+        pos += (size_t)size;
+        st->counted += len;
+    }
+more:
+    st->scan_pos = pos;
+    if (st->counted == st->declared) *end = pos;
+    return CU_OK;
+}
+
+static cu_status_t sn_dstream_write_single(
+    snappy_stream_state_t* st, const uint8_t* in, size_t in_len,
+    uint8_t* out, size_t* out_len
+) {
+    size_t cap = *out_len;
+    size_t written = 0;
+    *out_len = 0;
+
+    if (!st->ended) {
+        cu_status_t s = sn_in_append(st, in, in_len);
+        if (s != CU_OK) return s;
+        size_t end;
+        s = sn_scan(st, &end);
+        if (s != CU_OK || end == 0) return s;
+
+        /* The block is in_buf[0, end); the rest came after it. */
+        s = cu_unused_append(&st->unused, st->in_buf + end, st->in_len - end);
+        if (s != CU_OK) return s;
+        size_t usize = (size_t)st->declared;
+        st->out_buf = malloc(usize ? usize : 1);
+        if (!st->out_buf) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }
+        int rc = snappy_uncompress((const char*)st->in_buf, end, (char*)st->out_buf);
+        if (rc != 0) return snappy_err(rc, CU_ERR_DECOMPRESSION, "uncompress");
+        free(st->in_buf);
+        st->in_buf = NULL;
+        st->in_len = st->in_cap = 0;
+        st->out_tail = usize;
+        st->produced = 1;
+        st->ended = 1;
+    }
+
+    int more = sn_out_drain(st, out, cap, &written);
+    *out_len = written;
+    return more ? CU_ERR_BUF_TOO_SMALL : CU_OK;
+}
+
 static cu_status_t snappy_dstream_write(
     void* state, const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
 ) {
-    (void)out;
     snappy_stream_state_t* st = (snappy_stream_state_t*)state;
+    if (st->single) return sn_dstream_write_single(st, in, in_len, out, out_len);
     if (st->produced) {
         cu_set_last_error("snappy: data after end of stream");
         return CU_ERR_DECOMPRESSION;
@@ -276,6 +416,13 @@ static cu_status_t snappy_dstream_finish(
     snappy_stream_state_t* st = (snappy_stream_state_t*)state;
     size_t cap = *out_len;
     size_t written = 0;
+
+    if (st->single) {
+        if (st->ended) return sn_dstream_write_single(st, NULL, 0, out, out_len);
+        *out_len = 0;
+        cu_set_last_error("snappy: truncated block at finish");
+        return CU_ERR_TRUNCATED;
+    }
 
     if (!st->produced) {
         if (st->in_len == 0) {
@@ -301,6 +448,13 @@ static cu_status_t snappy_dstream_finish(
     return more ? CU_ERR_BUF_TOO_SMALL : CU_OK;
 }
 
+static int snappy_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const snappy_stream_state_t* st = (const snappy_stream_state_t*)state;
+    if (!st->single || !st->ended) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
+}
+
 /* ============================================================================
  * Vtable
  * ============================================================================ */
@@ -323,5 +477,7 @@ const cu_algorithm_vtbl_t cu_snappy_vtbl = {
     .decompress_stream_write   = snappy_dstream_write,
     .decompress_stream_finish  = snappy_dstream_finish,
     .decompress_stream_destroy = snappy_stream_destroy,
+    .decompress_stream_create_single = snappy_dstream_create_single,
+    .decompress_stream_end     = snappy_dstream_end,
 #endif
 };

@@ -7,7 +7,10 @@
  * patterns: payloads around 64 KiB and 128 KiB, a large message just past
  * 64 KiB after a small record, and many small messages. After each
  * checkpoint the decoder also gets three empty writes, which must succeed
- * and emit nothing.
+ * and emit nothing. Everything runs twice: with a default decoder, and with a
+ * single-stream decoder (CU_DSTREAM_SINGLE), for which a flush is not the end
+ * of the stream — eof stays 0 at every checkpoint, is set by the final frame,
+ * and bytes after that frame come back as unused.
  */
 #include "compress_utils.h"
 
@@ -147,17 +150,42 @@ static void build_sequences(void) {
     traffic->count = 101;
 }
 
+/* Single mode: the flushed stream followed by other bytes, decoded in one
+ * write, stops at the end of the frame and returns the bytes as unused. */
+static void check_single_trailer(cu_algorithm_t algo, const uint8_t* wire, size_t wire_len,
+                                 const uint8_t* plain, size_t plain_len, size_t cap) {
+    static const uint8_t trailer[] = "next message";
+    static uint8_t in[(1 << 20) + (1 << 19) + sizeof(trailer)], back[1 << 20];
+    memcpy(in, wire, wire_len);
+    memcpy(in + wire_len, trailer, sizeof(trailer));
+    cu_decompress_stream_t* ds = NULL;
+    CHECK(cu_decompress_stream_create_ex(algo, CU_DSTREAM_SINGLE, &ds) == CU_OK);
+    size_t back_len = 0;
+    decode_piece(ds, in, wire_len + sizeof(trailer), cap, back, &back_len, sizeof(back));
+    const uint8_t* unused = NULL;
+    size_t unused_len = 0;
+    CHECK(cu_decompress_stream_unused(ds, &unused, &unused_len) == CU_OK);
+    if (!cu_decompress_stream_eof(ds) || back_len != plain_len || memcmp(back, plain, plain_len) ||
+        unused_len != sizeof(trailer) || memcmp(unused, trailer, sizeof(trailer))) {
+        fprintf(stderr, "%s (out %zu): single-stream decode of the flushed stream + trailer: "
+                "eof %d, %zu of %zu bytes, unused %zu\n", cu_algorithm_name(algo), cap,
+                cu_decompress_stream_eof(ds), back_len, plain_len, unused_len);
+        failures++;
+    }
+    cu_decompress_stream_destroy(ds);
+}
+
 /* Writes each message, flushes, and checks the decoder has all of it. Both
  * ends drain through `cap`-byte output buffers. */
 static void check_checkpoints(cu_algorithm_t algo, const sequence_t* seq, size_t cap,
-                              const transport_t* t) {
+                              const transport_t* t, int single) {
     enum { MAX = 1 << 20 };
     static uint8_t plain[MAX], wire[MAX + MAX / 2], back[MAX];
     size_t plain_len = 0, wire_len = 0, sent = 0, back_len = 0, cursor = 0;
     cu_compress_stream_t* cs = NULL;
     cu_decompress_stream_t* ds = NULL;
     CHECK(cu_compress_stream_create(algo, 5, &cs) == CU_OK);
-    CHECK(cu_decompress_stream_create(algo, &ds) == CU_OK);
+    CHECK(cu_decompress_stream_create_ex(algo, single ? CU_DSTREAM_SINGLE : 0, &ds) == CU_OK);
     for (size_t m = 0; m < seq->count; m++) {
         const message_t* msg = &seq->messages[m];
         make(msg->kind, plain + plain_len, msg->size, (unsigned)m + 1);
@@ -167,12 +195,14 @@ static void check_checkpoints(cu_algorithm_t algo, const sequence_t* seq, size_t
         feed(ds, wire + sent, wire_len - sent, t, &cursor, cap, back, &back_len, sizeof(back));
         sent = wire_len;
         if (back_len != plain_len || memcmp(back, plain, plain_len)) {
-            fprintf(stderr, "%s [%s] (out %zu, transport %s): checkpoint %zu decoded %zu of %zu "
-                    "bytes\n", cu_algorithm_name(algo), seq->name, cap, t->name, m, back_len,
-                    plain_len);
+            fprintf(stderr, "%s [%s] (out %zu, transport %s%s): checkpoint %zu decoded %zu of %zu "
+                    "bytes\n", cu_algorithm_name(algo), seq->name, cap, t->name,
+                    single ? ", single" : "", m, back_len, plain_len);
             failures++;
             goto done;
         }
+        /* A flush ends a block, not the frame. */
+        CHECK(!cu_decompress_stream_eof(ds));
         /* Empty writes, as from a receiver polling for more, succeed and emit
          * nothing: the checkpoint was complete without them. */
         for (int i = 0; i < 3; i++) decode_piece(ds, NULL, 0, cap, back, &back_len, sizeof(back));
@@ -184,12 +214,19 @@ static void check_checkpoints(cu_algorithm_t algo, const sequence_t* seq, size_t
     }
     run(cs, FINISH, NULL, 0, cap, wire, &wire_len, sizeof(wire));
     feed(ds, wire + sent, wire_len - sent, t, &cursor, cap, back, &back_len, sizeof(back));
+    if (single) {
+        const uint8_t* unused = NULL;
+        size_t unused_len = 1;
+        CHECK(cu_decompress_stream_eof(ds));
+        CHECK(cu_decompress_stream_unused(ds, &unused, &unused_len) == CU_OK && unused_len == 0);
+    }
     {
         static uint8_t tail[65536];
         size_t got = sizeof(tail);
         CHECK(cu_decompress_stream_finish(ds, tail, &got) == CU_OK && got == 0);
     }
     CHECK(back_len == plain_len && !memcmp(back, plain, plain_len));
+    if (single) check_single_trailer(algo, wire, wire_len, plain, plain_len, cap);
 
     /* The flushed stream is one ordinary frame to one-shot decoding too. */
     {
@@ -244,7 +281,8 @@ int main(void) {
                     /* 1-byte transport with tiny output buffers only repeats
                      * the 64 KiB case at many times the cost. */
                     if (TRANSPORTS[t].steps == ONE && caps[c] != 65536) continue;
-                    check_checkpoints(algos[a], &SEQUENCES[q], caps[c], &TRANSPORTS[t]);
+                    for (int single = 0; single <= 1; single++)
+                        check_checkpoints(algos[a], &SEQUENCES[q], caps[c], &TRANSPORTS[t], single);
                 }
         check_protocol(algos[a]);
         printf("%-8s %s\n", cu_algorithm_name(algos[a]), failures == before ? "ok" : "FAILED");

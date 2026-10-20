@@ -25,6 +25,9 @@
  *   - Decompression continues across frame boundaries, including skippable
  *     frames; finish() reports truncation unless the input ended exactly
  *     at the end of a frame.
+ *   - Single-stream mode (CU_DSTREAM_SINGLE) stops at the end of the first
+ *     data frame, skipping skippable frames before it, and keeps the input
+ *     after it as unused.
  */
 
 #define ZSTD_STATIC_LINKING_ONLY  /* ZSTD_findDecompressedSize */
@@ -32,6 +35,7 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 #include "utils/levels.h"
+#include "utils/single_stream.h"
 
 #include <zstd.h>
 
@@ -419,6 +423,10 @@ typedef struct {
     size_t   pending_len;
     size_t   pending_cap;
     int      at_frame_end;  /* the last input consumed completed a frame */
+    int      single;        /* CU_DSTREAM_SINGLE: stop after the first data frame */
+    int      ended;         /* single: that frame has been decoded and flushed */
+    cu_frame_magic_t magic; /* single: first bytes of the frame being decoded */
+    cu_unused_t unused;     /* single: input received after the end */
 } zstd_dstream_state_t;
 
 static cu_status_t zstd_dstream_create(void** out_state) {
@@ -442,6 +450,12 @@ static cu_status_t zstd_dstream_create(void** out_state) {
     }
     *out_state = st;
     return CU_OK;
+}
+
+static cu_status_t zstd_dstream_create_single(void** out_state) {
+    cu_status_t s = zstd_dstream_create(out_state);
+    if (s == CU_OK) ((zstd_dstream_state_t*)*out_state)->single = 1;
+    return s;
 }
 
 /* Appends to the live pending bytes, first moving them to the front. Draining
@@ -474,12 +488,28 @@ static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_
 /* Feed `ib` to the decoder until it's consumed or `ob` fills. A full `ob`
  * returns BUF_TOO_SMALL even when all input was consumed, since zstd may still
  * hold output to flush (the drain call then runs the decoder again), unless
- * the decoder just finished a frame, which leaves nothing held. */
+ * the decoder just finished a frame, which leaves nothing held. In single
+ * mode it stops at the end of the first data frame, leaving ib->pos there. */
 static cu_status_t dstream_pump(zstd_dstream_state_t* st, ZSTD_inBuffer* ib, ZSTD_outBuffer* ob) {
     for (;;) {
         size_t before = ib->pos;
         size_t r = ZSTD_decompressStream(st->ds, ob, ib);
         if (ZSTD_isError(r)) return map_zstd_error(r, CU_ERR_DECOMPRESSION);
+        if (st->single) {
+            if (ib->pos > before) {
+                cu_frame_magic_feed(&st->magic, (const uint8_t*)ib->src + before, ib->pos - before);
+            }
+            /* 0 also ends a skippable frame; only a data frame ends the
+             * stream. Either way its output is fully flushed. */
+            if (r == 0) {
+                if (!cu_frame_magic_skippable(&st->magic)) {
+                    st->ended = 1;
+                    st->at_frame_end = 1;
+                    return CU_OK;
+                }
+                st->magic.n = 0;
+            }
+        }
         /* 0 ends a frame (the decoder then expects the next one); any other
          * value after consuming input means a frame is in progress. */
         if (r == 0) st->at_frame_end = 1;
@@ -497,6 +527,12 @@ static cu_status_t zstd_dstream_write(
     ZSTD_outBuffer ob = { out, *out_len, 0 };
     cu_status_t s;
 
+    /* Single mode past the end: its output was flushed when the frame ended. */
+    if (st->ended) {
+        *out_len = 0;
+        return CU_OK;
+    }
+
     /* Drain pending input first. */
     if (st->pending_off < st->pending_len) {
         ZSTD_inBuffer ib = { st->pending + st->pending_off, st->pending_len - st->pending_off, 0 };
@@ -508,6 +544,14 @@ static cu_status_t zstd_dstream_write(
             return a != CU_OK ? a : s;
         }
         if (s != CU_OK) return s;
+        if (st->ended) {
+            /* Everything after the end, retained input then `in`, is unused. */
+            s = cu_unused_append(&st->unused, st->pending + st->pending_off,
+                                 st->pending_len - st->pending_off);
+            if (s == CU_OK && in_len > 0) s = cu_unused_append(&st->unused, in, in_len);
+            st->pending_off = st->pending_len = 0;
+            return s;
+        }
         st->pending_off = st->pending_len = 0;
     }
 
@@ -517,6 +561,8 @@ static cu_status_t zstd_dstream_write(
     if (s == CU_ERR_BUF_TOO_SMALL) {
         cu_status_t a = dstream_pending_append(st, in + ib.pos, in_len - ib.pos);
         if (a != CU_OK) return a;
+    } else if (s == CU_OK && st->ended && ib.pos < in_len) {
+        s = cu_unused_append(&st->unused, in + ib.pos, in_len - ib.pos);
     }
     return s;
 }
@@ -528,7 +574,7 @@ static cu_status_t zstd_dstream_finish(
     /* Decode any pending input and flush what the decoder still holds. */
     cu_status_t s = zstd_dstream_write(state, NULL, 0, out, out_len);
     if (s != CU_OK) return s;
-    if (!st->at_frame_end) {
+    if (st->single ? !st->ended : !st->at_frame_end) {
         cu_set_last_error("zstd: truncated frame at finish");
         return CU_ERR_TRUNCATED;
     }
@@ -540,7 +586,15 @@ static void zstd_dstream_destroy(void* state) {
     if (!st) return;
     if (st->ds) ZSTD_freeDStream(st->ds);
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int zstd_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const zstd_dstream_state_t* st = (const zstd_dstream_state_t*)state;
+    if (!st->ended) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 /* ============================================================================
@@ -573,5 +627,7 @@ const cu_algorithm_vtbl_t cu_zstd_vtbl = {
     .decompress_stream_write  = zstd_dstream_write,
     .decompress_stream_finish = zstd_dstream_finish,
     .decompress_stream_destroy = zstd_dstream_destroy,
+    .decompress_stream_create_single = zstd_dstream_create_single,
+    .decompress_stream_end    = zstd_dstream_end,
 #endif
 };
