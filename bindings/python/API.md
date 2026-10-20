@@ -30,6 +30,8 @@ The API is simple and universal across all [available algorithms](#available-alg
         - [Compressing Data](#compressing-data-1)
     - [Decompression](#decompression-1)
         - [Decompressing Data](#decompressing-data-1)
+- [Streaming](#streaming)
+    - [Stopping at the End of a Stream](#stopping-at-the-end-of-a-stream)
 - [Examples](#examples)
 - [Notes](#notes)
 - [License](#license)
@@ -189,6 +191,42 @@ To decompress data using the functional API:
 # Decompress data
 decompressed_data = decompress(compressed_data, algorithm)
 ```
+
+## Streaming
+
+For data that arrives in pieces, `CompressStream` and `DecompressStream` take chunks and return whatever output is ready:
+
+```python
+from compress_utils import CompressStream, DecompressStream
+
+cs = CompressStream("zstd", level=5)
+compressed = cs.compress(b"first chunk ") + cs.compress(b"second chunk") + cs.finish()
+
+ds = DecompressStream("zstd")
+restored = ds.decompress(compressed) + ds.finish()
+```
+
+`CompressStream.flush()` returns everything a decoder needs to recover the data so far without ending the stream (not available for `snappy` and `bz2`). `finish()` ends the stream; on a `DecompressStream` it raises `CompressError` if the input stopped partway through a frame.
+
+### Stopping at the End of a Stream
+
+By default, concatenated zstd/LZ4 frames, gzip members and xz streams decode as one stream. To stop at the end of the first one and recover what follows it, pass `single_stream=True`:
+
+```python
+ds = DecompressStream("zstd", single_stream=True)
+message = ds.decompress(received)  # output up to the end of the first frame
+ds.eof                             # True once the end has been decoded and returned
+ds.unused_data                     # bytes passed in after the end (empty until eof)
+```
+
+| Member | Description |
+|--------|-------------|
+| `DecompressStream(algorithm, *, single_stream=False)` | `single_stream` must be passed by keyword. Not supported for `lz4_raw` and `lzo` (raises `CompressError`). |
+| `eof` | `True` once a single-stream decoder has reached the end and returned all of its output. Always `False` otherwise. |
+| `unused_data` | The input received after the end, as `bytes`. Empty until `eof`, and always empty otherwise. |
+| `EndOfStreamError` | Raised by `decompress()` with non-empty data after `eof`. The data is not consumed and `unused_data` is unchanged. Subclasses both `CompressError` and `EOFError`. |
+
+This matches `bz2.BZ2Decompressor`, `lzma.LZMADecompressor` and `compression.zstd.ZstdDecompressor`, except that it's opt-in. After `eof`, `decompress(b"")` and `finish()` return `b""`.
 
 ## Examples
 

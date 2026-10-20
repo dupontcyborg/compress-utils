@@ -84,6 +84,23 @@ restored = ds.decompress(compressed) + ds.finish()
 
 Streaming uses chunked buffers with an internal drain protocol, and output is yielded in 64 KB pages, so streaming a multi-GB file does not hold the whole compressed result in memory. For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload.
 
+### Stopping at the end of a stream
+
+By default a `DecompressStream` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (the next message on a socket, another record in the same file), pass `single_stream=True`. Decoding stops at the end of the first frame, member or stream, `eof` turns `True`, and `unused_data` holds the input that came after the end, as with the standard library's `bz2.BZ2Decompressor`, `lzma.LZMADecompressor` and `compression.zstd.ZstdDecompressor`:
+
+```python
+ds = DecompressStream("zstd", single_stream=True)
+message = b""
+while not ds.eof:
+    chunk = f.read(65536)
+    if not chunk:
+        ds.finish()                         # raises CompressError: the stream was cut short
+    message += ds.decompress(chunk)
+f.seek(-len(ds.unused_data), io.SEEK_CUR)   # give back what was read past the end
+```
+
+After the end, `decompress()` with more data raises `EndOfStreamError`, a subclass of both `CompressError` and `EOFError`, without consuming it. The standard library's decompressor objects stop at the first stream by default, but here it's opt-in, because `DecompressStream` has decoded concatenated frames as one stream since v0.10. `lz4_raw` (which has no end marker) and `lzo` don't support it. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `set_max_decompressed_size` (as set when the stream was created).
+
 ## Compression levels
 
 Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps this to each algorithm's native range automatically, so you don't need to know that Zstandard goes 1–22 and zlib goes 1–9. It defaults to `5` if omitted.
