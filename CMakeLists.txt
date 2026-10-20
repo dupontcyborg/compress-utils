@@ -90,6 +90,41 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_FUZZ  "Enable libFuzzer harnesses (clang only)" OFF)
 
+# Fuzzing build: instrument EVERY target — our sources and the vendored codecs —
+# for coverage and ASan/UBSan. Instrumenting only the harness leaves libFuzzer
+# blind to the decoders and ASan unable to see their memory accesses. Only the
+# fuzz targets link the libFuzzer runtime (tests/fuzz/CMakeLists.txt). Must run
+# before the codec subdirectories are added.
+if(ENABLE_FUZZ)
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+    set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
+    check_c_source_compiles("
+        #include <stddef.h>
+        #include <stdint.h>
+        int LLVMFuzzerTestOneInput(const uint8_t* d, size_t n) { (void)d; (void)n; return 0; }"
+        CU_HAVE_LIBFUZZER)
+    unset(CMAKE_REQUIRED_FLAGS)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
+    if(NOT CU_HAVE_LIBFUZZER)
+        message(FATAL_ERROR "ENABLE_FUZZ needs a clang with libFuzzer (-fsanitize=fuzzer). "
+            "Apple's clang doesn't ship it; on macOS use Homebrew's: "
+            "CC=$(brew --prefix llvm)/bin/clang CXX=$(brew --prefix llvm)/bin/clang++")
+    endif()
+    # ASan from Homebrew LLVM (18 and 21) hangs at startup on macOS 27, before
+    # main; set this to "undefined" to fuzz locally there, or fuzz in Linux.
+    set(CU_FUZZ_SANITIZERS "address,undefined" CACHE STRING
+        "Sanitizers for the fuzzing build (comma-separated -fsanitize= list)")
+    # -O1 -g: the usual fuzzing trade-off between speed and readable stacks.
+    # -fno-sanitize-recover makes UBSan findings fatal, so libFuzzer reports them.
+    # FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION: zstd, xz and lz4frame skip
+    # checksum verification under it, so mutated inputs get past the checksums.
+    add_compile_options(-O1 -g -fno-omit-frame-pointer
+        -fsanitize=fuzzer-no-link,${CU_FUZZ_SANITIZERS} -fno-sanitize-recover=undefined)
+    add_compile_definitions(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+    add_link_options(-fsanitize=${CU_FUZZ_SANITIZERS})
+endif()
+
 # Build a single self-contained static archive (compress_utils_static) bundling
 # the core dispatcher + every enabled codec's objects.
 option(BUILD_STATIC_LIB "Build a self-contained compress_utils_static archive" OFF)

@@ -53,7 +53,28 @@ Each binding has its own test suite, all wired through ctest:
 | `test_compress_utils_cpp` (C++) | `cu::` namespace surface, RAII semantics, exception translation |
 | `test_compress_utils_py` (Python) | Same surface via pybind11, plus 1MB random/repetitive cases, string-vs-enum spellings |
 
-Plus a libFuzzer harness (`-DENABLE_FUZZ=ON`, clang only) at `tests/fuzz/fuzz_decompress.c`.
+Plus a libFuzzer harness at `tests/fuzz/fuzz_decompress.c` (see [Fuzzing](#fuzzing)); every build also runs its saved regression inputs as the `fuzz_regressions` ctest.
+
+## Fuzzing
+
+`tests/fuzz/fuzz_decompress.c` feeds mutated input to every decoder: the one-shot path, the size hint, and the streaming decoder with varied chunk and buffer sizes, in default and single-stream mode. It fails on crashes, leaks, ASan/UBSan reports, decoders that stall in a drain loop, and single-stream contract violations. The first input byte picks the codec (an index into `tests/fuzz/fuzz_algos.h`, append only) and the second picks the streaming mode.
+
+CI (`.github/workflows/fuzz.yml`) fuzzes for 3 minutes on every PR and 30 minutes nightly on Linux, keeping the corpus the nightly run grows in the Actions cache. Crash inputs are uploaded as the `fuzz-artifacts` artifact.
+
+To fuzz locally you need a clang that ships libFuzzer. Apple's clang doesn't, so on macOS use Homebrew's `llvm`. `-DENABLE_FUZZ=ON` instruments every target, including the vendored codecs, for coverage and ASan/UBSan:
+
+```sh
+CC=clang CXX=clang++ cmake -B build-fuzz -DENABLE_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug -DBUILD_PYTHON_BINDINGS=OFF
+cmake --build build-fuzz -j --target fuzz_decompress fuzz_seeds
+mkdir -p build-fuzz/corpus
+./build-fuzz/tests/fuzz/fuzz_decompress build-fuzz/corpus build-fuzz/tests/fuzz/seeds -max_total_time=300 -timeout=10
+```
+
+`fuzz_seeds` generates the seed corpus (valid frames per codec, made by the library itself) into `build-fuzz/tests/fuzz/seeds`. New corpus entries go to the first directory. Add `-fork=N` to use N cores.
+
+On macOS 27, ASan from Homebrew LLVM (18 and 21) hangs at startup, before `main`. Either configure with `-DCU_FUZZ_SANITIZERS=undefined` (fuzzing without memory-error detection) or fuzz in a Linux container, as CI does.
+
+When the fuzzer finds something it writes `crash-*`, `timeout-*`, `oom-*` or `leak-*` files. To reproduce one, run it alone: `./build-fuzz/tests/fuzz/fuzz_decompress crash-<hash>`. Once it's fixed, copy the input into `tests/fuzz/regressions/` under a descriptive name and add a row to the README there, so `fuzz_regressions` replays it on every build from then on.
 
 ## Adding an algorithm
 
