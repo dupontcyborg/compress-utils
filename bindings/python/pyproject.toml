@@ -1,9 +1,6 @@
 [build-system]
 requires = [
     "scikit-build-core>=0.8",
-    # Exact pins: the wheel ships a .pyi generated at build time, and the PR
-    # workflow checks it matches the committed one, so the generator must not
-    # drift. Bump both deliberately and commit the regenerated stub.
     "pybind11==3.1.0",
     "pybind11-stubgen==3.0.0",
 ]
@@ -16,7 +13,7 @@ description = "Simple & high-performance compression utilities for Python"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Nicolas Dupont", email = "nicolas@dupontcyborg.com"}
+    {name = "Nicolas Dupont"}
 ]
 keywords = ["compression", "zlib", "brotli", "zstd", "xz", "lzma", "snappy", "utility", "performance"]
 classifiers = [
@@ -28,7 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: Free Threading :: 2 - Beta",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
     "Programming Language :: C++",
     "Operating System :: OS Independent",
     "Topic :: System :: Archiving :: Compression",
@@ -37,9 +34,6 @@ classifiers = [
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-# Canonical reference implementations used by the interop test suite
-# (bindings/python/tests/test_interop.py). zlib/bz2/lzma come from the
-# stdlib, so only the non-stdlib codecs are listed here.
 test = [
     "pytest",
     "zstandard",
@@ -64,7 +58,6 @@ cmake.args = [
 cmake.build-type = "Release"
 wheel.packages = ["bindings/python/compress_utils"]
 wheel.install-dir = "compress_utils"
-# Third-party codec licenses must ship with the compiled wheel too.
 wheel.license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 
 # Ship the auto-generated type stubs and the PEP 561 marker so tools
@@ -98,22 +91,9 @@ build = "cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
 # Set parallel build environment variable
 environment = {CMAKE_BUILD_PARALLEL_LEVEL = "4"}
 
-# Install test dependencies. zstandard/brotli/lz4/python-snappy are the
-# canonical reference codecs for the interop suite (test_interop.py); they
-# ship wheels for every cibuildwheel target (incl. aarch64 manylinux), so
-# the interop tests run on every wheel we build rather than self-skipping.
-# python-snappy is pure-Python over cramjam, whose abi3 wheels cover the
-# full build matrix (cp310-314 × the archs below), so it needs no system
-# libsnappy in the test container.
 test-requires = "pytest zstandard brotli lz4 python-snappy"
-
-# Run tests
 test-command = "pytest {project}/bindings/python/tests -v"
 
-# Free-threaded wheels test without the interop reference libraries: most have
-# no cp314t wheels, and brotli/lz4 turn the GIL back on for the whole process
-# when imported, which would hide free-threading bugs. Their interop tests
-# skip when the library is missing.
 [[tool.cibuildwheel.overrides]]
 select = "cp314t-*"
 test-requires = "pytest"
