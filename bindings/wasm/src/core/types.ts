@@ -81,6 +81,20 @@ export interface CompressionStreamOptions extends CompressOptions {
     flushEachChunk?: boolean;
 }
 
+export interface DecompressStreamOptions {
+    /**
+     * Stop at the end of the first frame/member/stream instead of decoding
+     * concatenated frames as one stream (the default). Once `eof` is true,
+     * `unusedData` holds the input bytes written after the end, so the caller
+     * can read whatever follows (another message, a container's own bytes).
+     * A write with data after the end throws `CompressError` (code
+     * `StreamFinished`, 10); empty writes and `finish()` return empty output.
+     * Snappy emits nothing until its block is complete. Not supported by
+     * raw LZ4 and LZO (throws `UnsupportedAlgo`, 5).
+     */
+    singleStream?: boolean;
+}
+
 export interface DecompressOptions {
     /**
      * Decompressed size in bytes if known by the caller. Skips the

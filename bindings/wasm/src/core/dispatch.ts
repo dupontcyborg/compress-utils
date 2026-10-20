@@ -18,6 +18,7 @@ import {
     type CompressOptions,
     type CompressionStreamOptions,
     type DecompressOptions,
+    type DecompressStreamOptions,
 } from "./types.js";
 
 const DEFAULT_LEVEL = 5;
@@ -27,6 +28,8 @@ const STREAM_DRAIN_CHUNK = 64 * 1024;
  * means the C side is stuck in a state where it neither emits output nor
  * signals completion. Throw rather than spin forever. */
 const DRAIN_MAX_ITERATIONS = 1 << 16;
+/* CU_DSTREAM_SINGLE (compress_utils.h). */
+const DSTREAM_SINGLE = 0x1;
 
 /** Tracks allocations so a single try/finally can free them all. */
 class Arena {
@@ -187,14 +190,19 @@ export class Dispatcher {
         }
     }
 
-    createDecompressStream(): DecompressStream {
+    createDecompressStream(opts: DecompressStreamOptions = {}): DecompressStream {
+        const single = opts.singleStream === true;
         const arena = new Arena(this.exports);
         try {
             const streamPP = arena.alloc(4, this.algorithmName);
             this.writeU32(streamPP, 0);
-            const status = this.exports.cu_decompress_stream_create(this.algorithm, streamPP);
+            const status = this.exports.cu_decompress_stream_create_ex(
+                this.algorithm,
+                single ? DSTREAM_SINGLE : 0,
+                streamPP,
+            );
             checkStatus(this.exports, status, this.algorithmName);
-            return new DecompressStream(this, this.readU32(streamPP));
+            return new DecompressStream(this, this.readU32(streamPP), single);
         } finally {
             arena.freeAll();
         }
@@ -337,13 +345,36 @@ export class CompressStream extends StreamBase {
 }
 
 export class DecompressStream extends StreamBase {
-    constructor(dispatcher: Dispatcher, handle: number) {
+    private readonly single: boolean;
+    private ended = false;
+    private unused: Uint8Array = new Uint8Array(0);
+
+    constructor(dispatcher: Dispatcher, handle: number, single = false) {
         super(dispatcher, handle, (h) => dispatcher.exports.cu_decompress_stream_destroy(h));
+        this.single = single;
+    }
+
+    /**
+     * Single-stream mode (`{ singleStream: true }`): true once the end of the
+     * stream has been decoded and all its output returned. Always false
+     * otherwise.
+     */
+    get eof(): boolean {
+        return this.ended;
+    }
+
+    /**
+     * Single-stream mode: the input bytes written after the end of the
+     * stream, once `eof` is true; empty before that, and in the default mode.
+     */
+    get unusedData(): Uint8Array {
+        // A copy, so a caller changing it can't change later reads.
+        return this.unused.slice();
     }
 
     write(chunk: Uint8Array): Uint8Array {
         this.ensureLive();
-        return drain(this.dispatcher, chunk, (inPtr, inLen, outPtr, outLenPtr) =>
+        const out = drain(this.dispatcher, chunk, (inPtr, inLen, outPtr, outLenPtr) =>
             this.dispatcher.exports.cu_decompress_stream_write(
                 this.handle,
                 inPtr,
@@ -352,14 +383,42 @@ export class DecompressStream extends StreamBase {
                 outLenPtr,
             ),
         );
+        // Only a call that succeeds can reach the end.
+        this.checkEnd();
+        return out;
     }
 
     finish(): Uint8Array {
         this.ensureLive();
         this.finished = true;
-        return drain(this.dispatcher, null, (_in, _len, outPtr, outLenPtr) =>
+        const out = drain(this.dispatcher, null, (_in, _len, outPtr, outLenPtr) =>
             this.dispatcher.exports.cu_decompress_stream_finish(this.handle, outPtr, outLenPtr),
         );
+        this.checkEnd();
+        return out;
+    }
+
+    /* Copies the unused input out once the end is reached: the C pointer is
+     * only valid until the next call on the stream. */
+    private checkEnd(): void {
+        if (!this.single || this.ended || this.handle === 0) return;
+        const exports = this.dispatcher.exports;
+        if (exports.cu_decompress_stream_eof(this.handle) === 0) return;
+        const arena = this.dispatcher.newArena();
+        try {
+            const dataPP = arena.alloc(4, this.dispatcher.algorithmName);
+            const lenP = arena.alloc(4, this.dispatcher.algorithmName);
+            const status = exports.cu_decompress_stream_unused(this.handle, dataPP, lenP);
+            checkStatus(exports, status, this.dispatcher.algorithmName);
+            const len = this.dispatcher.readU32(lenP);
+            this.unused =
+                len > 0
+                    ? this.dispatcher.readBytes(this.dispatcher.readU32(dataPP), len)
+                    : new Uint8Array(0);
+            this.ended = true;
+        } finally {
+            arena.freeAll();
+        }
     }
 }
 
@@ -440,18 +499,31 @@ export interface AlgorithmBindings {
     decompressSync(input: Uint8Array, opts?: DecompressOptions): Uint8Array;
     /** Creates an encoder synchronously after initialization. */
     createCompressStreamSync(opts?: CompressOptions): CompressStream;
-    /** Creates a decoder synchronously after initialization. */
-    createDecompressStreamSync(): DecompressStream;
+    /**
+     * Creates a decoder synchronously after initialization. With
+     * `singleStream`, it stops at the end of the first frame; see
+     * `DecompressStream.eof` / `unusedData`.
+     */
+    createDecompressStreamSync(opts?: DecompressStreamOptions): DecompressStream;
     compress(input: Uint8Array, opts?: CompressOptions): Promise<Uint8Array>;
     decompress(input: Uint8Array, opts?: DecompressOptions): Promise<Uint8Array>;
     createCompressStream(opts?: CompressOptions): Promise<CompressStream>;
-    createDecompressStream(): Promise<DecompressStream>;
+    /**
+     * Creates a decoder. With `singleStream`, it stops at the end of the
+     * first frame; see `DecompressStream.eof` / `unusedData`.
+     */
+    createDecompressStream(opts?: DecompressStreamOptions): Promise<DecompressStream>;
     /**
      * TransformStream that compresses bytes as they flow through. With
      * `flushEachChunk`, each output chunk is decodable on arrival.
      */
     compressionStream(opts?: CompressionStreamOptions): TransformStream<Uint8Array, Uint8Array>;
-    /** TransformStream that decompresses bytes as they flow through. */
+    /**
+     * TransformStream that decompresses bytes as they flow through. It always
+     * decodes concatenated frames as one stream: a TransformStream can't hand
+     * back bytes after the end, so use `createDecompressStream({ singleStream:
+     * true })` for that.
+     */
     decompressionStream(): TransformStream<Uint8Array, Uint8Array>;
     /** Library version, e.g. "0.6.0". */
     version(): Promise<string>;
@@ -533,8 +605,8 @@ export function createBindings(
         createCompressStreamSync(opts) {
             return getInitializedDispatcher().createCompressStream(opts);
         },
-        createDecompressStreamSync() {
-            return getInitializedDispatcher().createDecompressStream();
+        createDecompressStreamSync(opts) {
+            return getInitializedDispatcher().createDecompressStream(opts);
         },
         async compress(input, opts) {
             return (await getDispatcher()).compress(input, opts);
@@ -545,8 +617,8 @@ export function createBindings(
         async createCompressStream(opts) {
             return (await getDispatcher()).createCompressStream(opts);
         },
-        async createDecompressStream() {
-            return (await getDispatcher()).createDecompressStream();
+        async createDecompressStream(opts) {
+            return (await getDispatcher()).createDecompressStream(opts);
         },
         compressionStream(opts) {
             let stream: CompressStream | undefined;

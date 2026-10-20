@@ -94,6 +94,17 @@ export interface WasmExports {
         out_len_ptr: number,
     ) => number;
     readonly cu_decompress_stream_destroy: (stream: number) => void;
+    readonly cu_decompress_stream_create_ex: (
+        algo: number,
+        flags: number,
+        out_stream_pp: number,
+    ) => number;
+    readonly cu_decompress_stream_eof: (stream: number) => number;
+    readonly cu_decompress_stream_unused: (
+        stream: number,
+        data_pp: number,
+        len_ptr: number,
+    ) => number;
 
     /* Optional — only present in wasm modules that wired it through. */
     readonly cu_set_max_decompressed_size?: (bytes: number) => void;

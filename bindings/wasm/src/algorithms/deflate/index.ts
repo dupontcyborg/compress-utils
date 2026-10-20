@@ -30,6 +30,7 @@ export type {
     CompressOptions,
     CompressionStreamOptions,
     DecompressOptions,
+    DecompressStreamOptions,
     AlgorithmName,
 } from "../../core/types.js";
 export type { CompressStream, DecompressStream } from "../../core/dispatch.js";

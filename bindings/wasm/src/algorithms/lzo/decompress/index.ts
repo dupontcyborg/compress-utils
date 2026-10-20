@@ -35,4 +35,5 @@ export const createDecompressStream = bindings.createDecompressStream;
 export const createDecompressStreamSync = bindings.createDecompressStreamSync;
 /** Incrementally decodes one raw block through Web Streams. */
 export const decompressionStream = bindings.decompressionStream;
+export type { DecompressOptions, DecompressStreamOptions, AlgorithmName } from "../../../core/types.js";
 export type { DecompressStream } from "../../../core/dispatch.js";

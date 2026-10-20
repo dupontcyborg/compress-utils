@@ -107,6 +107,22 @@ chunks.push(cs.finish());
 
 If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
 
+### Stopping at the end of a stream
+
+By default a decoder decodes concatenated frames (zstd, LZ4, gzip, xz) as one stream. To read one compressed stream followed by other data, such as the next message on a socket or a container's own bytes, create the decoder with `{ singleStream: true }`. It stops at the end of the first frame, sets `eof`, and returns the input bytes written after the end in `unusedData`:
+
+```ts
+import { createDecompressStream } from "compress-utils/zstd";
+
+using ds = await createDecompressStream({ singleStream: true });
+const message = ds.write(received);  // decodes up to the end of the frame
+if (ds.eof) {
+    const rest = ds.unusedData;      // bytes after the frame, e.g. the next message
+}
+```
+
+Once `eof` is true, writing more data throws `CompressError` with code `10` (stream finished) and leaves `unusedData` unchanged; empty writes and `finish()` return empty output. Leading zstd/LZ4 skippable frames are skipped. Snappy emits nothing until its block is complete. Raw LZ4 (which has no end marker) and LZO don't support it and throw `CompressError` with code `5`. `decompressionStream()` doesn't take the option: a `TransformStream` has no way to hand back the bytes after the end, so use `createDecompressStream` for this.
+
 ## Compression levels
 
 Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The binding maps that to each algorithm's native range internally, so you don't need to know that Zstandard goes 1–22 and zlib goes 1–9. The default is `5`.

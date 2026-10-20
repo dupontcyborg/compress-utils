@@ -18,6 +18,9 @@
   vulnerable — now fixed at the core). Regression test:
   `tests/test_compress_utils.c::test_reject_garbage` drains `finish()` in a
   bounded loop for every codec and fails if it doesn't terminate.
+- [ ] **Default-mode Snappy stream decoder allocates the declared size uncapped.** `snappy_dstream_finish` mallocs the uncompressed length read from the block header (up to ~4 GiB from a few header bytes) before the caller sees any output, so the caller can't enforce its own cap. Single-stream mode already applies the decompressed-size cap captured at creation; doing the same in the default mode is the fix, but it changes default-mode behaviour (inputs over the cap would start failing with `CU_ERR_SIZE_LIMIT`).
+- [ ] **Misleading bz2 error after trailing bytes (default mode).** After a complete bz2 stream followed by extra bytes in the same write, `decompress` returns the full output but `finish()` fails with "bz2: sequence error" (`BZ2_bzDecompress` called again after `BZ_STREAM_END`). It should report data after the end of the stream, as the other codecs do. Single-stream mode is unaffected.
+- [ ] **Default-mode stream errors drop the output decoded before them in the bindings.** The C core reports that output (`*out_len` alongside the error status), but the C++ wrapper's `drain_loop` (and so Python) throws it away when it raises. Returning it would change what the default mode raises, so it needs its own design (e.g. attaching the partial output to the exception).
 - [X] **Fix comment/code mismatch in zlib.cpp:60-61** - Comment says "max 4 times" but code uses `retries = 10`
 - [X] **C API discards all error context** - `catch (const std::exception& e)` returns `-1` with no way to diagnose failures
   - [X] Add error retrieval function (`compress_utils_last_error()`)
@@ -103,6 +106,7 @@
   - [X] Add streaming unit tests (C++, C, and Python)
   - [X] Fix move semantics tests for streaming API (was a test bug, not implementation bug)
 - [X] Cross-language performance testbench
+- [X] **Single-stream decoding** (`CU_DSTREAM_SINGLE`): stop at the end of the first frame/member/stream and hand back the input after it (`eof` / `unused`), in C, C++, Python, Rust, Go and WASM. Lets callers like zpickle read one message and carry on with what follows.
 - [ ] Standalone CLI executable
 - [ ] Multi-file input/output (archiving) via `zip` and `tar.*`
 - [ ] Async/multi-threaded compression support
