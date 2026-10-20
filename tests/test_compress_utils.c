@@ -528,6 +528,52 @@ static int test_raw_lz4(void) {
     return 0;
 }
 
+/* Snappy stream decoders allocate the block's declared size before emitting
+ * anything, so they enforce the size cap captured at creation themselves. */
+static int test_snappy_stream_cap(void) {
+    if (!cu_algorithm_available(CU_ALGO_SNAPPY)) return 0;
+    static uint8_t plain[3000], frame[4096], out[4096];
+    for (size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)("snappy cap "[i % 11] + i / 997);
+    size_t frame_len = sizeof(frame);
+    CHECK_OK(cu_compress(CU_ALGO_SNAPPY, plain, sizeof(plain), frame, &frame_len, 5));
+    const size_t default_cap = (size_t)1024 * 1024 * 1024;
+
+    /* Over the cap captured at creation: rejected at finish, before allocating. */
+    cu_decompress_stream_t* ds = NULL;
+    cu_set_max_decompressed_size(1000);
+    CHECK_OK(cu_decompress_stream_create(CU_ALGO_SNAPPY, &ds));
+    cu_set_max_decompressed_size(default_cap);
+    size_t got = sizeof(out);
+    CHECK_OK(cu_decompress_stream_write(ds, frame, frame_len, out, &got));
+    got = sizeof(out);
+    cu_status_t s = cu_decompress_stream_finish(ds, out, &got);
+    cu_decompress_stream_destroy(ds);
+    CHECK(s == CU_ERR_SIZE_LIMIT && got == 0, "snappy stream over the cap: %s\n", cu_strerror(s));
+
+    /* Lowering the cap after creation doesn't affect an existing stream. */
+    CHECK_OK(cu_decompress_stream_create(CU_ALGO_SNAPPY, &ds));
+    cu_set_max_decompressed_size(10);
+    got = sizeof(out);
+    s = cu_decompress_stream_write(ds, frame, frame_len, out, &got);
+    size_t tail = sizeof(out);
+    if (s == CU_OK) s = cu_decompress_stream_finish(ds, out, &tail);
+    cu_set_max_decompressed_size(default_cap);
+    cu_decompress_stream_destroy(ds);
+    CHECK(s == CU_OK && tail == sizeof(plain) && memcmp(out, plain, sizeof(plain)) == 0,
+          "snappy stream under its creation-time cap: %s\n", cu_strerror(s));
+
+    /* A 5-byte header declaring ~4 GiB is refused without allocating it. */
+    const uint8_t huge[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x0F, 0x00};
+    CHECK_OK(cu_decompress_stream_create(CU_ALGO_SNAPPY, &ds));
+    got = sizeof(out);
+    CHECK_OK(cu_decompress_stream_write(ds, huge, sizeof(huge), out, &got));
+    got = sizeof(out);
+    s = cu_decompress_stream_finish(ds, out, &got);
+    cu_decompress_stream_destroy(ds);
+    CHECK(s == CU_ERR_SIZE_LIMIT, "snappy stream declaring ~4 GiB: %s\n", cu_strerror(s));
+    return 0;
+}
+
 int main(void) {
     if (test_version_and_introspection())   return 1;
     if (test_oneshot_roundtrip())           return 1;
@@ -536,6 +582,7 @@ int main(void) {
     if (test_cross_api())                   return 1;
     if (test_reject_garbage())              return 1;
     if (test_raw_lz4())                     return 1;
+    if (test_snappy_stream_cap())           return 1;
     printf("OK\n");
     return 0;
 }

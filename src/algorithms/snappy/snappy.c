@@ -43,10 +43,13 @@
  * Single-stream decoding (CU_DSTREAM_SINGLE) finds the end of the block as
  * input arrives by walking its element tags (lengths only — offsets are left
  * to snappy_uncompress), then decodes it and keeps the input after it as
- * unused. It still emits nothing until the block is complete. Because it
- * allocates the declared length, it enforces the decompressed-size cap
- * (captured at creation, as the raw LZ4/LZO stream decoders do) as soon as the
- * length varint has been read.
+ * unused. It still emits nothing until the block is complete.
+ *
+ * Both stream decoders allocate the block's declared length, which the caller
+ * can't bound (the allocation comes before any output), so they enforce the
+ * decompressed-size cap themselves: captured at creation, as the raw LZ4/LZO
+ * stream decoders do. Single mode checks it as soon as the length varint has
+ * been read; the default mode at finish, before allocating.
  */
 
 #include "algorithm_registry.h"
@@ -160,9 +163,10 @@ typedef struct {
     size_t   out_tail;
     int      produced;   /* codec has run; out_buf is populated */
     /* Single-stream decoding (CU_DSTREAM_SINGLE). */
+    size_t   cap;        /* decompression: size cap captured at creation; 0 = none */
+    /* Single-stream decoding only. */
     int      single;
     int      ended;      /* the block is complete and decoded into out_buf */
-    size_t   cap;        /* decompressed-size cap captured at creation; 0 = none */
     size_t   scan_pos;   /* next in_buf byte the tag scan hasn't consumed */
     int      have_len;   /* the length varint has been read */
     uint64_t declared;   /* uncompressed length from the varint */
@@ -270,6 +274,7 @@ static cu_status_t snappy_cstream_finish(
 static cu_status_t snappy_dstream_create(void** out_state) {
     snappy_stream_state_t* st = calloc(1, sizeof(*st));
     if (!st) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }
+    st->cap = cu_get_max_decompressed_size();
     *out_state = st;
     return CU_OK;
 }
@@ -433,6 +438,11 @@ static cu_status_t snappy_dstream_finish(
         if (!snappy_uncompressed_length((const char*)st->in_buf, st->in_len, &usize)) {
             cu_set_last_error("snappy: invalid header");
             return CU_ERR_DECOMPRESSION;
+        }
+        if (st->cap > 0 && usize > st->cap) {
+            *out_len = 0;
+            cu_set_last_errorf("snappy: decompressed size %zu exceeds cap %zu", usize, st->cap);
+            return CU_ERR_SIZE_LIMIT;
         }
         st->out_buf = malloc(usize ? usize : 1);
         if (!st->out_buf) { cu_set_last_error("snappy: oom"); return CU_ERR_OOM; }

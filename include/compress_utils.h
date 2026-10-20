@@ -256,9 +256,9 @@ CU_API cu_status_t cu_decompress_size_hint(
  * Sets a global cap on the decompressed size that cu_decompress will
  * accept. Defaults to 1 GiB. Set to 0 to disable. Inputs that would
  * decompress to more than this return CU_ERR_SIZE_LIMIT. Stream
- * raw LZ4/LZO decoders, and Snappy decoders created with CU_DSTREAM_SINGLE,
- * capture this cap at stream creation. Other streaming decoders are
- * unaffected; their callers enforce their own caps.
+ * raw LZ4/LZO and Snappy decoders capture this cap at stream creation (Snappy
+ * because it allocates the declared size before emitting anything). Other
+ * streaming decoders are unaffected; their callers enforce their own caps.
  *
  * Thread-safe; takes effect for subsequent calls.
  */
@@ -389,9 +389,10 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  *     frame, so flushed data is delivered exactly as in the default mode and
  *     eof is not set.
  *   - Snappy has no incremental decoder, so single-mode Snappy emits nothing
- *     until its block is complete. It captures cu_set_max_decompressed_size at
- *     creation and rejects a larger declared size with CU_ERR_SIZE_LIMIT as
- *     soon as the size has been read, before buffering the block.
+ *     until its block is complete. Like every Snappy stream decoder, it
+ *     captures cu_set_max_decompressed_size at creation; it rejects a larger
+ *     declared size with CU_ERR_SIZE_LIMIT as soon as the size has been read,
+ *     before buffering the block.
  *   - Raw LZ4 and LZO return CU_ERR_UNSUPPORTED_ALGO: raw LZ4 has no end marker.
  *
  * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
