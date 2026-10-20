@@ -34,24 +34,6 @@ Algorithm names accept both lowercase strings (`"zstd"`, `"brotli"`, …) and th
 cu.compress(data, cu.Algorithm.zstd, level=5)
 ```
 
-## Streaming
-
-For inputs that don't fit in memory or arrive incrementally:
-
-```python
-from compress_utils import CompressStream, DecompressStream
-
-cs = CompressStream("zstd", level=5)
-chunks = [cs.compress(chunk) for chunk in iter_chunks(some_file)]
-chunks.append(cs.finish())
-compressed = b"".join(chunks)
-
-ds = DecompressStream("zstd")
-restored = ds.decompress(compressed) + ds.finish()
-```
-
-Streaming uses chunked buffers with an internal drain protocol, and output is yielded in 64 KB pages, so streaming a multi-GB file does not hold the whole compressed result in memory. For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload.
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -83,6 +65,24 @@ page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
 
 Without `expected_size`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is slower, so pass it when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming
+
+For inputs that don't fit in memory or arrive incrementally:
+
+```python
+from compress_utils import CompressStream, DecompressStream
+
+cs = CompressStream("zstd", level=5)
+chunks = [cs.compress(chunk) for chunk in iter_chunks(some_file)]
+chunks.append(cs.finish())
+compressed = b"".join(chunks)
+
+ds = DecompressStream("zstd")
+restored = ds.decompress(compressed) + ds.finish()
+```
+
+Streaming uses chunked buffers with an internal drain protocol, and output is yielded in 64 KB pages, so streaming a multi-GB file does not hold the whole compressed result in memory. For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload.
 
 ## Compression levels
 

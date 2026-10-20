@@ -54,9 +54,9 @@ NUMBER_WORDS = {
 BINDING_SECTIONS = [
     ("Installation", r"^install"),
     ("Quick start", r"^quick start"),
-    ("Streaming", r"streaming"),
     ("Supported algorithms", r"^(supported )?algorithms"),
     ("Raw blocks and output capacity", r"^raw blocks"),
+    ("Streaming", r"streaming"),
     ("Compression levels", r"levels"),
     ("Errors and limits", r"^errors?\b"),
     ("Concurrency", r"concurrency|thread"),

@@ -47,32 +47,6 @@ const restored   = await decompress(compressed);
 
 Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`, `/gzip`, plus the raw block formats `/deflate`, `/lz4_raw` and `/lzo/decompress`. The surface is identical across all of them. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm`; see [Bundle size](#bundle-size).
 
-## Streaming
-
-### Web Streams
-
-```ts
-import { compressionStream, decompressionStream } from "compress-utils/zstd";
-
-await fetch("/big-file.json")
-    .then(r => r.body!.pipeThrough(compressionStream({ level: 3 })))
-    .then(s => s.pipeTo(uploadDestination));
-```
-
-### Manual streaming (with `using` for auto-cleanup)
-
-```ts
-import { createCompressStream } from "compress-utils/brotli";
-
-using cs = await createCompressStream({ level: 5 });
-const chunks: Uint8Array[] = [];
-for (const chunk of input) chunks.push(cs.write(chunk));
-chunks.push(cs.finish());
-// cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
-```
-
-If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -106,6 +80,32 @@ const page = await decompress(block, { expectedSize: uncompressedPageSize });
 ```
 
 Without `expectedSize`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is much slower, so pass it when you know the size. Every other algorithm accepts it too, which skips a sizing pass and decodes straight into a buffer of that size.
+
+## Streaming
+
+### Web Streams
+
+```ts
+import { compressionStream, decompressionStream } from "compress-utils/zstd";
+
+await fetch("/big-file.json")
+    .then(r => r.body!.pipeThrough(compressionStream({ level: 3 })))
+    .then(s => s.pipeTo(uploadDestination));
+```
+
+### Manual streaming (with `using` for auto-cleanup)
+
+```ts
+import { createCompressStream } from "compress-utils/brotli";
+
+using cs = await createCompressStream({ level: 5 });
+const chunks: Uint8Array[] = [];
+for (const chunk of input) chunks.push(cs.write(chunk));
+chunks.push(cs.finish());
+// cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
+```
+
+If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
 
 ## Compression levels
 

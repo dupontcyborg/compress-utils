@@ -34,27 +34,6 @@ fn main() -> Result<(), compress_utils::Error> {
 
 `decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which. It is bounded by `set_max_decompressed_size` (default 1 GiB) to stay safe against malformed "decompression bomb" inputs.
 
-## Streaming (`std::io::Read` / `Write`)
-
-```rust
-use std::io::{Read, Write};
-use compress_utils::{Algorithm, Compressor, Decompressor};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Compress into any Write. finish() flushes and finalizes the frame, so call
-    // it. As a safety net drop() also finalizes, but that discards any I/O error.
-    let mut w = Compressor::new(Vec::new(), Algorithm::Gzip, 6)?;
-    w.write_all(b"...")?;
-    let packed = w.finish()?;
-
-    // Decompress from any Read.
-    let mut r = Decompressor::new(&packed[..], Algorithm::Gzip)?;
-    let mut out = Vec::new();
-    r.read_to_end(&mut out)?;
-    Ok(())
-}
-```
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -86,6 +65,27 @@ let page = compress_utils::decompress_with_capacity(Algorithm::Lz4Raw, &block, p
 ```
 
 Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming (`std::io::Read` / `Write`)
+
+```rust
+use std::io::{Read, Write};
+use compress_utils::{Algorithm, Compressor, Decompressor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Compress into any Write. finish() flushes and finalizes the frame, so call
+    // it. As a safety net drop() also finalizes, but that discards any I/O error.
+    let mut w = Compressor::new(Vec::new(), Algorithm::Gzip, 6)?;
+    w.write_all(b"...")?;
+    let packed = w.finish()?;
+
+    // Decompress from any Read.
+    let mut r = Decompressor::new(&packed[..], Algorithm::Gzip)?;
+    let mut out = Vec::new();
+    r.read_to_end(&mut out)?;
+    Ok(())
+}
+```
 
 ## Compression levels
 

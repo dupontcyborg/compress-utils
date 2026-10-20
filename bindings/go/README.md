@@ -30,22 +30,6 @@ restored,   err := cu.Decompress(cu.Zstd, compressed)
 
 `Decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which.
 
-## Streaming (io.Reader / io.Writer)
-
-```go
-// Compress into any io.Writer. Close() flushes and finalizes the frame. It is
-// required; an unclosed Writer produces a truncated stream.
-var buf bytes.Buffer
-w, _ := cu.NewWriter(&buf, cu.Gzip, 6)
-io.Copy(w, src)
-w.Close()
-
-// Decompress from any io.Reader.
-r, _ := cu.NewReader(&buf, cu.Gzip)
-defer r.Close()
-io.Copy(dst, r)
-```
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -77,6 +61,22 @@ page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
 ```
 
 Without a capacity, `Decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming (io.Reader / io.Writer)
+
+```go
+// Compress into any io.Writer. Close() flushes and finalizes the frame. It is
+// required; an unclosed Writer produces a truncated stream.
+var buf bytes.Buffer
+w, _ := cu.NewWriter(&buf, cu.Gzip, 6)
+io.Copy(w, src)
+w.Close()
+
+// Decompress from any io.Reader.
+r, _ := cu.NewReader(&buf, cu.Gzip)
+defer r.Close()
+io.Copy(dst, r)
+```
 
 ## Compression levels
 
