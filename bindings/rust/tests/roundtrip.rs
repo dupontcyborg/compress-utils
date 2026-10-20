@@ -363,3 +363,225 @@ fn flush_delivers_each_message() {
         }
     }
 }
+
+/// A source that hands out its bytes in pieces of the given sizes, cycled (the
+/// last piece of each read may be shorter): lets a test choose exactly where
+/// the decompressor's reads from `src` fall relative to the end of a frame.
+struct Pieces {
+    data: Vec<u8>,
+    pos: usize,
+    sizes: Vec<usize>,
+    next: usize,
+}
+
+impl Pieces {
+    fn new(data: Vec<u8>, sizes: &[usize]) -> Self {
+        Pieces {
+            data,
+            pos: 0,
+            sizes: sizes.to_vec(),
+            next: 0,
+        }
+    }
+}
+
+impl Read for Pieces {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let size = self.sizes[self.next % self.sizes.len()];
+        self.next += 1;
+        let n = buf.len().min(size).min(self.data.len() - self.pos);
+        buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+const TRAILER: &[u8] = b"ZPKL\x01\x01\x03\x00 next message";
+
+/// Decodes one frame in single-stream mode, then returns the decoded bytes and
+/// everything after the frame, read as `unused` followed by the source.
+fn single_then_rest<R: Read>(src: R, algo: Algorithm) -> (Vec<u8>, Vec<u8>) {
+    let mut d = Decompressor::single_stream(src, algo).unwrap();
+    assert!(!d.is_eof() && d.unused().is_empty());
+    let mut got = Vec::new();
+    d.read_to_end(&mut got)
+        .unwrap_or_else(|e| panic!("{algo:?}: {e}"));
+    assert!(d.is_eof(), "{algo:?}: no eof after read_to_end");
+    let mut buf = [0u8; 16];
+    assert_eq!(d.read(&mut buf).unwrap(), 0, "{algo:?}: read after eof");
+    let unused_copy = d.unused().to_vec();
+    let (src, unused) = d.into_parts().unwrap();
+    assert_eq!(unused, unused_copy);
+    let mut rest = Vec::new();
+    io::Cursor::new(unused)
+        .chain(src)
+        .read_to_end(&mut rest)
+        .unwrap();
+    (got, rest)
+}
+
+#[test]
+fn single_stream_stops_at_end_of_frame() {
+    for algo in available(ALGOS) {
+        for (name, payload) in [
+            ("small", b"single stream ".repeat(70)),
+            ("200k random", pseudo_random(200_000, 7)),
+        ] {
+            let frame = compress(algo, &payload, 5).unwrap();
+            let mut wire = frame.clone();
+            wire.extend_from_slice(TRAILER);
+            let n = frame.len();
+            // The frame ends partway through a read (whole source, and splits one
+            // byte either side of the end), exactly at a read boundary, and, for
+            // the small payload, with the source handing out one byte at a time.
+            let mut splits = vec![
+                vec![usize::MAX],
+                vec![n],
+                vec![n - 1, usize::MAX],
+                vec![n + 1],
+            ];
+            if payload.len() < 2000 {
+                splits.push(vec![1]);
+            }
+            for sizes in splits {
+                let (got, rest) = single_then_rest(Pieces::new(wire.clone(), &sizes), algo);
+                assert!(
+                    got == payload,
+                    "{algo:?} {name} reads {sizes:?}: wrong output"
+                );
+                assert_eq!(rest, TRAILER, "{algo:?} {name} reads {sizes:?}: wrong rest");
+            }
+        }
+    }
+}
+
+#[test]
+fn single_stream_reports_unused_read_ahead() {
+    // A small frame inside one 64 KiB read: the rest of that read is unused.
+    for algo in available(ALGOS) {
+        let mut wire = compress(algo, b"hello", 5).unwrap();
+        let n = wire.len();
+        wire.extend_from_slice(TRAILER);
+        let mut d = Decompressor::single_stream(io::Cursor::new(wire), algo).unwrap();
+        let mut got = Vec::new();
+        d.read_to_end(&mut got).unwrap();
+        assert_eq!(got, b"hello");
+        assert!(d.is_eof());
+        assert_eq!(d.unused(), TRAILER, "{algo:?}");
+        let (src, _) = d.into_parts().unwrap();
+        assert_eq!(src.position() as usize, n + TRAILER.len());
+    }
+    // The default mode never reports eof or unused bytes.
+    let wire = compress(Algorithm::Zstd, b"hello", 5).unwrap();
+    let mut d = Decompressor::new(wire.as_slice(), Algorithm::Zstd).unwrap();
+    let mut got = Vec::new();
+    d.read_to_end(&mut got).unwrap();
+    assert!(!d.is_eof() && d.unused().is_empty());
+}
+
+#[test]
+fn single_stream_back_to_back_frames() {
+    for algo in available(ALGOS) {
+        let first = pseudo_random(3000, 11);
+        let second = b"second frame ".repeat(300);
+        let mut wire = compress(algo, &first, 5).unwrap();
+        wire.extend(compress(algo, &second, 5).unwrap());
+        wire.extend_from_slice(TRAILER);
+        let (got, rest) = single_then_rest(wire.as_slice(), algo);
+        assert!(got == first, "{algo:?}: first frame");
+        let (got2, rest2) = single_then_rest(rest.as_slice(), algo);
+        assert!(
+            got2 == second,
+            "{algo:?}: second frame from unused + source"
+        );
+        assert_eq!(rest2, TRAILER, "{algo:?}");
+    }
+}
+
+#[test]
+fn single_stream_large_read_ahead() {
+    // The source is far bigger than one internal read, so the decompressor has
+    // read past the end of the frame while most of the source is still unread:
+    // unused plus the source must still be exactly what followed the frame.
+    let big_tail = pseudo_random(3 * 1024 * 1024, 5);
+    let big_first = b"large first frame, ".repeat(60_000);
+    let big_second = pseudo_random(2 * 1024 * 1024, 9);
+    for algo in available(ALGOS) {
+        let mut wire = compress(algo, b"small", 5).unwrap();
+        wire.extend_from_slice(&big_tail);
+        let (got, rest) = single_then_rest(io::Cursor::new(wire), algo);
+        assert_eq!(got, b"small", "{algo:?}");
+        assert!(rest == big_tail, "{algo:?}: lost bytes after a small frame");
+
+        // Two big frames, read through an irregular transport.
+        let mut wire = compress(algo, &big_first, 5).unwrap();
+        wire.extend(compress(algo, &big_second, 5).unwrap());
+        let (got, rest) = single_then_rest(Pieces::new(wire, &[4093, 97, 65_536, 7]), algo);
+        assert!(got == big_first, "{algo:?}: big first frame");
+        let (got2, rest2) = single_then_rest(rest.as_slice(), algo);
+        assert!(got2 == big_second, "{algo:?}: big second frame");
+        assert!(rest2.is_empty(), "{algo:?}");
+    }
+}
+
+#[test]
+fn single_stream_truncated_and_unsupported() {
+    for algo in available(ALGOS) {
+        let frame = compress(algo, &pseudo_random(1000, 3), 5).unwrap();
+        let mut d = Decompressor::single_stream(&frame[..frame.len() - 1], algo).unwrap();
+        let mut got = Vec::new();
+        assert!(
+            d.read_to_end(&mut got).is_err(),
+            "{algo:?}: truncated frame"
+        );
+        assert!(!d.is_eof() && d.unused().is_empty(), "{algo:?}");
+    }
+    for algo in available(&[Algorithm::Lz4Raw, Algorithm::Lzo]) {
+        match Decompressor::single_stream(&b""[..], algo) {
+            Err(e) => assert_eq!(e.code, Status::UnsupportedAlgo, "{algo:?}: {e}"),
+            Ok(_) => panic!("{algo:?}: single-stream mode must be unsupported"),
+        }
+    }
+}
+
+#[test]
+fn single_stream_into_parts_before_the_end_hands_the_decompressor_back() {
+    // A caller that stops reading at the end of its own data (read_exact, as
+    // pickle stops at its STOP opcode) mustn't lose the rest of the frame or
+    // the bytes after it: into_parts refuses until read has returned Ok(0).
+    let message = pseudo_random(100_000, 77);
+    for algo in available(ALGOS) {
+        let mut wire = compress(algo, &message, 5).unwrap();
+        wire.extend_from_slice(TRAILER);
+        let mut d = Decompressor::single_stream(io::Cursor::new(wire), algo).unwrap();
+
+        let mut got = vec![0u8; message.len()];
+        d.read_exact(&mut got[..message.len() / 2]).unwrap();
+        let err = match d.into_parts() {
+            Ok(_) => panic!("{algo:?}: into_parts with half the output unread"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("into_parts"));
+        let mut d = err.into_inner();
+        d.read_exact(&mut got[message.len() / 2..]).unwrap();
+        assert_eq!(got, message, "{algo:?}");
+
+        // All of the message has been read, but maybe not Ok(0) yet.
+        let (src, unused) = match d.into_parts() {
+            Ok(parts) => parts,
+            Err(e) => {
+                let mut d = e.into_inner();
+                let mut extra = Vec::new();
+                d.read_to_end(&mut extra).unwrap();
+                assert!(extra.is_empty(), "{algo:?}: output past the message");
+                d.into_parts().unwrap()
+            }
+        };
+        let mut rest = Vec::new();
+        io::Cursor::new(unused)
+            .chain(src)
+            .read_to_end(&mut rest)
+            .unwrap();
+        assert_eq!(rest, TRAILER, "{algo:?}");
+    }
+}

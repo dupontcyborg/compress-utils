@@ -87,6 +87,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Stopping at the end of a stream
+
+By default a `Decompressor` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream, and expects the source to end where the compressed data does. When something else follows it, such as the next message on a socket or another record in the same file, use `Decompressor::single_stream`. It stops at the end of the first frame, and `read` then returns `Ok(0)`:
+
+```rust
+use std::io::{Cursor, Read};
+use compress_utils::{Algorithm, Decompressor};
+
+let mut d = Decompressor::single_stream(src, Algorithm::Zstd)?;
+let mut message = Vec::new();
+d.read_to_end(&mut message)?;
+
+// It reads ahead in chunks, so take back what it read past the end, then
+// carry on with the source.
+let (src, unused) = d.into_parts()?;
+let mut rest = Cursor::new(unused).chain(src);
+```
+
+`is_eof()` reports whether the end has been decoded, and `unused()` borrows the bytes read past it. Read until `read` returns `Ok(0)` before calling `into_parts()`, even if you stop at the end of your own data (as `read_exact` does): until then part of the frame and the bytes after it can still be inside the decompressor, so `into_parts()` returns an `IntoPartsError`, whose `into_inner()` hands the decompressor back to keep reading. Raw LZ4 (which has no end marker) and LZO don't support it, and return `Status::UnsupportedAlgo`. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `set_max_decompressed_size` (as set when the decompressor was created) with `Status::SizeLimit`.
+
 ## Compression levels
 
 Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C core maps it to each codec's native range, so you don't need to know that Zstandard goes 1–22 and zlib goes 1–9. `DEFAULT_LEVEL` is 5. Codecs without levels (Snappy) ignore it.
