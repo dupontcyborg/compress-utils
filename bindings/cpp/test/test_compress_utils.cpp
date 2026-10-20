@@ -196,6 +196,61 @@ static int test_raw_formats() {
     return 0;
 }
 
+/* StreamMode::Single stops at the end of the first frame: eof(), unused(),
+ * and writes after the end. */
+static int test_single_stream() {
+    auto in = pseudo_random(20000, 7);
+    const std::vector<std::uint8_t> trailer = {'Z', 'P', 'K', 'L', 1, 1, 3, 0};
+    for (auto a : ALL) {
+        if (!cu::is_available(a)) continue;
+        const std::string algo_name = cu::algorithm_name(a);
+        const char* name = algo_name.c_str();
+        auto frame = cu::compress(a, std::span<const std::uint8_t>(in));
+        auto wire = frame;
+        wire.insert(wire.end(), trailer.begin(), trailer.end());
+
+        cu::DecompressStream ds(a, cu::StreamMode::Single);
+        CHECK(!ds.eof(), "%s: eof before any input", name);
+        auto out = ds.write(std::span<const std::uint8_t>(wire));
+        CHECK(out == in && ds.eof(), "%s: single-stream decode (eof %d)", name, ds.eof());
+        auto unused = ds.unused();
+        CHECK(std::vector<std::uint8_t>(unused.begin(), unused.end()) == trailer,
+              "%s: unused is %zu bytes", name, unused.size());
+        try {
+            (void)ds.write(std::span<const std::uint8_t>(trailer));
+            CHECK(false, "%s: write after eof must throw", name);
+        } catch (const cu::Error& e) {
+            CHECK(e.code() == CU_ERR_STREAM_FINISHED, "%s: write after eof: code %d", name,
+                  static_cast<int>(e.code()));
+        }
+        CHECK(ds.write(std::span<const std::uint8_t>()).empty() && ds.finish().empty(),
+              "%s: output after eof", name);
+        CHECK(ds.unused().size() == trailer.size(), "%s: unused changed after eof", name);
+
+        /* Moved-from streams report nothing. */
+        cu::DecompressStream moved(std::move(ds));
+        CHECK(moved.eof() && !ds.eof() && ds.unused().empty(), "%s: moved-from stream", name);
+
+        /* The default mode reports neither. */
+        cu::DecompressStream dd(a);
+        auto plain = dd.write(std::span<const std::uint8_t>(frame));
+        auto rest = dd.finish();
+        plain.insert(plain.end(), rest.begin(), rest.end());
+        CHECK(plain == in && !dd.eof() && dd.unused().empty(), "%s: default mode", name);
+    }
+    for (auto a : {cu::Algorithm::Lz4Raw, cu::Algorithm::Lzo}) {
+        if (!cu::is_available(a)) continue;
+        try {
+            cu::DecompressStream ds(a, cu::StreamMode::Single);
+            CHECK(false, "%s: single mode must be unsupported", cu::algorithm_name(a).c_str());
+        } catch (const cu::Error& e) {
+            CHECK(e.code() == CU_ERR_UNSUPPORTED_ALGO, "%s: code %d",
+                  cu::algorithm_name(a).c_str(), static_cast<int>(e.code()));
+        }
+    }
+    return 0;
+}
+
 int main() {
     std::printf("cu version: %s\n", cu::version().c_str());
     if (test_freefn_roundtrip())  return 1;
@@ -204,6 +259,7 @@ int main() {
     if (test_capacity())          return 1;
     if (test_flush())             return 1;
     if (test_raw_formats())       return 1;
+    if (test_single_stream())     return 1;
     std::printf("OK\n");
     return 0;
 }

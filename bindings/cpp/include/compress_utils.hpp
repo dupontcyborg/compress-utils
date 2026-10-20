@@ -232,10 +232,20 @@ private:
     }
 };
 
+/* How a DecompressStream treats data after the end of a frame. */
+enum class StreamMode {
+    /* Concatenated frames/members/streams decode as one (the default). */
+    Concatenated,
+    /* Stop at the end of the first frame; eof() and unused() report it
+     * (CU_DSTREAM_SINGLE). */
+    Single,
+};
+
 class DecompressStream {
 public:
-    explicit DecompressStream(Algorithm a) {
-        detail::check(cu_decompress_stream_create(detail::c_algo(a), &stream_));
+    explicit DecompressStream(Algorithm a, StreamMode mode = StreamMode::Concatenated) {
+        detail::check(cu_decompress_stream_create_ex(
+            detail::c_algo(a), mode == StreamMode::Single ? CU_DSTREAM_SINGLE : 0u, &stream_));
     }
     DecompressStream(const DecompressStream&) = delete;
     DecompressStream& operator=(const DecompressStream&) = delete;
@@ -265,6 +275,22 @@ public:
         return drain_loop([&](std::uint8_t* out, std::size_t* out_len, bool) {
             return cu_decompress_stream_finish(stream_, out, out_len);
         });
+    }
+
+    /* StreamMode::Single: the end of the stream has been decoded and all of its
+     * output returned. After that, write() with data throws cu::Error
+     * (CU_ERR_STREAM_FINISHED) without consuming it; an empty write() and
+     * finish() return nothing. */
+    bool eof() const noexcept { return cu_decompress_stream_eof(stream_) != 0; }
+
+    /* StreamMode::Single: the input received after the end of the stream, once
+     * eof(). Valid until the next call on this stream. */
+    std::span<const std::uint8_t> unused() const {
+        if (!stream_) return {};
+        const std::uint8_t* data = nullptr;
+        std::size_t len = 0;
+        detail::check(cu_decompress_stream_unused(stream_, &data, &len));
+        return std::span<const std::uint8_t>(data, len);
     }
 
 private:
