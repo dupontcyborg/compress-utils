@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"unsafe"
 )
 
 // streamScratch is the size of the fixed output buffer each stream drains
@@ -168,9 +169,14 @@ func (w *Writer) free() {
 // Reader is an io.ReadCloser that decompresses a stream produced by the
 // given algorithm from an underlying source. Close releases the C stream.
 //
+// By default concatenated zstd/LZ4 frames, gzip members and xz streams decode
+// as one stream. Multistream(false) instead stops at the end of the first one
+// and hands back the bytes read past it through Unused.
+//
 // A Reader is not safe for concurrent use.
 type Reader struct {
 	src     io.Reader
+	algo    Algorithm
 	stream  *C.cu_decompress_stream_t
 	inBuf   []byte       // scratch for reads from src
 	scratch []byte       // decompressor output scratch
@@ -179,9 +185,13 @@ type Reader struct {
 	srcEOF    bool // src has reported io.EOF
 	inputDone bool // all input has been fed; in the finish phase
 	draining  bool // C stream holds unconsumed input; feed (nil,0) next
-	finished  bool // finish returned OK; fully drained
+	finished  bool // finish returned OK, or single mode reached eof; fully drained
 	err       error
 	closed    bool
+
+	single  bool   // Multistream(false): stop at the end of the first stream
+	started bool   // Read has been called
+	unused  []byte // single mode: bytes read from src past the end
 }
 
 // NewReader returns a Reader that decompresses src using the given
@@ -197,6 +207,7 @@ func NewReader(src io.Reader, algo Algorithm) (*Reader, error) {
 	}
 	r := &Reader{
 		src:     src,
+		algo:    algo,
 		stream:  s,
 		inBuf:   make([]byte, streamScratch),
 		scratch: make([]byte, streamScratch),
@@ -205,9 +216,65 @@ func NewReader(src io.Reader, algo Algorithm) (*Reader, error) {
 	return r, nil
 }
 
+// Multistream controls whether the Reader decodes concatenated frames as one
+// stream (true, the default) or stops at the end of the first zstd frame, LZ4
+// frame, gzip member, zlib/xz/brotli/bzip2/raw DEFLATE stream or Snappy block
+// (false), like compress/gzip's Reader.Multistream. In single-stream mode Read
+// returns io.EOF at that end, even if more data follows, and Unused returns
+// the bytes the Reader read from its source past it.
+//
+// It must be called before the first Read; calling it afterwards panics. If
+// the algorithm can't decode a single stream (Lz4Raw has no end marker; Lzo),
+// the first Read returns an *Error with Code ErrUnsupported.
+func (r *Reader) Multistream(ok bool) {
+	if r.started {
+		panic("compressutils: Reader.Multistream called after Read")
+	}
+	if r.stream == nil {
+		return // closed
+	}
+	r.err = nil
+	if r.single == !ok {
+		return
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	var flags C.uint32_t
+	if !ok {
+		flags = C.CU_DSTREAM_SINGLE
+	}
+	var s *C.cu_decompress_stream_t
+	st := C.cu_decompress_stream_create_ex(C.cu_algorithm_t(r.algo), flags, &s)
+	if err := statusErr(st); err != nil {
+		r.err = err
+		return
+	}
+	C.cu_decompress_stream_destroy(r.stream)
+	r.stream = s
+	r.single = !ok
+}
+
+// Unused returns, in single-stream mode (Multistream(false)) once Read has
+// returned io.EOF, the bytes the Reader read from its source past the end of
+// the stream, so the caller can carry on reading where the stream ended:
+//
+//	next := io.MultiReader(bytes.NewReader(r.Unused()), src)
+//
+// Unlike compress/gzip, which avoids reading past the end by pulling one byte
+// at a time through an io.ByteReader, this Reader reads its source in chunks
+// and hands the extra bytes back here. It returns nil before the end, in the
+// default multistream mode, and when nothing followed the stream. The slice
+// stays valid after Close.
+func (r *Reader) Unused() []byte {
+	return r.unused
+}
+
 // Read decompresses into p. It returns io.EOF once the compressed stream has
-// been fully consumed and drained.
+// been fully consumed and drained (in single-stream mode, once the first stream
+// has ended).
 func (r *Reader) Read(p []byte) (int, error) {
+	r.started = true
 	for r.out.Len() == 0 {
 		if r.finished {
 			return 0, io.EOF
@@ -242,6 +309,7 @@ func (r *Reader) pump() error {
 		}
 		if st == C.CU_OK {
 			r.finished = true
+			r.takeUnused()
 			return nil
 		}
 		if Status(st) == ErrBufTooSmall {
@@ -279,6 +347,12 @@ func (r *Reader) pump() error {
 	switch Status(st) {
 	case statusOK:
 		r.draining = false
+		if r.single && C.cu_decompress_stream_eof(r.stream) != 0 {
+			// The stream ended: stop reading src.
+			r.finished = true
+			r.takeUnused()
+			return nil
+		}
 		if r.srcEOF {
 			// The final chunk was fully consumed; flush next.
 			r.inputDone = true
@@ -290,6 +364,23 @@ func (r *Reader) pump() error {
 	default:
 		return statusErr(st)
 	}
+}
+
+// takeUnused copies the C stream's unused input into Go memory (it's only valid
+// until the next C call on the stream). Every chunk read from src is handed to
+// the C stream whole, which keeps whatever it doesn't decode, so its unused
+// input is everything read past the end; the Reader holds no unfed bytes of
+// its own. The caller must hold the OS thread.
+func (r *Reader) takeUnused() {
+	if !r.single || C.cu_decompress_stream_eof(r.stream) == 0 {
+		return
+	}
+	var data *C.uint8_t
+	var n C.size_t
+	if C.cu_decompress_stream_unused(r.stream, &data, &n) != C.CU_OK || n == 0 {
+		return
+	}
+	r.unused = append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(data)), int(n))...)
 }
 
 // Close releases the underlying C stream. It is safe to call more than once.
