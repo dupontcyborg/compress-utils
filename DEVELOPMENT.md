@@ -7,7 +7,7 @@ Building compress-utils from source, and the test suites.
 - CMake 3.17+
 - A C11 compiler (Clang, GCC, MSVC)
 - A C++20 compiler (only for the C++ binding and the pybind11 module)
-- Python 3.10+ and `pybind11-stubgen` (only for the Python binding)
+- Python 3.11+ and `pybind11-stubgen` (only for the Python binding)
 
 ## Building
 
