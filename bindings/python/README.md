@@ -132,7 +132,7 @@ Stubs are regenerated from the compiled module at build time (via `pybind11-stub
 
 ## Concurrency
 
-Wheels are also published for free-threaded Python 3.14 (`python3.14t`), where the module runs without the GIL and calls on different threads run in parallel whatever their size.
+Wheels are also published for free-threaded Python 3.14 and 3.15 (`python3.14t`, `python3.15t`), where the module runs without the GIL and calls on different threads run in parallel whatever their size.
 
 On regular Python, calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
 
