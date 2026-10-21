@@ -490,9 +490,10 @@ static void check_snappy_scan(void) {
     }
 }
 
-/* A decoding error is final: later writes and finish repeat it, valid input
- * can't revive the stream, and it never reports eof. */
-static void check_failed(cu_algorithm_t algo) {
+/* A decoding error is final, in single and default mode (flags): later writes
+ * and finish repeat it without re-entering the codec, valid input can't revive
+ * the stream, and it never reports eof. */
+static void check_failed(cu_algorithm_t algo, uint32_t flags) {
     static uint8_t plain[2000];
     make(1, plain, sizeof(plain), 61);
     buf_t frame = compress_frame(algo, plain, sizeof(plain));
@@ -500,7 +501,8 @@ static void check_failed(cu_algorithm_t algo) {
     buf_t bad = concat(frame.data, frame.len, NULL, 0);
     for (size_t i = 0; i < bad.len && i < 16; i++) bad.data[i] ^= 0xA5;
 
-    cu_decompress_stream_t* ds = open_single(algo);
+    cu_decompress_stream_t* ds = NULL;
+    CHECK(cu_decompress_stream_create_ex(algo, flags, &ds) == CU_OK && ds);
     static uint8_t out[4096];
     size_t got = sizeof(out);
     cu_status_t first = cu_decompress_stream_write(ds, bad.data, bad.len, out, &got);
@@ -511,7 +513,8 @@ static void check_failed(cu_algorithm_t algo) {
         first = cu_decompress_stream_finish(ds, out, &got);
     }
     if (first == CU_OK || first == CU_ERR_BUF_TOO_SMALL) {
-        FAIL("%s: corrupted frame decoded without error", cu_algorithm_name(algo));
+        FAIL("%s (flags %u): corrupted frame decoded without error", cu_algorithm_name(algo),
+             (unsigned)flags);
     } else {
         got = sizeof(out);
         cu_status_t again = cu_decompress_stream_write(ds, frame.data, frame.len, out, &got);
@@ -524,22 +527,25 @@ static void check_failed(cu_algorithm_t algo) {
         CHECK(cu_decompress_stream_unused(ds, &unused, &unused_len) == CU_OK);
         if (again != first || drain != first || fin != first || cu_decompress_stream_eof(ds) ||
             unused_len != 0) {
-            FAIL("%s: after error %d: write %d, drain %d, finish %d, eof %d, unused %zu",
-                 cu_algorithm_name(algo), (int)first, (int)again, (int)drain, (int)fin,
-                 cu_decompress_stream_eof(ds), unused_len);
+            FAIL("%s (flags %u): after error %d: write %d, drain %d, finish %d, eof %d, unused %zu",
+                 cu_algorithm_name(algo), (unsigned)flags, (int)first, (int)again, (int)drain,
+                 (int)fin, cu_decompress_stream_eof(ds), unused_len);
         }
     }
     cu_decompress_stream_destroy(ds);
 
     /* finish before the end is final too: the rest of the frame can't follow. */
-    ds = open_single(algo);
+    CHECK(cu_decompress_stream_create_ex(algo, flags, &ds) == CU_OK && ds);
     decoded_t r = feed(ds, frame.data, frame.len / 2, 0, SIZE_MAX, 4096, sizeof(plain) + 64);
     got = sizeof(out);
     CHECK(r.error == CU_OK);
-    CHECK(cu_decompress_stream_finish(ds, out, &got) == CU_ERR_TRUNCATED);
+    cu_status_t cut = cu_decompress_stream_finish(ds, out, &got);
+    /* Default-mode Snappy decodes its one block at finish, so a cut block
+     * reads as corrupt there; single mode always reports truncation. */
+    CHECK(flags ? cut == CU_ERR_TRUNCATED : cut != CU_OK && cut != CU_ERR_BUF_TOO_SMALL);
     got = sizeof(out);
     CHECK(cu_decompress_stream_write(ds, frame.data + frame.len / 2, frame.len - frame.len / 2,
-                                     out, &got) == CU_ERR_TRUNCATED);
+                                     out, &got) == cut);
     CHECK(!cu_decompress_stream_eof(ds));
     free(r.out);
     cu_decompress_stream_destroy(ds);
@@ -600,7 +606,8 @@ int main(void) {
             free(plain);
         }
         check_two_frames(algo);
-        check_failed(algo);
+        check_failed(algo, CU_DSTREAM_SINGLE);
+        check_failed(algo, 0);
         if (algo == CU_ALGO_ZSTD || algo == CU_ALGO_LZ4) check_skippable(algo);
         if (algo == CU_ALGO_GZIP || algo == CU_ALGO_XZ) check_padding(algo);
         if (algo == CU_ALGO_SNAPPY) check_snappy_scan();

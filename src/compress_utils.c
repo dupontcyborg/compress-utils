@@ -249,7 +249,7 @@ struct cu_decompress_stream {
     int finished;
     int single;  /* CU_DSTREAM_SINGLE */
     int eof;     /* single: the end was decoded and all its output delivered */
-    cu_status_t failed;  /* single: the codec's first error; the stream is dead */
+    cu_status_t failed;  /* the codec's first error; the stream is dead */
 };
 
 cu_status_t cu_compress_stream_create(
@@ -427,19 +427,19 @@ static int dstream_ended(const cu_decompress_stream_t* stream) {
     return stream->single && stream->vtbl->decompress_stream_end(stream->state, NULL, NULL);
 }
 
-/* Single mode: a call that returned CU_OK after the end has delivered all of
- * the stream's output. A codec error instead kills the stream, so it can never
- * report eof with output or unused input missing (e.g. after running out of
- * memory keeping the unused input), and the codec is never re-entered after
- * failing. */
+/* A codec error kills the stream in every mode: the codec is never re-entered
+ * after failing, since several can't resume from an error state (libbzip2
+ * reads and writes out of bounds). In single mode it also means the stream can
+ * never report eof with output or unused input missing (e.g. after running out
+ * of memory keeping the unused input). Single mode: a call that returned CU_OK
+ * after the end has delivered all of the stream's output. */
 static cu_status_t dstream_settle(cu_decompress_stream_t* stream, cu_status_t s) {
-    if (!stream->single) return s;
-    if (s == CU_OK && dstream_ended(stream)) stream->eof = 1;
-    else if (s != CU_OK && s != CU_ERR_BUF_TOO_SMALL) stream->failed = s;
+    if (s != CU_OK && s != CU_ERR_BUF_TOO_SMALL) stream->failed = s;
+    else if (s == CU_OK && dstream_ended(stream)) stream->eof = 1;
     return s;
 }
 
-/* Single mode: every call on a failed stream repeats its error. */
+/* Every call on a failed stream repeats its error. */
 static cu_status_t dstream_failed(const cu_decompress_stream_t* stream) {
     if (stream->failed != CU_OK) {
         cu_set_last_errorf("%s: stream failed earlier (%s)", stream->vtbl->name,

@@ -7,3 +7,5 @@ Name files `<codec>-<short-description>`, and say in the commit that adds one wh
 | File | Bug |
 |------|-----|
 | `xz-zero-byte-bomb` | A single `0x00` byte made the xz stream decoder return `CU_ERR_BUF_TOO_SMALL` from `finish` forever (fixed 2026-07, `src/algorithms/xz/xz.c`). |
+| `bz2-finish-after-error-inuse16` | In default stream mode, `finish` after a failed write re-entered libbzip2 on its error state: a write past `inUse16[16]`. Errors are now final in every mode (fixed 2026-10, `dstream_settle` in `src/compress_utils.c`). Caught by UBSan builds. |
+| `bz2-finish-after-error-origptr` | Same bug, surfacing as a signed-shift overflow of `origPtr` in libbzip2. Caught by UBSan builds. |

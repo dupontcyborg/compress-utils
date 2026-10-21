@@ -354,6 +354,10 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * filled exactly with output still held inside the decoder, so keep
  * draining until a call returns CU_OK.
  *
+ * Any error from decoding (corrupt or truncated input, CU_ERR_SIZE_LIMIT,
+ * CU_ERR_OOM, ...) is final: every later write or finish returns the same
+ * status without calling into the codec again. Destroy the stream.
+ *
  * Concatenated zstd and LZ4 frames (including skippable frames), gzip
  * members (with any zero padding between them) and xz streams (with stream
  * padding) decode as one stream, here and in cu_decompress, as the zstd, lz4,

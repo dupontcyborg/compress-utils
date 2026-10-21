@@ -65,7 +65,10 @@ jobs:
       - name: Fuzz
         # New inputs go to the first directory (fuzz-corpus). Fork mode ignores
         # timeouts and OOMs by default; -ignore_*=0 makes a hang (the
-        # decompression-bomb class) or a memory blowup fail the job.
+        # decompression-bomb class) or a memory blowup fail the job. lsan.supp
+        # silences a leak in libFuzzer's own fork-mode parent.
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/fuzz/lsan.supp
         run: |
           mkdir -p fuzz-corpus fuzz-artifacts
           ./build-fuzz/tests/fuzz/fuzz_decompress fuzz-corpus build-fuzz/tests/fuzz/seeds \
