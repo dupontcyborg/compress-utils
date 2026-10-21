@@ -141,11 +141,11 @@ SPECS: dict[str, dict] = {
         # variants, table/constant generators, and hand-written asm are not part
         # of the portable single-threaded library. `*_gen.c` covers every
         # generator: they are standalone programs with their own main(), so one
-        # slipping in drags a second entry point into the static lib. It has to
-        # be broader than the old `*_tablegen.c` because 5.8 named the CLMUL one
-        # crc_clmul_consts_gen.c.
+        # slipping in drags a second entry point into the static lib. 5.8 named
+        # the CLMUL one crc_clmul_consts_gen.c, but `*_gen.c` does NOT match
+        # `*_tablegen.c` (no underscore before "gen") — keep both patterns.
         "source_excludes": [
-            "*_small.c", "*_gen.c", "*_mt.c",
+            "*_small.c", "*_gen.c", "*_tablegen.c", "*_mt.c",
             "hardware_cputhreads.c", "outqueue.c",
         ],
         "header_dirs": [
