@@ -114,7 +114,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 ## Errors and limits
 
 ```rust
-compress_utils::version();                            // e.g. "0.10.1"
+compress_utils::version();                            // e.g. "0.11.0"
 compress_utils::set_max_decompressed_size(256 << 20); // cap decompress (default 1 GiB; 0 = unbounded)
 
 // Errors carry the C status code for programmatic matching.
