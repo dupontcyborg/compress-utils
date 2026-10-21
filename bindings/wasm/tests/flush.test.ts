@@ -30,6 +30,15 @@ const messages = [
     new Uint8Array(37).fill(66),
 ];
 
+/* Byte-for-byte equality that reports the first difference. toEqual walks a
+ * typed array element by element: ~150 ms per 200 KB comparison, several times
+ * that under coverage on CI, which pushed these tests past the 5 s timeout. */
+function expectSameBytes(actual: Uint8Array, expected: Uint8Array): void {
+    expect(actual.byteLength).toBe(expected.byteLength);
+    const at = actual.findIndex((byte, i) => byte !== expected[i]);
+    expect(at, `first differing byte at offset ${at}`).toBe(-1);
+}
+
 function concat(parts: Uint8Array[]): Uint8Array {
     const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
     let offset = 0;
@@ -51,11 +60,11 @@ describe("compress stream flush", () => {
                 const wire = concat([encoder.write(message), encoder.flush()]);
                 sent.push(message);
                 received.push(decoder.write(wire));
-                expect(concat(received)).toEqual(concat(sent));
+                expectSameBytes(concat(received), concat(sent));
                 expect(encoder.flush().byteLength).toBe(0); // nothing new to flush
             }
             received.push(decoder.write(encoder.finish()), decoder.finish());
-            expect(concat(received)).toEqual(concat(sent));
+            expectSameBytes(concat(received), concat(sent));
             expect(() => encoder.flush()).toThrow(/finish/);
         });
 
@@ -67,7 +76,7 @@ describe("compress stream flush", () => {
             for (const message of messages) {
                 void writer.write(message);
                 const { value } = await reader.read();
-                expect(decoder.write(value!)).toEqual(message);
+                expectSameBytes(decoder.write(value!), message);
             }
             void writer.close();
             const parts: Uint8Array[] = [];
@@ -93,7 +102,7 @@ describe("compress stream flush", () => {
             for (const message of messages) {
                 sent.push(message);
                 received.push(ds.write(concat([cs.write(message), cs.flush()])));
-                expect(concat(received)).toEqual(concat(sent));
+                expectSameBytes(concat(received), concat(sent));
             }
         });
     }

@@ -76,6 +76,28 @@ On macOS 27, ASan from Homebrew LLVM (18 and 21) hangs at startup, before `main`
 
 When the fuzzer finds something it writes `crash-*`, `timeout-*`, `oom-*` or `leak-*` files. To reproduce one, run it alone: `./build-fuzz/tests/fuzz/fuzz_decompress crash-<hash>`. Once it's fixed, copy the input into `tests/fuzz/regressions/` under a descriptive name and add a row to the README there, so `fuzz_regressions` replays it on every build from then on.
 
+## Coverage
+
+Each part of the library is measured only by the tests written in its own language, so one suite can't make another look better covered than it is: the C core (`src/`) by the C tests, and each binding by its own suite. CI (`.github/workflows/coverage.yml`) reports all of them on every PR, in each job's summary plus an HTML artifact, and fails a job whose part is below 90% line coverage or 95% function coverage (`COVERAGE_MIN_LINES` and `COVERAGE_MIN_FUNCTIONS` in the workflow; statements stand in for lines in Go, which has no line metric). The nightly fuzz run also reports which code its corpus reaches, including the vendored decoders.
+
+| Part | Measured by | Run locally |
+|------|-------------|-------------|
+| C core, C++ binding, Python binding (pybind11 glue) | the C, C++ and Python tests | `tools/coverage.py` on a coverage build (below) |
+| Go binding | `go test` | `go test -coverprofile=go-coverage.out ./bindings/go/ && go tool cover -func=go-coverage.out` |
+| Rust binding | `cargo test` | `cargo llvm-cov` (install with `cargo install cargo-llvm-cov`) |
+| WASM binding (TypeScript) | vitest | `npm run build && npx vitest run --coverage` in `bindings/wasm` |
+
+For the C-family parts, configure with clang's source-based coverage, then run the script, which runs each language's tests separately and writes reports to `coverage/` (`coverage/core-html/index.html` and so on). On macOS, Apple's clang works; the script finds `llvm-cov` through `xcrun`.
+
+```sh
+F="-fprofile-instr-generate -fcoverage-mapping"
+cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ "-DCMAKE_C_FLAGS=$F" "-DCMAKE_CXX_FLAGS=$F" -DCMAKE_EXE_LINKER_FLAGS=-fprofile-instr-generate -DCMAKE_SHARED_LINKER_FLAGS=-fprofile-instr-generate -DCMAKE_MODULE_LINKER_FLAGS=-fprofile-instr-generate
+cmake --build build-cov -j
+tools/coverage.py --build-dir build-cov
+```
+
+Pass `--groups core` (or `cpp`, `python`) for one part, and `--min-lines 90 --min-functions 95` to apply CI's minimums. Building the Python binding writes its module into `bindings/python/compress_utils/`, replacing one you built normally.
+
 ## Adding an algorithm
 
 See [docs/adding-an-algorithm.md](docs/adding-an-algorithm.md) for the end-to-end walkthrough of wiring a new codec through the C core and every binding.

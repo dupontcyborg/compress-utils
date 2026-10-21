@@ -81,9 +81,7 @@ ignore it.
       CU_OMIT_DECOMPRESS` — the WASM direction-split builds define these to drop
       a direction's code.
 - [ ] **Single-stream decoding** — if the format marks its own end, fill the optional `decompress_stream_create_single` / `decompress_stream_end` slots (`CU_DSTREAM_SINGLE`; contract in `src/algorithm_registry.h`): stop at the end of the first frame, keep the input after it with `utils/single_stream.h`, and add the codec to `tests/test_single_stream.c`. Leave them NULL for formats with no end marker (as raw LZ4 does), and single mode returns `CU_ERR_UNSUPPORTED_ALGO`.
-- [ ] **`src/registry.c`** — add an `extern` decl and a
-      `case CU_ALGO_<ALGO>: return &cu_<algo>_vtbl;`, both under
-      `#ifdef INCLUDE_<ALGO>`.
+- [ ] **`src/registry.c`** — add an `extern` decl and a `[CU_ALGO_<ALGO>] = &cu_<algo>_vtbl,` entry in `REGISTRY`, both under `#ifdef INCLUDE_<ALGO>`. `REGISTRY` is sized by the last enum value (`CU_ALGO_LZO + 1`), so update that bound when appending to the enum.
 - [ ] **`tools/vendor-codecs.py`** — add a `SPECS["<algo>"]` entry: the source
       dirs/files to curate, header dirs, `include_dirs`, the portable `defines`,
       and `cxx`. Derive the exact compiled source set from upstream's build

@@ -585,3 +585,314 @@ fn single_stream_into_parts_before_the_end_hands_the_decompressor_back() {
         assert_eq!(rest, TRAILER, "{algo:?}");
     }
 }
+
+#[test]
+fn algorithm_display_is_its_name() {
+    let all = ALGOS
+        .iter()
+        .copied()
+        .chain([Algorithm::Lzma, Algorithm::Lz4Raw, Algorithm::Lzo]);
+    for algo in all {
+        assert!(!algo.name().is_empty(), "{algo:?} has no name");
+        assert_eq!(algo.to_string(), algo.name(), "{algo:?}");
+    }
+    assert_eq!(format!("{}", Algorithm::Lzma), "xz");
+}
+
+/// Levels outside 1..=10 are rejected by both the one-shot and streaming APIs,
+/// with the C status and its message carried on the error.
+#[test]
+fn rejects_out_of_range_levels() {
+    for algo in available(ALGOS) {
+        for level in [-1, 0, 11] {
+            let err = compress(algo, b"data", level).unwrap_err();
+            assert_eq!(err.code, Status::InvalidLevel, "{algo} L{level}: {err}");
+            assert_eq!(err.to_string(), err.message);
+            assert!(
+                err.message
+                    .starts_with("compression level out of range (1..10)"),
+                "{algo} L{level}: {err}"
+            );
+            match Compressor::new(Vec::new(), algo, level) {
+                Err(e) => assert_eq!(e.code, Status::InvalidLevel, "{algo} L{level}: {e}"),
+                Ok(_) => panic!("{algo}: stream accepted level {level}"),
+            }
+        }
+    }
+}
+
+/// An error message is the status text, plus `": "` and the C detail only
+/// when the C core recorded one.
+#[test]
+fn error_message_joins_status_and_detail() {
+    // LZ4 and Snappy reject empty input in the size probe without a detail.
+    for algo in available(&[Algorithm::Lz4, Algorithm::Snappy]) {
+        let err = decompress(algo, b"").unwrap_err();
+        assert_eq!(err.code, Status::Truncated, "{algo}: {err}");
+        assert_eq!(err.message, "compressed input truncated", "{algo}");
+    }
+    if Algorithm::Zstd.available() {
+        let err = decompress(Algorithm::Zstd, b"").unwrap_err();
+        assert_eq!(err.code, Status::Truncated, "{err}");
+        assert_eq!(err.message, "compressed input truncated: zstd: empty input");
+    }
+}
+
+/// A capacity that can't be allocated is reported as `Oom` before calling
+/// into C, not as a panic or an abort.
+#[test]
+fn unallocatable_capacity_is_oom() {
+    for algo in available(ALGOS) {
+        let packed = compress(algo, b"capacity", 5).unwrap();
+        let err = decompress_with_capacity(algo, &packed, usize::MAX).unwrap_err();
+        assert_eq!(err.code, Status::Oom, "{algo}: {err}");
+        assert!(
+            err.message.contains(&usize::MAX.to_string()),
+            "{algo}: {err}"
+        );
+    }
+}
+
+/// A zstd header declaring an absurd content size makes the one-shot path
+/// unable to reserve the output; `decompress` must fall back and reject the
+/// input rather than abort on allocation.
+#[test]
+fn absurd_declared_size_is_rejected_not_allocated() {
+    if !Algorithm::Zstd.available() {
+        return;
+    }
+    // Magic, then a frame header descriptor with an 8-byte content size and
+    // the single-segment flag (no window descriptor), then the size: 2^63.
+    let mut frame = vec![0x28, 0xB5, 0x2F, 0xFD, 0xE0];
+    frame.extend_from_slice(&(1u64 << 63).to_le_bytes());
+    let err = decompress(Algorithm::Zstd, &frame).unwrap_err();
+    assert!(
+        matches!(
+            err.code,
+            Status::Decompression | Status::Truncated | Status::SizeLimit
+        ),
+        "{err:?}"
+    );
+}
+
+/// A complete LZ4 frame followed by a truncated one: the size probe only
+/// knows the first frame's size, so the one-shot decode runs out of room and
+/// `decompress` falls back to streaming, which must report the truncation
+/// rather than return the first frame alone.
+#[test]
+fn lz4_frame_then_truncated_frame_is_truncated() {
+    if !Algorithm::Lz4.available() {
+        return;
+    }
+    let first = b"a complete first frame".to_vec();
+    // Several 64 KiB blocks, so the second frame has output to deliver.
+    let second = pseudo_random(300_000, 21);
+    let mut wire = compress(Algorithm::Lz4, &first, 5).unwrap();
+    let second_frame = compress(Algorithm::Lz4, &second, 5).unwrap();
+
+    let mut whole = wire.clone();
+    whole.extend_from_slice(&second_frame);
+    let mut expected = first.clone();
+    expected.extend_from_slice(&second);
+    assert!(decompress(Algorithm::Lz4, &whole).unwrap() == expected);
+
+    wire.extend_from_slice(&second_frame[..second_frame.len() - 1]);
+    let err = decompress(Algorithm::Lz4, &wire).unwrap_err();
+    assert_eq!(err.code, Status::Truncated, "{err}");
+}
+
+/// `write(&[])` writes nothing and leaves the stream usable.
+#[test]
+fn empty_write_is_a_no_op() {
+    let data = b"payload after empty writes".to_vec();
+    for algo in available(ALGOS) {
+        let mut c = Compressor::new(Vec::new(), algo, 5).unwrap();
+        assert_eq!(c.write(&[]).unwrap(), 0, "{algo}");
+        c.write_all(&data).unwrap();
+        assert_eq!(c.write(&[]).unwrap(), 0, "{algo}");
+        let packed = c.finish().unwrap();
+        assert_eq!(decompress(algo, &packed).unwrap(), data, "{algo}");
+    }
+}
+
+/// A writer that always fails, like a closed socket.
+struct BrokenSink;
+
+impl Write for BrokenSink {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+        Err(io::ErrorKind::BrokenPipe.into())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Err(io::ErrorKind::BrokenPipe.into())
+    }
+}
+
+/// The sink's I/O errors reach the caller unchanged from `write` and from
+/// `finish` (which always has output to deliver), and the drop that follows
+/// a failed `finish` doesn't panic.
+#[test]
+fn compressor_propagates_sink_errors() {
+    let data = pseudo_random(1_000_000, 5);
+    for algo in available(ALGOS) {
+        let mut c = Compressor::new(BrokenSink, algo, 1).unwrap();
+        // Codecs that buffer the input emit nothing yet, so write may succeed.
+        if let Err(e) = c.write_all(&data) {
+            assert_eq!(e.kind(), io::ErrorKind::BrokenPipe, "{algo}: {e}");
+        }
+        let err = c.finish().map(|_| ()).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe, "{algo}: {err}");
+
+        let c = Compressor::new(BrokenSink, algo, 5).unwrap();
+        let err = c.finish().map(|_| ()).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe, "{algo}: {err}");
+    }
+}
+
+/// A reader that always fails.
+struct BrokenSource;
+
+impl Read for BrokenSource {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::ErrorKind::ConnectionReset.into())
+    }
+}
+
+#[test]
+fn decompressor_propagates_source_errors() {
+    for algo in available(ALGOS) {
+        let mut d = Decompressor::new(BrokenSource, algo).unwrap();
+        let err = d.read(&mut [0u8; 16]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::ConnectionReset, "{algo}: {err}");
+    }
+}
+
+/// `IntoPartsError` formats for `{:?}` and `{}` and converts into an
+/// `io::Error`, so `?` works in functions returning `io::Result`.
+#[test]
+fn into_parts_error_formats_and_converts() {
+    fn take_parts(d: Decompressor<&[u8]>) -> io::Result<Vec<u8>> {
+        let (_, unused) = d.into_parts()?;
+        Ok(unused)
+    }
+    for algo in available(ALGOS) {
+        let packed = compress(algo, b"into parts", 5).unwrap();
+        let err = Decompressor::new(&packed[..], algo)
+            .unwrap()
+            .into_parts()
+            .unwrap_err();
+        assert_eq!(format!("{err:?}"), "IntoPartsError");
+        let display = err.to_string();
+        assert!(display.contains("into_parts"), "{display}");
+
+        let io_err: io::Error = err.into();
+        assert_eq!(io_err.kind(), io::ErrorKind::Other);
+        assert_eq!(io_err.to_string(), display);
+
+        let err = take_parts(Decompressor::new(&packed[..], algo).unwrap()).unwrap_err();
+        assert_eq!(err.to_string(), display, "{algo}");
+
+        // Read to the end, and the parts are available (with nothing unused,
+        // as always for a decompressor made with `new`).
+        let mut d = Decompressor::new(&packed[..], algo).unwrap();
+        let mut out = Vec::new();
+        d.read_to_end(&mut out).unwrap();
+        assert_eq!(out, b"into parts", "{algo}");
+        assert!(take_parts(d).unwrap().is_empty(), "{algo}");
+    }
+}
+
+/// Set in the environment of the child process that runs
+/// `size_cap_in_child_process`.
+const SIZE_CAP_CHILD: &str = "COMPRESS_UTILS_SIZE_CAP_CHILD";
+
+/// `set_max_decompressed_size` is process-global and the tests in this binary
+/// run in parallel, so the test that changes it runs alone in a child process:
+/// this binary again, filtered to that one test.
+#[test]
+fn decompressed_size_cap() {
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "size_cap_in_child_process", "--ignored"])
+        .args(["--test-threads", "1", "--nocapture"])
+        .env(SIZE_CAP_CHILD, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "child failed or didn't run the test:\n{stdout}\n{stderr}"
+    );
+}
+
+/// The C core's default cap (CU_DEFAULT_MAX_DECOMPRESSED_SIZE), restored on
+/// drop so the cap is put back even if an assertion fails.
+struct RestoreDefaultCap;
+
+impl Drop for RestoreDefaultCap {
+    fn drop(&mut self) {
+        compress_utils::set_max_decompressed_size(1024 * 1024 * 1024);
+    }
+}
+
+#[test]
+#[ignore = "changes a process-global setting; run in its own process by decompressed_size_cap"]
+fn size_cap_in_child_process() {
+    if std::env::var_os(SIZE_CAP_CHILD).is_none() {
+        return; // run directly (e.g. --include-ignored) alongside other tests
+    }
+    let _restore = RestoreDefaultCap;
+    let cap = 4096;
+    let at_cap = pseudo_random(cap, 11);
+    let over_cap = pseudo_random(cap + 1, 12);
+    let packed = |algo, data: &[u8]| compress(algo, data, 5).unwrap();
+    let mut algos = available(ALGOS);
+    algos.extend(available(&[Algorithm::Lz4Raw]));
+
+    compress_utils::set_max_decompressed_size(cap);
+    for &algo in &algos {
+        // At the cap is fine, one byte over is rejected, whether the C
+        // one-shot path (size-recording formats) or the binding's streaming
+        // fallback (zlib, gzip, brotli, ...) enforces it.
+        assert_eq!(
+            decompress(algo, &packed(algo, &at_cap)).unwrap(),
+            at_cap,
+            "{algo}"
+        );
+        let err = decompress(algo, &packed(algo, &over_cap)).unwrap_err();
+        assert_eq!(err.code, Status::SizeLimit, "{algo}: {err}");
+        assert!(err.message.contains("exceeds"), "{algo}: {err}");
+    }
+    // The streaming fallback names the cap it enforced.
+    if Algorithm::Gzip.available() {
+        let err = decompress(Algorithm::Gzip, &packed(Algorithm::Gzip, &over_cap)).unwrap_err();
+        assert!(err.message.contains(&cap.to_string()), "{err}");
+
+        // The streaming Decompressor is not bound by the one-shot cap.
+        let gz = packed(Algorithm::Gzip, &over_cap);
+        let mut d = Decompressor::new(&gz[..], Algorithm::Gzip).unwrap();
+        let mut out = Vec::new();
+        d.read_to_end(&mut out).unwrap();
+        assert_eq!(out, over_cap);
+    }
+    // Single-stream Snappy rejects a block declaring more than the cap.
+    if Algorithm::Snappy.available() {
+        let sn = packed(Algorithm::Snappy, &over_cap);
+        let mut d = Decompressor::single_stream(&sn[..], Algorithm::Snappy).unwrap();
+        let err = d.read_to_end(&mut Vec::new()).unwrap_err();
+        let inner = err
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<compress_utils::Error>())
+            .unwrap_or_else(|| panic!("not a library error: {err}"));
+        assert_eq!(inner.code, Status::SizeLimit, "{inner}");
+    }
+
+    // 0 disables the cap everywhere.
+    compress_utils::set_max_decompressed_size(0);
+    for &algo in &algos {
+        assert_eq!(
+            decompress(algo, &packed(algo, &over_cap)).unwrap(),
+            over_cap,
+            "{algo}"
+        );
+    }
+}

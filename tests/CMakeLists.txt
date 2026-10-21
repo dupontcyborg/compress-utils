@@ -59,6 +59,15 @@ if(ENABLE_TESTS)
     add_test(NAME test_single_stream COMMAND test_single_stream)
 endif()
 
+# Error and edge-case paths of the public API for every codec: undersized
+# buffers, empty/truncated input, the size cap, stream misuse, data after the
+# end. Skips any codec that isn't compiled in.
+add_executable(test_error_paths test_error_paths.c)
+target_link_libraries(test_error_paths PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_error_paths COMMAND test_error_paths)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses the pure-C andikleen port. This is a C++ target on

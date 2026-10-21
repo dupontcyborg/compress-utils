@@ -251,6 +251,50 @@ static int test_single_stream() {
     return 0;
 }
 
+/* Streams moved mid-stream keep going: the moved-to object owns the frame in
+ * progress. And set_max_decompressed_size caps one-shot decompress. */
+static int test_moves_and_cap() {
+    const auto in = pseudo_random(8192, 11);
+    const std::span<const std::uint8_t> head(in.data(), in.size() / 2);
+    const std::span<const std::uint8_t> tail(in.data() + in.size() / 2, in.size() - head.size());
+
+    cu::CompressStream cs(cu::Algorithm::Zstd);
+    auto packed = cs.write(head);
+    cu::CompressStream moved(std::move(cs));
+    auto more = moved.write(tail);
+    packed.insert(packed.end(), more.begin(), more.end());
+    cu::CompressStream assigned(cu::Algorithm::Gzip);  /* its own stream is released */
+    assigned = std::move(moved);
+    more = assigned.finish();
+    packed.insert(packed.end(), more.begin(), more.end());
+    CHECK(cu::decompress(cu::Algorithm::Zstd, packed) == in, "moved compress stream");
+
+    const std::span<const std::uint8_t> frame(packed);
+    cu::DecompressStream ds(cu::Algorithm::Zstd);
+    auto out = ds.write(frame.first(frame.size() / 2));
+    cu::DecompressStream target(cu::Algorithm::Zstd);
+    target = std::move(ds);
+    auto rest = target.write(frame.subspan(frame.size() / 2));
+    out.insert(out.end(), rest.begin(), rest.end());
+    rest = target.finish();
+    out.insert(out.end(), rest.begin(), rest.end());
+    CHECK(out == in, "moved decompress stream");
+
+    /* A one-shot frame declares its size, so the cap is checked up front. */
+    const auto sized = cu::compress(cu::Algorithm::Zstd, in);
+    cu::set_max_decompressed_size(1024);
+    try {
+        (void)cu::decompress(cu::Algorithm::Zstd, sized);
+        cu::set_max_decompressed_size(std::size_t{1} << 30);
+        CHECK(false, "decompress over the cap must throw");
+    } catch (const cu::Error& e) {
+        cu::set_max_decompressed_size(std::size_t{1} << 30);  /* the default */
+        CHECK(e.code() == CU_ERR_SIZE_LIMIT, "over the cap: code %d", static_cast<int>(e.code()));
+    }
+    CHECK(cu::decompress(cu::Algorithm::Zstd, sized) == in, "decompress after the cap reset");
+    return 0;
+}
+
 int main() {
     std::printf("cu version: %s\n", cu::version().c_str());
     if (test_freefn_roundtrip())  return 1;
@@ -260,6 +304,7 @@ int main() {
     if (test_flush())             return 1;
     if (test_raw_formats())       return 1;
     if (test_single_stream())     return 1;
+    if (test_moves_and_cap())     return 1;
     std::printf("OK\n");
     return 0;
 }

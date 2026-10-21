@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import * as lzo from "../dist/algorithms/lzo/decompress/index.js";
+import * as lzoEntry from "compress-utils/lzo/decompress";
+import * as zstd from "compress-utils/zstd";
 const fixture = (name: string) =>
     new Uint8Array(
         readFileSync(new URL(`../../../tests/fixtures/lzo/${name}.bin`, import.meta.url)),
@@ -66,5 +68,55 @@ describe("raw LZO1X decoder", () => {
         expect(
             WebAssembly.Module.exports(module).some(({ name }) => name.startsWith("cu_compress")),
         ).toBe(false);
+    });
+});
+
+// The public "compress-utils/lzo/decompress" entry. It's the same module as the
+// path import above, so these run after "requires preload": bun runs every test
+// file in one process, and loading the module in another file would break it.
+describe("lzo/decompress entry", () => {
+    const INVALID_ARG = 1;
+    const enc = new TextEncoder();
+    // One LZO1X block: literal run "hello" (first byte 17 + 5), then end marker.
+    const block = new Uint8Array([22, ...enc.encode("hello"), 0x11, 0x00, 0x00]);
+
+    test("is decode-only and decodes a literal LZO1X block", async () => {
+        for (const key of [
+            "decompress",
+            "decompressSync",
+            "createDecompressStream",
+            "createDecompressStreamSync",
+            "decompressionStream",
+            "setMaxDecompressedSize",
+            "preload",
+            "version",
+            "CompressError",
+        ]) {
+            expect(lzoEntry, key).toHaveProperty(key);
+        }
+        for (const key of [
+            "compress",
+            "compressSync",
+            "createCompressStream",
+            "createCompressStreamSync",
+            "compressionStream",
+        ]) {
+            expect(key in lzoEntry, key).toBe(false);
+        }
+        expect(await lzoEntry.decompress(block, { expectedSize: 5 })).toEqual(enc.encode("hello"));
+        expect(await lzoEntry.decompress(block)).toEqual(enc.encode("hello"));
+        await lzoEntry.preload();
+        expect(lzoEntry.decompressSync(block, { expectedSize: 16 })).toEqual(enc.encode("hello"));
+        expect(await lzoEntry.version()).toBe(await zstd.version());
+    });
+
+    test("rejects an invalid output capacity with InvalidArg", async () => {
+        await expect(lzoEntry.decompress(block, { expectedSize: -5 })).rejects.toMatchObject({
+            code: INVALID_ARG,
+            algorithm: "lzo",
+        });
+        expect(() => lzoEntry.decompressSync(block, { expectedSize: 2 ** 31 })).toThrow(
+            lzoEntry.CompressError,
+        );
     });
 });
