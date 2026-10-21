@@ -38,6 +38,9 @@ pub const CU_ERR_STREAM_STATE: c_int = 11;
 pub const CU_ERR_OOM: c_int = 12;
 pub const CU_ERR_INTERNAL: c_int = 13;
 
+/// `cu_decompress_stream_create_ex` flag: stop after the first frame/member/stream.
+pub const CU_DSTREAM_SINGLE: u32 = 0x1;
+
 // Opaque stream handles. The C side never exposes the layout; we only ever hold
 // pointers to them, so zero-field structs are the idiomatic Rust representation.
 #[repr(C)]
@@ -130,4 +133,16 @@ extern "C" {
         out_len: *mut usize,
     ) -> c_int;
     pub fn cu_decompress_stream_destroy(stream: *mut cu_decompress_stream);
+
+    pub fn cu_decompress_stream_create_ex(
+        algo: c_int,
+        flags: u32,
+        out_stream: *mut *mut cu_decompress_stream,
+    ) -> c_int;
+    pub fn cu_decompress_stream_eof(stream: *const cu_decompress_stream) -> c_int;
+    pub fn cu_decompress_stream_unused(
+        stream: *const cu_decompress_stream,
+        data: *mut *const u8,
+        len: *mut usize,
+    ) -> c_int;
 }

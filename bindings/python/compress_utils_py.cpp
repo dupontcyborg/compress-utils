@@ -138,7 +138,7 @@ struct Locked {
  * holding the other.
  */
 template <typename Stream, typename F>
-static std::vector<std::uint8_t> run_locked(Locked<Stream>& self, bool release, F&& f) {
+static auto run_locked(Locked<Stream>& self, bool release, F&& f) -> decltype(f(self.stream)) {
     if (!release) {
         std::unique_lock<std::mutex> lock(self.mutex, std::try_to_lock);
         if (lock.owns_lock()) return f(self.stream);
@@ -147,6 +147,12 @@ static std::vector<std::uint8_t> run_locked(Locked<Stream>& self, bool release, 
     std::lock_guard<std::mutex> lock(self.mutex);
     return f(self.stream);
 }
+
+/* Data passed to a single-stream DecompressStream after its end. Raised as
+ * EndOfStreamError, which is both a CompressError and an EOFError. */
+class EndOfStream : public std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 /* ---- Module ---- */
 
@@ -235,21 +241,52 @@ PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
     using PyDecompressStream = Locked<cu::DecompressStream>;
     py::class_<PyDecompressStream>(m, "DecompressStream",
         "Streaming decompression. Feed chunks via .decompress(b); end with .finish().\n"
+        "With single_stream=True, decoding stops at the end of the first frame:\n"
+        ".eof turns True and .unused_data holds the input that came after it, as\n"
+        "with bz2.BZ2Decompressor. Concatenated frames otherwise decode as one.\n"
         "Safe to share between threads: calls on one stream run one at a time.")
-        .def(py::init([](const py::object& algorithm) {
-            return new PyDecompressStream(parse_algorithm(algorithm));
-        }), py::arg("algorithm"))
+        .def(py::init([](const py::object& algorithm, bool single_stream) {
+            return new PyDecompressStream(parse_algorithm(algorithm),
+                                          single_stream ? cu::StreamMode::Single
+                                                        : cu::StreamMode::Concatenated);
+        }), py::arg("algorithm"), py::kw_only(), py::arg("single_stream") = false)
         .def("decompress", [](PyDecompressStream& self, py::buffer data) {
             InputView in(data);
             auto out = run_locked(self, worth_releasing(in.span().size()),
-                                  [&](cu::DecompressStream& s) { return s.write(in.span()); });
+                                  [&](cu::DecompressStream& s) {
+                /* Checked under the lock, before the C++ stream would report
+                 * this as an ordinary CompressError. */
+                if (!in.span().empty() && s.eof()) {
+                    throw EndOfStream("end of stream already reached; the data was not "
+                                      "decompressed");
+                }
+                return s.write(in.span());
+            });
             return to_bytes(out);
-        }, py::arg("data"))
+        }, py::arg("data"),
+           "Decompress a chunk. With single_stream=True, raises EndOfStreamError once\n"
+           ".eof is True (the data is not consumed; .unused_data is unchanged).")
         .def("finish", [](PyDecompressStream& self) {
             return to_bytes(run_locked(self, true, [](cu::DecompressStream& s) { return s.finish(); }));
-        });
+        })
+        .def_property_readonly("eof", [](PyDecompressStream& self) {
+            return run_locked(self, false, [](cu::DecompressStream& s) { return s.eof(); });
+        }, "True once a single_stream decoder has reached the end of the stream and\n"
+           "returned all of its output. Always False otherwise.")
+        .def_property_readonly("unused_data", [](PyDecompressStream& self) {
+            auto unused = run_locked(self, false, [](cu::DecompressStream& s) {
+                auto u = s.unused();
+                return std::vector<std::uint8_t>(u.begin(), u.end());
+            });
+            return to_bytes(unused);
+        }, "Input passed to a single_stream decoder after the end of the stream.\n"
+           "Empty until .eof is True, and always empty otherwise.");
 
     /* Translate cu::Error to a Python exception. register_exception stores the
-     * exception type safely for free-threaded builds. */
-    py::register_exception<cu::Error>(m, "CompressError");
+     * exception type safely for free-threaded builds. EndOfStreamError takes
+     * both bases, so `except EOFError` works as with the stdlib decompressors
+     * while `except CompressError` still catches every library error. */
+    auto& compress_error = py::register_exception<cu::Error>(m, "CompressError");
+    py::register_exception<EndOfStream>(
+        m, "EndOfStreamError", py::make_tuple(compress_error, py::handle(PyExc_EOFError)));
 }

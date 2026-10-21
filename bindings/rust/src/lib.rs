@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod ffi;
 pub mod stream;
 
-pub use stream::{Compressor, Decompressor};
+pub use stream::{Compressor, Decompressor, IntoPartsError};
 
 /// A sensible middle-of-the-road compression level, matching the C++, Python
 /// and Go bindings. Levels run 1 (fastest) ..= 10 (smallest).

@@ -16,12 +16,15 @@
 #   is_available(algorithm)         → bool
 #   set_max_decompressed_size(b)    → cap one-shot decompression
 #   decompress(..., expected_size=n) → decode into at most n bytes (skips the size probe)
+#   DecompressStream(..., single_stream=True) → stop at the first frame's end;
+#                                    .eof, .unused_data, EndOfStreamError
 
 from .compress_utils_py import (
     Algorithm,
     CompressStream,
     DecompressStream,
     CompressError,
+    EndOfStreamError,
     compress,
     decompress,
     is_available,
@@ -34,6 +37,7 @@ __all__ = [
     "CompressStream",
     "DecompressStream",
     "CompressError",
+    "EndOfStreamError",
     "compress",
     "decompress",
     "is_available",

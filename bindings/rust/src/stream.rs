@@ -9,6 +9,7 @@
 //! Neither type is safe for concurrent use (each owns a non-thread-safe C
 //! stream handle).
 
+use std::fmt;
 use std::io::{self, Read, Write};
 
 use crate::ffi;
@@ -230,8 +231,14 @@ impl<W: Write> Drop for Compressor<W> {
 }
 
 /// A [`Read`] that decompresses from an inner source.
+///
+/// By default concatenated zstd/LZ4 frames, gzip members and xz streams decode
+/// as one stream, and the source must end on a frame boundary. A decompressor
+/// made with [`Decompressor::single_stream`] instead stops at the end of the
+/// first frame and hands back the bytes after it.
 pub struct Decompressor<R: Read> {
-    src: R,
+    /// `None` only once [`Decompressor::into_parts`] has taken it.
+    src: Option<R>,
     stream: *mut ffi::cu_decompress_stream,
     in_buf: Vec<u8>,
     scratch: Vec<u8>,
@@ -241,17 +248,69 @@ pub struct Decompressor<R: Read> {
     input_done: bool,
     draining: bool,
     finished: bool,
+
+    single: bool,
+    eof: bool,
+    /// Single mode: the bytes read from `src` after the end of the stream.
+    unused: Vec<u8>,
 }
 
 impl<R: Read> Decompressor<R> {
     /// Create a decompressor reading a stream produced by `algo` from `src`.
     pub fn new(src: R, algo: Algorithm) -> Result<Self, Error> {
+        Self::create(src, algo, 0)
+    }
+
+    /// Create a decompressor that stops at the end of the first frame (zstd or
+    /// LZ4 frame, gzip member, zlib/DEFLATE/xz/brotli/bzip2 stream, or Snappy
+    /// block) instead of continuing into whatever follows it, such as another
+    /// message on the same connection.
+    ///
+    /// `read` returns `Ok(0)` once that frame is fully decoded. It reads `src`
+    /// in chunks, so it usually reads past the end: those bytes come back from
+    /// [`unused`](Self::unused) or [`into_parts`](Self::into_parts), so the
+    /// caller can carry on reading the source:
+    ///
+    /// ```
+    /// use std::io::{Cursor, Read};
+    /// use compress_utils::{compress, Algorithm, Decompressor};
+    ///
+    /// let mut wire = compress(Algorithm::Zstd, b"first", 5).unwrap();
+    /// wire.extend_from_slice(b"rest of the source");
+    ///
+    /// let mut d = Decompressor::single_stream(Cursor::new(wire), Algorithm::Zstd).unwrap();
+    /// let mut first = Vec::new();
+    /// d.read_to_end(&mut first).unwrap();
+    /// assert_eq!(first, b"first");
+    ///
+    /// let (src, unused) = d.into_parts().unwrap();
+    /// let mut rest = Vec::new();
+    /// Cursor::new(unused).chain(src).read_to_end(&mut rest).unwrap();
+    /// assert_eq!(rest, b"rest of the source");
+    /// ```
+    ///
+    /// Raw LZ4 and LZO have no end marker to stop at and return
+    /// [`Status::UnsupportedAlgo`]. Single-mode Snappy produces no output until
+    /// its whole block has arrived, and rejects a block declaring more than
+    /// [`crate::set_max_decompressed_size`] (as set when the decompressor is
+    /// created) with [`Status::SizeLimit`].
+    pub fn single_stream(src: R, algo: Algorithm) -> Result<Self, Error> {
+        Self::create(src, algo, ffi::CU_DSTREAM_SINGLE)
+    }
+
+    fn create(src: R, algo: Algorithm, flags: u32) -> Result<Self, Error> {
         let mut stream: *mut ffi::cu_decompress_stream = std::ptr::null_mut();
         // SAFETY: out_stream points at a local; set to a valid handle on CU_OK.
-        let st = unsafe { ffi::cu_decompress_stream_create(algo.to_raw(), &mut stream) };
+        let st = unsafe {
+            if flags == 0 {
+                ffi::cu_decompress_stream_create(algo.to_raw(), &mut stream)
+            } else {
+                ffi::cu_decompress_stream_create_ex(algo.to_raw(), flags, &mut stream)
+            }
+        };
         crate::check_status(st)?;
         Ok(Decompressor {
-            src,
+            src: Some(src),
             stream,
             in_buf: vec![0u8; SCRATCH],
             scratch: vec![0u8; SCRATCH],
@@ -260,7 +319,71 @@ impl<R: Read> Decompressor<R> {
             input_done: false,
             draining: false,
             finished: false,
+            single: flags & ffi::CU_DSTREAM_SINGLE != 0,
+            eof: false,
+            unused: Vec::new(),
         })
+    }
+
+    /// Single-stream mode: whether the end of the stream has been decoded.
+    /// Output decoded before it may still be waiting to be read; `read`
+    /// returns `Ok(0)` once it has been. Always `false` for decompressors made
+    /// with [`Decompressor::new`].
+    pub fn is_eof(&self) -> bool {
+        self.eof
+    }
+
+    /// Single-stream mode: the bytes read from the source after the end of the
+    /// stream, in order. Empty until [`is_eof`](Self::is_eof), and always for
+    /// decompressors made with [`Decompressor::new`].
+    pub fn unused(&self) -> &[u8] {
+        &self.unused
+    }
+
+    /// Returns the source and the bytes already read from it after the end of
+    /// the stream ([`unused`](Self::unused)). Reading the unused bytes, then
+    /// the source, continues exactly where the compressed stream ended.
+    ///
+    /// Only once the stream has ended and all of its output has been read
+    /// (`read` has returned `Ok(0)`): before that, part of the stream and the
+    /// bytes after it may still be held inside the decompressor, and taking
+    /// the source would lose them. Otherwise this returns an
+    /// [`IntoPartsError`] that hands the decompressor back, so you can keep
+    /// reading. A caller that stops at the end of its own data (as `pickle`
+    /// stops at its STOP opcode) should read to `Ok(0)` first.
+    pub fn into_parts(mut self) -> Result<(R, Vec<u8>), IntoPartsError<R>> {
+        if !self.finished || self.out_pos < self.out.len() {
+            return Err(IntoPartsError(self));
+        }
+        let unused = std::mem::take(&mut self.unused);
+        let src = self.src.take().expect("source present until into_parts");
+        Ok((src, unused))
+    }
+
+    /// Single mode: after a call that returned CU_OK, latch eof once the C
+    /// stream reports it and keep the input it didn't use. Every byte read from
+    /// `src` is passed to the C stream in the same call, so its unused bytes
+    /// are all the read-ahead there is.
+    fn settle_single(&mut self) {
+        if !self.single || self.eof {
+            return;
+        }
+        // SAFETY: valid handle.
+        if unsafe { ffi::cu_decompress_stream_eof(self.stream) } == 0 {
+            return;
+        }
+        let mut data: *const u8 = std::ptr::null();
+        let mut len = 0usize;
+        // SAFETY: valid handle; data/len point at locals. The C buffer stays
+        // valid until the next call on the stream, and is copied before then.
+        let st = unsafe { ffi::cu_decompress_stream_unused(self.stream, &mut data, &mut len) };
+        if st == ffi::CU_OK && len > 0 && !data.is_null() {
+            // SAFETY: C guarantees `data` points at `len` readable bytes.
+            self.unused
+                .extend_from_slice(unsafe { std::slice::from_raw_parts(data, len) });
+        }
+        self.eof = true;
+        self.finished = true;
     }
 
     /// Append decompressed bytes to `out` by advancing the C stream one step.
@@ -282,6 +405,7 @@ impl<R: Read> Decompressor<R> {
             }
             if st == ffi::CU_OK {
                 self.finished = true;
+                self.settle_single();
                 return Ok(());
             }
             if st == ffi::CU_ERR_BUF_TOO_SMALL {
@@ -297,7 +421,8 @@ impl<R: Read> Decompressor<R> {
         // fresh chunk from src.
         let mut fed = 0usize;
         if !self.draining {
-            let n = self.src.read(&mut self.in_buf)?;
+            let src = self.src.as_mut().expect("source present until into_parts");
+            let n = src.read(&mut self.in_buf)?;
             if n == 0 {
                 self.input_done = true;
                 return Ok(()); // re-enter in the finish phase
@@ -327,6 +452,7 @@ impl<R: Read> Decompressor<R> {
         match st {
             ffi::CU_OK => {
                 self.draining = false;
+                self.settle_single();
                 Ok(())
             }
             ffi::CU_ERR_BUF_TOO_SMALL => {
@@ -338,6 +464,38 @@ impl<R: Read> Decompressor<R> {
             }
             other => Err(crate::make_error(other).into()),
         }
+    }
+}
+
+/// [`Decompressor::into_parts`] before the stream ended and all of its output
+/// was read. [`into_inner`](Self::into_inner) returns the decompressor, which
+/// keeps reading where it left off.
+pub struct IntoPartsError<R: Read>(Decompressor<R>);
+
+impl<R: Read> IntoPartsError<R> {
+    /// The decompressor, unchanged.
+    pub fn into_inner(self) -> Decompressor<R> {
+        self.0
+    }
+}
+
+impl<R: Read> fmt::Debug for IntoPartsError<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IntoPartsError")
+    }
+}
+
+impl<R: Read> fmt::Display for IntoPartsError<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("compress-utils: into_parts before the stream ended and its output was read")
+    }
+}
+
+impl<R: Read> std::error::Error for IntoPartsError<R> {}
+
+impl<R: Read> From<IntoPartsError<R>> for io::Error {
+    fn from(e: IntoPartsError<R>) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, e.to_string())
     }
 }
 

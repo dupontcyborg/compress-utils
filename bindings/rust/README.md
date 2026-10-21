@@ -34,27 +34,6 @@ fn main() -> Result<(), compress_utils::Error> {
 
 `decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which. It is bounded by `set_max_decompressed_size` (default 1 GiB) to stay safe against malformed "decompression bomb" inputs.
 
-## Streaming (`std::io::Read` / `Write`)
-
-```rust
-use std::io::{Read, Write};
-use compress_utils::{Algorithm, Compressor, Decompressor};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Compress into any Write. finish() flushes and finalizes the frame, so call
-    // it. As a safety net drop() also finalizes, but that discards any I/O error.
-    let mut w = Compressor::new(Vec::new(), Algorithm::Gzip, 6)?;
-    w.write_all(b"...")?;
-    let packed = w.finish()?;
-
-    // Decompress from any Read.
-    let mut r = Decompressor::new(&packed[..], Algorithm::Gzip)?;
-    let mut out = Vec::new();
-    r.read_to_end(&mut out)?;
-    Ok(())
-}
-```
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -86,6 +65,47 @@ let page = compress_utils::decompress_with_capacity(Algorithm::Lz4Raw, &block, p
 ```
 
 Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming (`std::io::Read` / `Write`)
+
+```rust
+use std::io::{Read, Write};
+use compress_utils::{Algorithm, Compressor, Decompressor};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Compress into any Write. finish() flushes and finalizes the frame, so call
+    // it. As a safety net drop() also finalizes, but that discards any I/O error.
+    let mut w = Compressor::new(Vec::new(), Algorithm::Gzip, 6)?;
+    w.write_all(b"...")?;
+    let packed = w.finish()?;
+
+    // Decompress from any Read.
+    let mut r = Decompressor::new(&packed[..], Algorithm::Gzip)?;
+    let mut out = Vec::new();
+    r.read_to_end(&mut out)?;
+    Ok(())
+}
+```
+
+### Stopping at the end of a stream
+
+By default a `Decompressor` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream, and expects the source to end where the compressed data does. When something else follows it, such as the next message on a socket or another record in the same file, use `Decompressor::single_stream`. It stops at the end of the first frame, and `read` then returns `Ok(0)`:
+
+```rust
+use std::io::{Cursor, Read};
+use compress_utils::{Algorithm, Decompressor};
+
+let mut d = Decompressor::single_stream(src, Algorithm::Zstd)?;
+let mut message = Vec::new();
+d.read_to_end(&mut message)?;
+
+// It reads ahead in chunks, so take back what it read past the end, then
+// carry on with the source.
+let (src, unused) = d.into_parts()?;
+let mut rest = Cursor::new(unused).chain(src);
+```
+
+`is_eof()` reports whether the end has been decoded, and `unused()` borrows the bytes read past it. Read until `read` returns `Ok(0)` before calling `into_parts()`, even if you stop at the end of your own data (as `read_exact` does): until then part of the frame and the bytes after it can still be inside the decompressor, so `into_parts()` returns an `IntoPartsError`, whose `into_inner()` hands the decompressor back to keep reading. Raw LZ4 (which has no end marker) and LZO don't support it, and return `Status::UnsupportedAlgo`. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `set_max_decompressed_size` (as set when the decompressor was created) with `Status::SizeLimit`.
 
 ## Compression levels
 

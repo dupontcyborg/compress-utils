@@ -27,6 +27,9 @@ static cu_status_t zlib_cstream_create(int level, void** out_state) {
 static cu_status_t zlib_dstream_create(void** out_state) {
     return dfl_dstream_create(CU_DFL_ZLIB_WBITS, out_state);
 }
+static cu_status_t zlib_dstream_create_single(void** out_state) {
+    return dfl_dstream_create_single(CU_DFL_ZLIB_WBITS, out_state);
+}
 
 const cu_algorithm_vtbl_t cu_zlib_vtbl = {
     .name                      = "zlib",
@@ -47,5 +50,7 @@ const cu_algorithm_vtbl_t cu_zlib_vtbl = {
     .decompress_stream_write   = dfl_dstream_write,
     .decompress_stream_finish  = dfl_dstream_finish,
     .decompress_stream_destroy = dfl_stream_destroy,
+    .decompress_stream_create_single = zlib_dstream_create_single,
+    .decompress_stream_end     = dfl_dstream_end,
 #endif
 };

@@ -30,22 +30,6 @@ restored,   err := cu.Decompress(cu.Zstd, compressed)
 
 `Decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which.
 
-## Streaming (io.Reader / io.Writer)
-
-```go
-// Compress into any io.Writer. Close() flushes and finalizes the frame. It is
-// required; an unclosed Writer produces a truncated stream.
-var buf bytes.Buffer
-w, _ := cu.NewWriter(&buf, cu.Gzip, 6)
-io.Copy(w, src)
-w.Close()
-
-// Decompress from any io.Reader.
-r, _ := cu.NewReader(&buf, cu.Gzip)
-defer r.Close()
-io.Copy(dst, r)
-```
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -77,6 +61,35 @@ page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
 ```
 
 Without a capacity, `Decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming (io.Reader / io.Writer)
+
+```go
+// Compress into any io.Writer. Close() flushes and finalizes the frame. It is
+// required; an unclosed Writer produces a truncated stream.
+var buf bytes.Buffer
+w, _ := cu.NewWriter(&buf, cu.Gzip, 6)
+io.Copy(w, src)
+w.Close()
+
+// Decompress from any io.Reader.
+r, _ := cu.NewReader(&buf, cu.Gzip)
+defer r.Close()
+io.Copy(dst, r)
+```
+
+### Stopping at the end of a stream
+
+By default a `Reader` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (another message on a connection, the next record in a file), call `Multistream(false)` before the first `Read`, as with `compress/gzip`. `Read` then returns `io.EOF` at the end of the first frame, member or stream, and `Unused()` returns the bytes the `Reader` read from its source past that end:
+
+```go
+r, _ := cu.NewReader(conn, cu.Zstd)
+r.Multistream(false)
+msg, _ := io.ReadAll(r)                                  // the first message only
+next := io.MultiReader(bytes.NewReader(r.Unused()), conn) // carry on from where it ended
+```
+
+Unlike `gzip.Reader`, which avoids reading past the end by pulling one byte at a time through an `io.ByteReader`, this `Reader` reads its source in chunks and hands the extra bytes back through `Unused()`, so always continue from `Unused()` before the source. `Multistream` panics if called after `Read`. `Lz4Raw` (which has no end marker) and `Lzo` don't support it, and their first `Read` returns an `*Error` with `Code` `ErrUnsupported`. Snappy emits nothing until its whole block has arrived.
 
 ## Compression levels
 

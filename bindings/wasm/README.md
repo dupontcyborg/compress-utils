@@ -47,32 +47,6 @@ const restored   = await decompress(compressed);
 
 Available subpaths: `compress-utils/zstd`, `/brotli`, `/zlib`, `/bz2`, `/lz4`, `/xz`, `/snappy`, `/gzip`, plus the raw block formats `/deflate`, `/lz4_raw` and `/lzo/decompress`. The surface is identical across all of them. Each also has `/<algo>/decompress` and `/<algo>/compress` variants that ship only one direction for a much smaller `.wasm`; see [Bundle size](#bundle-size).
 
-## Streaming
-
-### Web Streams
-
-```ts
-import { compressionStream, decompressionStream } from "compress-utils/zstd";
-
-await fetch("/big-file.json")
-    .then(r => r.body!.pipeThrough(compressionStream({ level: 3 })))
-    .then(s => s.pipeTo(uploadDestination));
-```
-
-### Manual streaming (with `using` for auto-cleanup)
-
-```ts
-import { createCompressStream } from "compress-utils/brotli";
-
-using cs = await createCompressStream({ level: 5 });
-const chunks: Uint8Array[] = [];
-for (const chunk of input) chunks.push(cs.write(chunk));
-chunks.push(cs.finish());
-// cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
-```
-
-If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -106,6 +80,48 @@ const page = await decompress(block, { expectedSize: uncompressedPageSize });
 ```
 
 Without `expectedSize`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is much slower, so pass it when you know the size. Every other algorithm accepts it too, which skips a sizing pass and decodes straight into a buffer of that size.
+
+## Streaming
+
+### Web Streams
+
+```ts
+import { compressionStream, decompressionStream } from "compress-utils/zstd";
+
+await fetch("/big-file.json")
+    .then(r => r.body!.pipeThrough(compressionStream({ level: 3 })))
+    .then(s => s.pipeTo(uploadDestination));
+```
+
+### Manual streaming (with `using` for auto-cleanup)
+
+```ts
+import { createCompressStream } from "compress-utils/brotli";
+
+using cs = await createCompressStream({ level: 5 });
+const chunks: Uint8Array[] = [];
+for (const chunk of input) chunks.push(cs.write(chunk));
+chunks.push(cs.finish());
+// cs is destroyed automatically on scope exit (TS 5.2+ / Node 22+).
+```
+
+If `using` isn't available in your toolchain, call `cs.destroy()` explicitly, or rely on the GC backstop: a `FinalizationRegistry` frees the C-side handle eventually.
+
+### Stopping at the end of a stream
+
+By default a decoder decodes concatenated frames (zstd, LZ4, gzip, xz) as one stream. To read one compressed stream followed by other data, such as the next message on a socket or a container's own bytes, create the decoder with `{ singleStream: true }`. It stops at the end of the first frame, sets `eof`, and returns the input bytes written after the end in `unusedData`:
+
+```ts
+import { createDecompressStream } from "compress-utils/zstd";
+
+using ds = await createDecompressStream({ singleStream: true });
+const message = ds.write(received);  // decodes up to the end of the frame
+if (ds.eof) {
+    const rest = ds.unusedData;      // bytes after the frame, e.g. the next message
+}
+```
+
+Once `eof` is true, writing more data throws `CompressError` with code `10` (stream finished) and leaves `unusedData` unchanged; empty writes and `finish()` return empty output. Leading zstd/LZ4 skippable frames are skipped. Snappy emits nothing until its block is complete. Raw LZ4 (which has no end marker) and LZO don't support it and throw `CompressError` with code `5`. `decompressionStream()` doesn't take the option: a `TransformStream` has no way to hand back the bytes after the end, so use `createDecompressStream` for this.
 
 ## Compression levels
 

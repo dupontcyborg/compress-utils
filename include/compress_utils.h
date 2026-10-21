@@ -256,8 +256,9 @@ CU_API cu_status_t cu_decompress_size_hint(
  * Sets a global cap on the decompressed size that cu_decompress will
  * accept. Defaults to 1 GiB. Set to 0 to disable. Inputs that would
  * decompress to more than this return CU_ERR_SIZE_LIMIT. Stream
- * raw LZ4/LZO decoders capture this cap at stream creation. Other streaming
- * decoders are unaffected; their callers enforce their own caps.
+ * raw LZ4/LZO and Snappy decoders capture this cap at stream creation (Snappy
+ * because it allocates the declared size before emitting anything). Other
+ * streaming decoders are unaffected; their callers enforce their own caps.
  *
  * Thread-safe; takes effect for subsequent calls.
  */
@@ -353,11 +354,46 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * filled exactly with output still held inside the decoder, so keep
  * draining until a call returns CU_OK.
  *
- * Concatenated zstd and LZ4 frames (including skippable frames) and gzip
- * members (with any zero padding between them) decode as one stream, here
- * and in cu_decompress, as the zstd, lz4 and gzip CLIs do. zlib rejects data after the
- * end of its stream with CU_ERR_DECOMPRESSION; raw DEFLATE ignores it, since
- * it usually belongs to an enclosing container.
+ * Concatenated zstd and LZ4 frames (including skippable frames), gzip
+ * members (with any zero padding between them) and xz streams (with stream
+ * padding) decode as one stream, here and in cu_decompress, as the zstd, lz4,
+ * gzip and xz CLIs do. zlib rejects data after the end of its stream with
+ * CU_ERR_DECOMPRESSION; raw DEFLATE ignores it, since it usually belongs to an
+ * enclosing container.
+ *
+ * Single-stream mode (CU_DSTREAM_SINGLE, via cu_decompress_stream_create_ex)
+ * instead stops at the end of the first zstd frame, LZ4 frame, gzip member,
+ * zlib stream, raw DEFLATE stream, xz stream, brotli stream, bzip2 stream or
+ * Snappy block, even if a valid frame follows, and hands back the input that
+ * came after it, so the caller can read what follows (another message, a
+ * container's own bytes). Leading zstd/LZ4 skippable frames are skipped; the
+ * end is the end of the first data frame. In this mode:
+ *
+ *   - The write that reaches the end decodes up to it and keeps the rest of
+ *     its input as "unused" rather than consuming it: CU_OK with
+ *     cu_decompress_stream_eof() set means the remainder of `in` is in
+ *     cu_decompress_stream_unused(), not decoded.
+ *   - cu_decompress_stream_eof() becomes nonzero once the end has been decoded
+ *     and every byte of output delivered; while output is still being drained
+ *     (CU_ERR_BUF_TOO_SMALL) it stays 0, and writes with data return
+ *     CU_ERR_STREAM_STATE without consuming anything. Drain with empty writes
+ *     or cu_decompress_stream_finish().
+ *   - After eof, a write with data returns CU_ERR_STREAM_FINISHED and consumes
+ *     nothing (the caller still owns those bytes); an empty write and finish
+ *     return CU_OK with no output. finish before the end returns
+ *     CU_ERR_TRUNCATED, as in the default mode.
+ *   - Any error from decoding (corrupt or truncated input, CU_ERR_OOM, ...) is
+ *     final: every later write or finish returns the same status, and eof is
+ *     never set.
+ *   - A nonterminal flush (cu_compress_stream_flush) ends a block, not a
+ *     frame, so flushed data is delivered exactly as in the default mode and
+ *     eof is not set.
+ *   - Snappy has no incremental decoder, so single-mode Snappy emits nothing
+ *     until its block is complete. Like every Snappy stream decoder, it
+ *     captures cu_set_max_decompressed_size at creation; it rejects a larger
+ *     declared size with CU_ERR_SIZE_LIMIT as soon as the size has been read,
+ *     before buffering the block.
+ *   - Raw LZ4 and LZO return CU_ERR_UNSUPPORTED_ALGO: raw LZ4 has no end marker.
  *
  * Raw LZ4 and LZO1X decode exactly one block and emit output during write.
  * finish marks the end of raw LZ4 input; LZO requires its explicit end marker.
@@ -373,6 +409,38 @@ typedef struct cu_decompress_stream cu_decompress_stream_t;
 CU_API cu_status_t cu_decompress_stream_create(
     cu_algorithm_t algo,
     cu_decompress_stream_t** out_stream
+);
+
+/* Flags for cu_decompress_stream_create_ex. */
+#define CU_DSTREAM_SINGLE 0x1u  /* stop after the first frame/member/stream */
+
+/*
+ * cu_decompress_stream_create with flags. Flags 0 is exactly
+ * cu_decompress_stream_create. Unknown flag bits return CU_ERR_INVALID_ARG;
+ * CU_DSTREAM_SINGLE on raw LZ4 or LZO returns CU_ERR_UNSUPPORTED_ALGO.
+ */
+CU_API cu_status_t cu_decompress_stream_create_ex(
+    cu_algorithm_t algo,
+    uint32_t flags,
+    cu_decompress_stream_t** out_stream
+);
+
+/*
+ * Single-stream mode: nonzero once the end of the stream has been decoded and
+ * all of its output delivered. Always 0 for streams created without
+ * CU_DSTREAM_SINGLE.
+ */
+CU_API int cu_decompress_stream_eof(const cu_decompress_stream_t* stream);
+
+/*
+ * Single-stream mode: the input bytes received after the end of the stream,
+ * in order, including any the stream held internally. Empty (len 0) until
+ * eof, and for streams created without CU_DSTREAM_SINGLE. *data stays valid
+ * until the next call on the stream or its destruction.
+ */
+CU_API cu_status_t cu_decompress_stream_unused(
+    const cu_decompress_stream_t* stream,
+    const uint8_t** data, size_t* len
 );
 
 CU_API cu_status_t cu_decompress_stream_write(

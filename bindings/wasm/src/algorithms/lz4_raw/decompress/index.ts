@@ -37,7 +37,7 @@ export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 
 export { CompressError } from "../../../core/types.js";
-export type { DecompressOptions, AlgorithmName } from "../../../core/types.js";
+export type { DecompressOptions, DecompressStreamOptions, AlgorithmName } from "../../../core/types.js";
 
 /** Creates an incremental raw-block decoder; write() emits output as input arrives. */
 export const createDecompressStream = bindings.createDecompressStream;

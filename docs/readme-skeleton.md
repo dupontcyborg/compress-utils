@@ -25,9 +25,9 @@ Required, in this order. Extra sections may go anywhere between them. Headings a
 | 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Markdown badges only, in this order: a live version badge (the registry's `img.shields.io/{pypi,npm,crates}/v/...` where the package is published, otherwise `img.shields.io/github/v/{release,tag}/...`), other registry badges (downloads, language versions), a hosted API docs badge where the registry generates one (pkg.go.dev, docs.rs), the CI status badge for the binding's workflow, then the license badge. |
 | 2 | Installation | `Install…` | The one command, then what the build needs (toolchain, wheel contents, runtimes). |
 | 3 | Quick start | `Quick start` | A complete one-shot compress and decompress that runs as pasted. |
-| 4 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
-| 5 | Supported algorithms | `Algorithms` or `Supported algorithms` | The generated table. Prose underneath may cover availability checks and aliases. |
-| 6 | Raw blocks and output capacity | `Raw blocks…` | The capacity argument for `deflate`, `lz4_raw` and `lzo`, with one example. Keep the paragraph identical in substance across bindings. |
+| 4 | Supported algorithms | `Algorithms` or `Supported algorithms` | The generated table. Prose underneath may cover availability checks and aliases. |
+| 5 | Raw blocks and output capacity | `Raw blocks…` | The capacity argument for `deflate`, `lz4_raw` and `lzo`, with one example. Keep the paragraph identical in substance across bindings. |
+| 6 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
 | 7 | Compression levels | `…levels` | `1` fastest to `10` smallest, default `5`, mapped to each codec's native range. |
 | 8 | Errors and limits | `Error…` | The error type and how to read the status code, `version()`, `set_max_decompressed_size` and its default. |
 | 9 | Concurrency | `…concurrency…` or `…thread…` | What is safe to share between threads, goroutines or workers, and what the binding does about locks. A short paragraph is fine, but it must exist: the bindings differ, and readers compare them. |

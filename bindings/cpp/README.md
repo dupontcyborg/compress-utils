@@ -42,34 +42,6 @@ std::span<const std::uint8_t> view(ptr, size);
 auto compressed = cu::compress(cu::Algorithm::Zstd, view);
 ```
 
-## Streaming
-
-For data that arrives incrementally or doesn't fit in memory, use the RAII stream classes. `write()` and `finish()` each return a `std::vector<std::uint8_t>`: the binding runs the C ABI's "fill buffer, drain" loop internally, so you never see `BUF_TOO_SMALL`.
-
-```cpp
-// Compression
-cu::CompressStream cs(cu::Algorithm::Zstd, 5);   // level optional (default 5)
-std::vector<std::uint8_t> out;
-for (std::span<const std::uint8_t> chunk : chunks) {
-    auto piece = cs.write(chunk);
-    out.insert(out.end(), piece.begin(), piece.end());
-}
-auto tail = cs.finish();                          // flush — required
-out.insert(out.end(), tail.begin(), tail.end());
-
-// Decompression
-cu::DecompressStream ds(cu::Algorithm::Zstd);
-auto body = ds.write(out);
-auto rest = ds.finish();
-body.insert(body.end(), rest.begin(), rest.end());
-```
-
-Notes:
-
-- Always call `finish()` to flush trailing data. `DecompressStream::finish()` also verifies the input ended on a frame boundary, and throws `cu::Error` with `CU_ERR_TRUNCATED` otherwise.
-- Streams are movable but not copyable, and they free their C handle on destruction.
-- Snappy's raw block format isn't incrementally codable, so its streams buffer the whole input and encode on `finish()`. Output stays byte-identical to the one-shot path, but memory scales with input size.
-
 ## Supported algorithms
 
 <!-- BEGIN:algorithms -->
@@ -101,6 +73,48 @@ auto page = cu::decompress(cu::Algorithm::Lz4Raw, block, uncompressed_page_size)
 ```
 
 Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
+
+## Streaming
+
+For data that arrives incrementally or doesn't fit in memory, use the RAII stream classes. `write()` and `finish()` each return a `std::vector<std::uint8_t>`: the binding runs the C ABI's "fill buffer, drain" loop internally, so you never see `BUF_TOO_SMALL`.
+
+```cpp
+// Compression
+cu::CompressStream cs(cu::Algorithm::Zstd, 5);   // level optional (default 5)
+std::vector<std::uint8_t> out;
+for (std::span<const std::uint8_t> chunk : chunks) {
+    auto piece = cs.write(chunk);
+    out.insert(out.end(), piece.begin(), piece.end());
+}
+auto tail = cs.finish();                          // flush — required
+out.insert(out.end(), tail.begin(), tail.end());
+
+// Decompression
+cu::DecompressStream ds(cu::Algorithm::Zstd);
+auto body = ds.write(out);
+auto rest = ds.finish();
+body.insert(body.end(), rest.begin(), rest.end());
+```
+
+Notes:
+
+- Always call `finish()` to flush trailing data. `DecompressStream::finish()` also verifies the input ended on a frame boundary, and throws `cu::Error` with `CU_ERR_TRUNCATED` otherwise.
+- Streams are movable but not copyable, and they free their C handle on destruction.
+- Snappy's raw block format isn't incrementally codable, so its streams buffer the whole input and encode on `finish()`. Output stays byte-identical to the one-shot path, but memory scales with input size.
+
+### Stopping at the end of a stream
+
+By default a `DecompressStream` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (the next message on a socket, another record in the same file), construct it with `cu::StreamMode::Single`. Decoding stops at the end of the first frame, member or stream, `eof()` turns true, and `unused()` returns the input that came after the end:
+
+```cpp
+cu::DecompressStream ds(cu::Algorithm::Zstd, cu::StreamMode::Single);
+auto message = ds.write(received);   // decodes up to the end of the first frame
+if (ds.eof()) {
+    auto next = ds.unused();         // the bytes after it; valid until the next call on ds
+}
+```
+
+After `eof()`, `write()` with more data throws `cu::Error` with `CU_ERR_STREAM_FINISHED` without consuming it, while an empty `write()` and `finish()` return nothing. Raw LZ4 (which has no end marker) and LZO don't support it, and throw `CU_ERR_UNSUPPORTED_ALGO`. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `cu::set_max_decompressed_size` (as set when the stream was created) with `CU_ERR_SIZE_LIMIT`. From C, create the stream with `cu_decompress_stream_create_ex(algo, CU_DSTREAM_SINGLE, &stream)` and query it with `cu_decompress_stream_eof` and `cu_decompress_stream_unused`; `include/compress_utils.h` documents the exact protocol.
 
 ## Compression levels
 

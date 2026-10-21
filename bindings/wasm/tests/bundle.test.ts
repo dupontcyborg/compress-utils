@@ -115,15 +115,18 @@ describe("per-algo .wasm size budgets", () => {
     // enough headroom for routine codec drift, tight enough that a real
     // regression trips it (e.g. --export-dynamic returning would blow zstd
     // past 440; brotli falling back to BROTLI_STATIC_INIT=NONE jumps it to
-    // ~800, well past its cap). Current sizes: zlib 78, bz2 92, xz 132, lz4 108,
-    // zstd 406, brotli 514 KB.
+    // ~800, well past its cap). Current sizes: zlib 86.9, bz2 93.8, xz 141.1,
+    // lz4 120.2, snappy 34.6, gzip 84.9, zstd 402.8, brotli 490.1 KB. Single-stream
+    // decoding (CU_DSTREAM_SINGLE) added 1-3.6 KB to every decoder, which left
+    // lz4, zlib, xz and gzip under 8% headroom: raised lz4 120 → 130, zlib
+    // 88 → 96, xz 145 → 155, gzip 90 → 93.
     const BUDGET_KB: Record<string, number> = {
-        zlib: 88,
+        zlib: 96,
         bz2: 102,
-        xz: 145,
-        lz4: 120,
+        xz: 155,
+        lz4: 130,
         snappy: 60,
-        gzip: 90,
+        gzip: 93,
         zstd: 440,
         brotli: 565,
     };
@@ -143,15 +146,18 @@ describe("direction-variant .wasm size budgets", () => {
     // are the regression gate that matters most — if the encoder ever leaks
     // back into a decode-only module (e.g. a codec vtable stops honoring
     // CU_OMIT_COMPRESS), the size jumps obviously past these caps. ~10% over
-    // current; current decode KB: zstd 90, brotli 189, lz4 35, bz2 54, xz 81,
-    // zlib 49 — encode KB: zstd 346, brotli 470, lz4 96, bz2 65, xz 100, zlib 58.
+    // current; current decode KB: zstd 93.4, brotli 186.3, lz4 46.8, bz2 53.7,
+    // xz 85.7, zlib 54.5, snappy 30.1, gzip 53.1 — encode KB: zstd 339, brotli
+    // 446, lz4 97, bz2 65, xz 105, zlib 62, snappy 25, gzip 61. Single-stream
+    // decoding (CU_DSTREAM_SINGLE) added 1-3.6 KB to every decoder: raised the
+    // decode caps for zstd 100 → 103, lz4 45 → 52, xz 92 → 94, zlib 58 → 60.
     const VARIANT_KB: Record<string, { decompress: number; compress: number }> = {
-        zstd: { decompress: 100, compress: 380 },
+        zstd: { decompress: 103, compress: 380 },
         brotli: { decompress: 205, compress: 515 },
-        zlib: { decompress: 58, compress: 68 },
+        zlib: { decompress: 60, compress: 68 },
         bz2: { decompress: 62, compress: 75 },
-        lz4: { decompress: 45, compress: 108 },
-        xz: { decompress: 92, compress: 112 },
+        lz4: { decompress: 52, compress: 108 },
+        xz: { decompress: 94, compress: 112 },
         snappy: { decompress: 52, compress: 48 },
         gzip: { decompress: 60, compress: 70 },
     };
@@ -175,11 +181,13 @@ describe("decoder-only LZO bundle", () => {
         );
         expect([...result.referencedAlgos]).toEqual(["lzo"]);
     });
-    it("keeps the incremental decoder below 28 KiB", async () => {
+    it("keeps the incremental decoder below 32 KiB", async () => {
         const bytes = await readFile(
             path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/lzo.wasm"),
         );
         // Includes the native incremental state machine and public stream ABI exports.
-        expect(bytes.length).toBeLessThan(28 * 1024);
+        // Raised 28 → 32 KiB (current 29.3) for the shared single-stream
+        // decoding dispatch (CU_DSTREAM_SINGLE), which LZO links but can't use.
+        expect(bytes.length).toBeLessThan(32 * 1024);
     });
 });

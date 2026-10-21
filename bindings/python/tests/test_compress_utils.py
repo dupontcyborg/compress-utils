@@ -7,6 +7,7 @@ via the free functions and the streaming classes, plus a few edge cases
 one-shot decompress and vice versa).
 """
 
+import io
 import pathlib
 import random
 import subprocess
@@ -190,6 +191,121 @@ class TestCompressUtils(unittest.TestCase):
 
 
 # The binding keeps the GIL for calls under 256 KiB, so these are larger.
+# What follows a zpickle message: the next message's header, then data.
+TRAILER = b"ZPKL\x01\x01\x03\x00" + b"\x00" * 64
+
+
+class TestSingleStream(unittest.TestCase):
+    """DecompressStream(single_stream=True): eof / unused_data, as in bz2/lzma."""
+
+    def feed(self, ds, data, pieces):
+        """Feeds `data` cut at `pieces` until eof; returns (output, bytes fed)."""
+        out, fed, start = b"", 0, 0
+        for end in list(pieces) + [len(data)]:
+            if ds.eof or start >= len(data):
+                break
+            out += ds.decompress(data[start:end])
+            fed, start = end, end
+        return out, fed
+
+    def test_trailing_bytes(self):
+        for name in available_algorithms():
+            for payload in (EMPTY_DATA, SAMPLE_DATA, RANDOM_LARGE[:200000]):
+                frame = cu.compress(payload, name)
+                data = frame + TRAILER
+                n = len(frame)
+                cuts = {"whole": [], "at end": [n], "end-1": [n - 1], "end+1": [n + 1]}
+                if len(payload) <= len(SAMPLE_DATA):
+                    cuts["byte by byte"] = range(1, len(data))
+                for label, pieces in cuts.items():
+                    with self.subTest(algorithm=name, size=len(payload), cut=label):
+                        ds = cu.DecompressStream(name, single_stream=True)
+                        out, fed = self.feed(ds, data, pieces)
+                        self.assertEqual(out, payload)
+                        self.assertTrue(ds.eof)
+                        self.assertEqual(ds.unused_data, data[n:fed])
+
+    def test_two_frames(self):
+        a, b = b"first message " * 300, RANDOM_LARGE[:5000]
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                ds = cu.DecompressStream(name, single_stream=True)
+                self.assertEqual(ds.decompress(cu.compress(a, name) + cu.compress(b, name)), a)
+                self.assertTrue(ds.eof)
+                second = cu.DecompressStream(name, single_stream=True)
+                self.assertEqual(second.decompress(ds.unused_data), b)
+                self.assertTrue(second.eof)
+                self.assertEqual(second.unused_data, b"")
+
+    def test_after_end(self):
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                ds = cu.DecompressStream(name, single_stream=True)
+                ds.decompress(cu.compress(SAMPLE_DATA, name) + b"rest")
+                with self.assertRaises(EOFError):
+                    ds.decompress(b"more")
+                with self.assertRaises(cu.CompressError) as raised:
+                    ds.decompress(b"more")
+                self.assertIsInstance(raised.exception, cu.EndOfStreamError)
+                self.assertEqual(ds.unused_data, b"rest")
+                self.assertEqual(ds.decompress(b""), b"")
+                self.assertEqual(ds.finish(), b"")
+                self.assertEqual(ds.finish(), b"")
+                with self.assertRaises(cu.EndOfStreamError):
+                    ds.decompress(b"more")
+                self.assertEqual(ds.unused_data, b"rest")
+
+    def test_truncated(self):
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                frame = cu.compress(RANDOM_LARGE[:1000], name)
+                ds = cu.DecompressStream(name, single_stream=True)
+                ds.decompress(frame[:-1])
+                with self.assertRaises(cu.CompressError):
+                    ds.finish()
+                self.assertFalse(ds.eof)
+                self.assertEqual(ds.unused_data, b"")
+
+    def test_default_mode_unchanged(self):
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                ds = cu.DecompressStream(name)
+                self.assertEqual(ds.decompress(cu.compress(SAMPLE_DATA, name)) + ds.finish(),
+                                 SAMPLE_DATA)
+                self.assertFalse(ds.eof)
+                self.assertEqual(ds.unused_data, b"")
+                # A write after finish() is still a plain CompressError.
+                with self.assertRaises(cu.CompressError) as raised:
+                    ds.decompress(b"more")
+                self.assertNotIsInstance(raised.exception, EOFError)
+
+    def test_keyword_only_and_unsupported(self):
+        with self.assertRaises(TypeError):
+            cu.DecompressStream("zstd", True)
+        for name in RAW_FORMATS:
+            if cu.is_available(name):
+                with self.subTest(algorithm=name), self.assertRaises(cu.CompressError):
+                    cu.DecompressStream(name, single_stream=True)
+
+    def test_reader_continues_after_the_end(self):
+        # The zpickle pattern: messages back to back in a file, read in 64 KiB
+        # chunks; after each message, seek back over the unused bytes.
+        messages = [RANDOM_LARGE[:150000], b"", b"small", REPETITIVE_LARGE[:300000]]
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                f = io.BytesIO(b"".join(cu.compress(m, name) for m in messages) + b"tail")
+                for message in messages:
+                    ds = cu.DecompressStream(name, single_stream=True)
+                    out = b""
+                    while not ds.eof:
+                        chunk = f.read(65536)
+                        self.assertTrue(chunk, "ran out of input before the end")
+                        out += ds.decompress(chunk)
+                    f.seek(-len(ds.unused_data), io.SEEK_CUR)
+                    self.assertEqual(out, message)
+                self.assertEqual(f.read(), b"tail")
+
+
 GIL_PAYLOAD = bytes(random.Random(0).randbytes(4096)) * 4096  # 16 MiB, compressible
 GIL_RANDOM = random.Random(1).randbytes(1024 * 1024)  # incompressible
 
@@ -289,6 +405,40 @@ class TestThreading(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(results, [True] * 80)
         self.assertEqual(stream.finish(), b"")
+
+    def test_single_stream_properties_while_decoding(self):
+        # eof and unused_data take the stream's lock, so reading them from
+        # other threads while a large decode runs sees either the state before
+        # the call or after it, never a torn one. The two reads are separate
+        # calls, so the decode can finish between them, but once eof reads
+        # True, unused_data is already complete.
+        frame = cu.compress(GIL_PAYLOAD, "zstd")
+        stream = cu.DecompressStream("zstd", single_stream=True)
+        seen, errors, done = set(), [], threading.Event()
+
+        def reader():
+            try:
+                while not done.is_set():
+                    eof = stream.eof
+                    unused = stream.unused_data
+                    if eof and unused != b"next":
+                        errors.append(f"eof but unused_data is {unused!r}")
+                    seen.add(unused)
+            except Exception as e:
+                errors.append(e)
+
+        readers = [threading.Thread(target=reader) for _ in range(4)]
+        for r in readers:
+            r.start()
+        try:
+            self.assertEqual(stream.decompress(frame + b"next"), GIL_PAYLOAD)
+        finally:
+            done.set()
+            for r in readers:
+                r.join()
+        self.assertEqual(errors, [])
+        self.assertLessEqual(seen, {b"", b"next"})
+        self.assertEqual((stream.eof, stream.unused_data), (True, b"next"))
 
 if __name__ == "__main__":
     unittest.main()

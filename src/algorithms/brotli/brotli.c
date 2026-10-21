@@ -12,6 +12,7 @@
 
 #include "algorithm_registry.h"
 #include "compress_utils.h"
+#include "utils/single_stream.h"
 
 #include "brotli/decode.h"
 #include "brotli/encode.h"
@@ -275,6 +276,8 @@ typedef struct {
     size_t   pending_len;
     size_t   pending_cap;
     int      finished;
+    int      single;     /* CU_DSTREAM_SINGLE: keep input after the end */
+    cu_unused_t unused;  /* single: input received after the end */
 } brotli_dstream_state_t;
 
 static cu_status_t dstream_pending_append(brotli_dstream_state_t* st,
@@ -307,6 +310,12 @@ static cu_status_t brotli_dstream_create(void** out_state) {
     return CU_OK;
 }
 
+static cu_status_t brotli_dstream_create_single(void** out_state) {
+    cu_status_t s = brotli_dstream_create(out_state);
+    if (s == CU_OK) ((brotli_dstream_state_t*)*out_state)->single = 1;
+    return s;
+}
+
 static cu_status_t dstream_pump(brotli_dstream_state_t* st,
                                 uint8_t* out, size_t* out_len) {
     size_t cap = *out_len;
@@ -323,6 +332,14 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
         written = cap - avail_out;
         if (r == BROTLI_DECODER_RESULT_SUCCESS) {
             st->finished = 1;
+            /* Single mode: brotli reports success only once all output is
+             * out, and hands back the whole bytes it didn't use. */
+            if (st->single) {
+                cu_status_t a = cu_unused_append(&st->unused, next_in, avail_in);
+                st->pending_len = 0;
+                *out_len = written;
+                return a;
+            }
             st->pending_len = avail_in;  /* should be 0; if not, trailing data error */
             if (avail_in > 0) {
                 cu_set_last_error("brotli: trailing data after end of stream");
@@ -361,6 +378,10 @@ static cu_status_t brotli_dstream_write(
     uint8_t* out, size_t* out_len
 ) {
     brotli_dstream_state_t* st = (brotli_dstream_state_t*)state;
+    if (st->single && st->finished) {
+        *out_len = 0;
+        return CU_OK;
+    }
     if (st->finished && in_len > 0) {
         cu_set_last_error("brotli: data after end of stream");
         return CU_ERR_DECOMPRESSION;
@@ -388,7 +409,15 @@ static void brotli_dstream_destroy(void* state) {
     if (!st) return;
     if (st->dec) BrotliDecoderDestroyInstance(st->dec);
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int brotli_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const brotli_dstream_state_t* st = (const brotli_dstream_state_t*)state;
+    if (!st->single || !st->finished) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 /* ============================================================================
@@ -414,5 +443,7 @@ const cu_algorithm_vtbl_t cu_brotli_vtbl = {
     .decompress_stream_write   = brotli_dstream_write,
     .decompress_stream_finish  = brotli_dstream_finish,
     .decompress_stream_destroy = brotli_dstream_destroy,
+    .decompress_stream_create_single = brotli_dstream_create_single,
+    .decompress_stream_end     = brotli_dstream_end,
 #endif
 };

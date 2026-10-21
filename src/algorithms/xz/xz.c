@@ -15,6 +15,7 @@
 #include "algorithm_registry.h"
 #include "compress_utils.h"
 #include "utils/levels.h"
+#include "utils/single_stream.h"
 
 #include <lzma.h>
 
@@ -145,6 +146,8 @@ typedef struct {
     int      finishing;
     int      stream_end;
     int      flushing;  /* a sync flush was started and hasn't completed */
+    int      single;    /* decompression, CU_DSTREAM_SINGLE: stop after one stream */
+    cu_unused_t unused; /* single: input received after the end */
 } xz_stream_state_t;
 
 static cu_status_t pending_append(xz_stream_state_t* st, const uint8_t* src, size_t n) {
@@ -325,22 +328,43 @@ static void xz_cstream_destroy(void* state) {
  * Streaming decompression
  * ============================================================================ */
 
-static cu_status_t xz_dstream_create(void** out_state) {
+static cu_status_t dstream_create(int single, void** out_state) {
     xz_stream_state_t* st = calloc(1, sizeof(*st));
     if (!st) { cu_set_last_error("xz: oom"); return CU_ERR_OOM; }
     lzma_stream init = LZMA_STREAM_INIT;
     st->strm = init;
     /* lzma_stream_decoder, not auto_decoder — see xz_decompress for why (rejects
-     * the legacy .lzma format that could decompress-bomb on garbage input). */
-    lzma_ret r = lzma_stream_decoder(&st->strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit */, LZMA_CONCATENATED);
+     * the legacy .lzma format that could decompress-bomb on garbage input).
+     * Single mode leaves out LZMA_CONCATENATED, so the decoder stops after the
+     * first stream's footer, leaving any stream padding unconsumed. */
+    lzma_ret r = lzma_stream_decoder(&st->strm, ((uint64_t)256 << 20)  /* 256 MiB memlimit */,
+                                     single ? 0 : LZMA_CONCATENATED);
     if (r != LZMA_OK) {
         cu_status_t s = map_lzma_error(r, CU_ERR_DECOMPRESSION);
         free(st);
         return s;
     }
     st->strm_inited = 1;
+    st->single = single;
     *out_state = st;
     return CU_OK;
+}
+
+static cu_status_t xz_dstream_create(void** out_state) {
+    return dstream_create(0, out_state);
+}
+
+static cu_status_t xz_dstream_create_single(void** out_state) {
+    return dstream_create(1, out_state);
+}
+
+/* Single mode: once the stream has ended (liblzma reports that only after all
+ * output is out), whatever input is left pending came after it. */
+static cu_status_t xz_keep_unused(xz_stream_state_t* st, cu_status_t s) {
+    if (s != CU_OK || !st->single || !st->stream_end || st->pending_len == 0) return s;
+    s = cu_unused_append(&st->unused, st->pending, st->pending_len);
+    st->pending_len = 0;
+    return s;
 }
 
 static cu_status_t xz_dstream_write(
@@ -348,13 +372,18 @@ static cu_status_t xz_dstream_write(
     uint8_t* out, size_t* out_len
 ) {
     xz_stream_state_t* st = (xz_stream_state_t*)state;
+    /* Single mode past the end: liblzma must not be called again. */
+    if (st->single && st->stream_end) {
+        *out_len = 0;
+        return CU_OK;
+    }
     if (st->stream_end && in_len > 0) {
         cu_set_last_error("xz: data after end of stream");
         return CU_ERR_DECOMPRESSION;
     }
     cu_status_t s = pending_append(st, in, in_len);
     if (s != CU_OK) return s;
-    return stream_pump(st, LZMA_RUN, out, out_len);
+    return xz_keep_unused(st, stream_pump(st, LZMA_RUN, out, out_len));
 }
 
 static cu_status_t xz_dstream_finish(
@@ -365,7 +394,7 @@ static cu_status_t xz_dstream_finish(
         *out_len = 0;
         return CU_OK;
     }
-    cu_status_t s = stream_pump(st, LZMA_FINISH, out, out_len);
+    cu_status_t s = xz_keep_unused(st, stream_pump(st, LZMA_FINISH, out, out_len));
     if (s != CU_OK) return s;
     if (!st->stream_end) {
         cu_set_last_error("xz: truncated stream at finish");
@@ -379,7 +408,15 @@ static void xz_dstream_destroy(void* state) {
     if (!st) return;
     if (st->strm_inited) lzma_end(&st->strm);
     free(st->pending);
+    cu_unused_free(&st->unused);
     free(st);
+}
+
+static int xz_dstream_end(const void* state, const uint8_t** unused, size_t* unused_len) {
+    const xz_stream_state_t* st = (const xz_stream_state_t*)state;
+    if (!st->single || !st->stream_end) return 0;
+    cu_unused_get(&st->unused, unused, unused_len);
+    return 1;
 }
 
 /* ============================================================================
@@ -405,5 +442,7 @@ const cu_algorithm_vtbl_t cu_xz_vtbl = {
     .decompress_stream_write   = xz_dstream_write,
     .decompress_stream_finish  = xz_dstream_finish,
     .decompress_stream_destroy = xz_dstream_destroy,
+    .decompress_stream_create_single = xz_dstream_create_single,
+    .decompress_stream_end     = xz_dstream_end,
 #endif
 };

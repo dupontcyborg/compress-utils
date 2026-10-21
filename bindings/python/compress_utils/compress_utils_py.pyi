@@ -4,7 +4,7 @@ Python bindings for compress-utils library (C-core).
 from __future__ import annotations
 import typing
 import typing_extensions
-__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'brotli', 'bz2', 'compress', 'decompress', 'deflate', 'gzip', 'is_available', 'lz4', 'lz4_raw', 'lzma', 'lzo', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
+__all__: list[str] = ['Algorithm', 'CompressError', 'CompressStream', 'DecompressStream', 'EndOfStreamError', 'brotli', 'bz2', 'compress', 'decompress', 'deflate', 'gzip', 'is_available', 'lz4', 'lz4_raw', 'lzma', 'lzo', 'set_max_decompressed_size', 'snappy', 'version', 'xz', 'zlib', 'zstd']
 class Algorithm:
     """
     Members:
@@ -102,15 +102,35 @@ class CompressStream:
 class DecompressStream:
     """
     Streaming decompression. Feed chunks via .decompress(b); end with .finish().
+    With single_stream=True, decoding stops at the end of the first frame:
+    .eof turns True and .unused_data holds the input that came after it, as
+    with bz2.BZ2Decompressor. Concatenated frames otherwise decode as one.
     Safe to share between threads: calls on one stream run one at a time.
     """
-    def __init__(self, algorithm: typing.Any) -> None:
+    def __init__(self, algorithm: typing.Any, *, single_stream: bool = False) -> None:
         ...
     def decompress(self, data: typing_extensions.Buffer) -> bytes:
-        ...
+        """
+        Decompress a chunk. With single_stream=True, raises EndOfStreamError once
+        .eof is True (the data is not consumed; .unused_data is unchanged).
+        """
     def finish(self) -> bytes:
         ...
+    @property
+    def eof(self) -> bool:
+        """
+        True once a single_stream decoder has reached the end of the stream and
+        returned all of its output. Always False otherwise.
+        """
+    @property
+    def unused_data(self) -> bytes:
+        """
+        Input passed to a single_stream decoder after the end of the stream.
+        Empty until .eof is True, and always empty otherwise.
+        """
 class CompressError(Exception):
+    pass
+class EndOfStreamError(CompressError, EOFError):
     pass
 def compress(data: typing_extensions.Buffer, algorithm: typing.Any, level: typing.SupportsInt | typing.SupportsIndex = 5) -> bytes:
     """
