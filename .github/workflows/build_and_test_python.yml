@@ -42,13 +42,16 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Setting exact version $VERSION for tag build"
-          echo "SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION" >> $GITHUB_ENV
+          # Scoped to this package: the unscoped SETUPTOOLS_SCM_PRETEND_VERSION
+          # also overrides every setuptools_scm sdist pip builds in the test
+          # step (lz4 on cp315 came out as version 0.11.0 and failed).
+          echo "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_COMPRESS_UTILS=$VERSION" >> $GITHUB_ENV
 
       - name: Build Python Wheels
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_BUILD: "${{ matrix.python-version }}-*"
-          CIBW_ENVIRONMENT: "SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.SETUPTOOLS_SCM_PRETEND_VERSION }}"
+          CIBW_ENVIRONMENT: "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_COMPRESS_UTILS=${{ env.SETUPTOOLS_SCM_PRETEND_VERSION_FOR_COMPRESS_UTILS }}"
           CIBW_ARCHS_LINUX: "${{ contains(matrix.os, 'arm') && 'aarch64' || 'x86_64' }}"
           CIBW_ARCHS_MACOS: "arm64"
           CIBW_ARCHS_WINDOWS: "AMD64"
