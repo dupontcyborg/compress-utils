@@ -11,7 +11,6 @@ import * as zlib from "compress-utils/zlib";
 import * as zstd from "compress-utils/zstd";
 import * as zstdDecoder from "compress-utils/zstd/decompress";
 import * as lz4Raw from "compress-utils/lz4_raw";
-import * as lzo from "compress-utils/lzo/decompress";
 import { CompressError } from "compress-utils/zstd";
 
 const codecs = { brotli, bz2, deflate, gzip, lz4, snappy, xz, zlib, zstd };
@@ -162,16 +161,18 @@ describe("single-stream decoding", () => {
         expect(decoder.unusedData).toEqual(TRAILER);
     });
 
-    it("raw LZ4 and LZO don't support it", async () => {
-        for (const create of [lz4Raw.createDecompressStream, lzo.createDecompressStream]) {
-            let error: unknown;
-            try {
-                await create({ singleStream: true });
-            } catch (e) {
-                error = e;
-            }
-            expect(error).toBeInstanceOf(Error);
-            expect((error as CompressError).code).toBe(UNSUPPORTED_ALGO);
+    // LZO is rejected the same way (tests/test_single_stream.c covers it), but
+    // isn't loaded here: Bun runs every test file in one module registry, and
+    // tests/lzo.test.ts needs LZO not yet initialized to check that sync
+    // decoding requires preload().
+    it("raw LZ4 doesn't support it", async () => {
+        let error: unknown;
+        try {
+            await lz4Raw.createDecompressStream({ singleStream: true });
+        } catch (e) {
+            error = e;
         }
+        expect(error).toBeInstanceOf(Error);
+        expect((error as CompressError).code).toBe(UNSUPPORTED_ALGO);
     });
 });
