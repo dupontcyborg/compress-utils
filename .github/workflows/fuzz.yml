@@ -97,3 +97,33 @@ jobs:
         with:
           path: fuzz-corpus
           key: fuzz-corpus-${{ github.run_id }}
+
+      # Nightly: which code the corpus reaches, by replaying it through a
+      # coverage build of the harness (fuzz_replay, no sanitizers). Shows the
+      # decoder paths the fuzzer never gets to, i.e. where seeds or the harness
+      # need work. Skipped when the run found a crash.
+      - name: Build for corpus coverage
+        if: github.event_name != 'pull_request' && success()
+        run: |
+          cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_BINDINGS=OFF \
+            -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+            "-DCMAKE_C_FLAGS=-fprofile-instr-generate -fcoverage-mapping" \
+            -DCMAKE_EXE_LINKER_FLAGS=-fprofile-instr-generate
+          cmake --build build-cov -j 4 --target fuzz_replay
+
+      - name: Corpus coverage
+        if: github.event_name != 'pull_request' && success()
+        run: |
+          python3 tools/coverage.py --build-dir build-cov --out-dir fuzz-coverage \
+            --groups fuzz --fuzz-dirs fuzz-corpus build-fuzz/tests/fuzz/seeds
+          cat fuzz-coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload corpus coverage report
+        if: github.event_name != 'pull_request' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-coverage
+          path: |
+            fuzz-coverage/fuzz-html/
+            fuzz-coverage/fuzz.txt

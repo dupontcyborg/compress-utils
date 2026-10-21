@@ -1,0 +1,202 @@
+name: Coverage
+
+# Line and branch coverage, each part measured only by the tests written in its
+# own language, so one suite can't make another look better than it is: the C
+# core by the C tests, each binding by its own suite (tools/coverage.py has the
+# details for the C-family parts). Results go to each job's summary and an HTML
+# artifact. Informational: there is no threshold yet.
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+# Least-privilege default for all jobs; jobs needing more override below.
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  c-cpp-python:
+    name: C core, C++ and Python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install clang, LLVM tools and Python dependencies
+        # The reference libraries let test_interop_py run in full rather than
+        # self-skip; llvm-18 provides llvm-cov and llvm-profdata.
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-18 llvm-18
+          echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
+          pip install pybind11==3.1.0 pytest zstandard brotli lz4 python-snappy
+
+      - name: Configure (clang source-based coverage)
+        run: >
+          cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+          "-DCMAKE_C_FLAGS=-fprofile-instr-generate -fcoverage-mapping"
+          "-DCMAKE_CXX_FLAGS=-fprofile-instr-generate -fcoverage-mapping"
+          -DCMAKE_EXE_LINKER_FLAGS=-fprofile-instr-generate
+          -DCMAKE_SHARED_LINKER_FLAGS=-fprofile-instr-generate
+          -DCMAKE_MODULE_LINKER_FLAGS=-fprofile-instr-generate
+          -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
+
+      - name: Build
+        run: cmake --build build-cov -j 4
+
+      - name: Run tests and report
+        run: python tools/coverage.py --build-dir build-cov --out-dir coverage
+
+      - name: Job summary
+        if: ${{ !cancelled() && hashFiles('coverage/summary.md') != '' }}
+        run: cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-c-cpp-python
+          path: |
+            coverage/*-html/
+            coverage/*.txt
+          if-no-files-found: ignore
+
+  go:
+    name: Go binding
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Test with coverage
+        run: go test -coverprofile=go-coverage.out ./bindings/go/
+
+      - name: Report
+        # Go's tool measures statements; it has no branch coverage.
+        run: |
+          go tool cover -html=go-coverage.out -o go-coverage.html
+          {
+            echo "### Go binding, Go tests (statements)"
+            echo
+            echo '```'
+            go tool cover -func=go-coverage.out | sed 's|github.com/dupontcyborg/compress-utils/||'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-go
+          path: go-coverage.html
+
+  rust:
+    name: Rust binding
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Test with coverage
+        # Reports the crate's own sources only (the C core compiled by build.rs
+        # isn't instrumented). Branch coverage needs nightly Rust, so lines only.
+        run: cargo llvm-cov --html
+
+      - name: Report
+        run: |
+          {
+            echo "### Rust binding, Rust tests"
+            echo
+            echo '```'
+            cargo llvm-cov report --summary-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-rust
+          path: target/llvm-cov/html/
+
+  wasm:
+    name: WASM binding
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - name: Install wabt + binaryen (wasm-strip / wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y wabt binaryen
+
+      - name: Build the .wasm modules
+        run: |
+          cmake -S . -B build-wasm \
+            -DBUILD_WASM_BINDINGS=ON \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_CPP_BINDINGS=OFF \
+            -DENABLE_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-wasm --target compress_utils_wasm -j
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - name: Compile TypeScript
+        working-directory: bindings/wasm
+        run: |
+          npm install --no-audit --no-fund
+          npm run build:ts
+
+      - name: Test with coverage
+        # Coverage of src/*.ts (see vitest.config.ts). The browser and Deno
+        # suites aren't included, so their runtime resolvers read 0%.
+        working-directory: bindings/wasm
+        run: npx vitest run --coverage
+
+      - name: Report
+        if: ${{ !cancelled() && hashFiles('bindings/wasm/coverage/coverage.txt') != '' }}
+        run: |
+          {
+            echo "### WASM binding, vitest (Node)"
+            echo
+            echo '```'
+            cat bindings/wasm/coverage/coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-wasm
+          path: bindings/wasm/coverage/
+          if-no-files-found: ignore
