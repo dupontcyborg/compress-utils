@@ -133,7 +133,7 @@ try {
 ```
 
 ```cpp
-std::string v  = cu::version();                    // e.g. "0.11.0"
+std::string v  = cu::version();                    // e.g. "0.11.1"
 bool        ok = cu::is_available(cu::Algorithm::Zstd);
 
 // Bound one-shot decompression output (default 1 GiB; 0 = unbounded).

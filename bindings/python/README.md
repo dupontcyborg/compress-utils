@@ -108,7 +108,7 @@ Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The bin
 ## Errors and limits
 
 ```python
-cu.version()                                  # e.g. "0.11.0"
+cu.version()                                  # e.g. "0.11.1"
 cu.set_max_decompressed_size(256 * 1024**2)   # bound one-shot decompression
                                               # (default: 1 GiB; 0 = unbounded)
 
