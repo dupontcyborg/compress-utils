@@ -5,9 +5,10 @@
  * conditionally compiled based on the INCLUDE_<ALGO> CMake options. This
  * file routes a cu_algorithm_t enum value to the right vtable.
  *
- * A switch statement (rather than an array indexed by enum value)
- * handles holes from disabled algorithms cleanly: unavailable algorithms
- * simply have no case and the default returns NULL.
+ * A table indexed by enum value, with designated initializers: disabled
+ * algorithms simply have no entry, so their slot is NULL. (Not a switch:
+ * coverage tools count the #ifdef lines between a switch's `return` cases as
+ * code that never runs.)
  */
 
 #include "algorithm_registry.h"
@@ -47,42 +48,45 @@ extern const cu_algorithm_vtbl_t cu_lzo_vtbl;
 extern const cu_algorithm_vtbl_t cu_gzip_vtbl;
 #endif
 
-const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
-    switch (algo) {
+static const cu_algorithm_vtbl_t* const REGISTRY[CU_ALGO_LZO + 1] = {
 #ifdef INCLUDE_ZSTD
-        case CU_ALGO_ZSTD:   return &cu_zstd_vtbl;
+    [CU_ALGO_ZSTD]    = &cu_zstd_vtbl,
 #endif
 #ifdef INCLUDE_BROTLI
-        case CU_ALGO_BROTLI: return &cu_brotli_vtbl;
+    [CU_ALGO_BROTLI]  = &cu_brotli_vtbl,
 #endif
 #ifdef INCLUDE_ZLIB
-        case CU_ALGO_ZLIB:   return &cu_zlib_vtbl;
+    [CU_ALGO_ZLIB]    = &cu_zlib_vtbl,
 #endif
 #ifdef INCLUDE_DEFLATE
-        case CU_ALGO_DEFLATE: return &cu_deflate_vtbl;
+    [CU_ALGO_DEFLATE] = &cu_deflate_vtbl,
 #endif
 #ifdef INCLUDE_BZ2
-        case CU_ALGO_BZ2:    return &cu_bz2_vtbl;
+    [CU_ALGO_BZ2]     = &cu_bz2_vtbl,
 #endif
 #ifdef INCLUDE_LZ4
-        case CU_ALGO_LZ4:    return &cu_lz4_vtbl;
+    [CU_ALGO_LZ4]     = &cu_lz4_vtbl,
 #endif
 #ifdef INCLUDE_LZ4_RAW
-        case CU_ALGO_LZ4_RAW: return &cu_lz4_raw_vtbl;
+    [CU_ALGO_LZ4_RAW] = &cu_lz4_raw_vtbl,
 #endif
 #ifdef INCLUDE_XZ
-        case CU_ALGO_XZ:     return &cu_xz_vtbl;
-        case CU_ALGO_LZMA:   return &cu_xz_vtbl;  /* alias */
+    [CU_ALGO_XZ]      = &cu_xz_vtbl,
+    [CU_ALGO_LZMA]    = &cu_xz_vtbl,  /* alias */
 #endif
 #ifdef INCLUDE_SNAPPY
-        case CU_ALGO_SNAPPY: return &cu_snappy_vtbl;
+    [CU_ALGO_SNAPPY]  = &cu_snappy_vtbl,
 #endif
 #ifdef INCLUDE_GZIP
-        case CU_ALGO_GZIP:   return &cu_gzip_vtbl;
+    [CU_ALGO_GZIP]    = &cu_gzip_vtbl,
 #endif
 #ifdef INCLUDE_LZO
-        case CU_ALGO_LZO: return &cu_lzo_vtbl;
+    [CU_ALGO_LZO]     = &cu_lzo_vtbl,
 #endif
-        default:             return NULL;
-    }
+};
+
+const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo) {
+    /* Unsigned compare: out-of-range and negative values are both unknown. */
+    if ((unsigned)algo >= sizeof(REGISTRY) / sizeof(REGISTRY[0])) return NULL;
+    return REGISTRY[algo];
 }

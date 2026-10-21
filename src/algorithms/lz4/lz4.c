@@ -227,7 +227,13 @@ static cu_status_t lz4_decompress(
         cu_set_last_error("lz4: truncated frame");
         return CU_ERR_TRUNCATED;
     }
-    *out_len = (size_t)(dst - out);
+    /* Frames without a declared size skipped the up-front check. */
+    size_t produced = (size_t)(dst - out);
+    if (cap_limit > 0 && produced > cap_limit) {
+        cu_set_last_errorf("lz4: decompressed size %zu exceeds cap %zu", produced, cap_limit);
+        return CU_ERR_SIZE_LIMIT;
+    }
+    *out_len = produced;
     return CU_OK;
 }
 

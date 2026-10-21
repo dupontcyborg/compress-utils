@@ -158,10 +158,14 @@ static cu_status_t dfl_decompress(
             *out_len = produced;
             ret = CU_OK;
         }
-    } else if (r == Z_BUF_ERROR || (r == Z_OK && strm.avail_out == 0)) {
+    } else if ((r == Z_BUF_ERROR || r == Z_OK) && strm.avail_out == 0) {
         /* Output exhausted; the wire format doesn't encode the size. */
         cu_set_last_error("zlib: output buffer too small (size not encoded in stream)");
         ret = CU_ERR_SIZE_UNKNOWN;
+    } else if (r == Z_BUF_ERROR || r == Z_OK) {
+        /* The output had room: the input ended before the stream did. */
+        cu_set_last_error("zlib: truncated input");
+        ret = CU_ERR_TRUNCATED;
     } else if (r == Z_DATA_ERROR) {
         cu_set_last_error("zlib: corrupted data");
         ret = CU_ERR_DECOMPRESSION;

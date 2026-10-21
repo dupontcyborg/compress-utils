@@ -78,7 +78,7 @@ When the fuzzer finds something it writes `crash-*`, `timeout-*`, `oom-*` or `le
 
 ## Coverage
 
-Each part of the library is measured only by the tests written in its own language, so one suite can't make another look better covered than it is: the C core (`src/`) by the C tests, and each binding by its own suite. CI (`.github/workflows/coverage.yml`) reports all of them on every PR, in each job's summary plus an HTML artifact, with no threshold yet. The nightly fuzz run also reports which code its corpus reaches, including the vendored decoders.
+Each part of the library is measured only by the tests written in its own language, so one suite can't make another look better covered than it is: the C core (`src/`) by the C tests, and each binding by its own suite. CI (`.github/workflows/coverage.yml`) reports all of them on every PR, in each job's summary plus an HTML artifact, and fails a job whose part is below 90% line coverage or 95% function coverage (`COVERAGE_MIN_LINES` and `COVERAGE_MIN_FUNCTIONS` in the workflow; statements stand in for lines in Go, which has no line metric). The nightly fuzz run also reports which code its corpus reaches, including the vendored decoders.
 
 | Part | Measured by | Run locally |
 |------|-------------|-------------|
@@ -96,7 +96,7 @@ cmake --build build-cov -j
 tools/coverage.py --build-dir build-cov
 ```
 
-Pass `--groups core` (or `cpp`, `python`) for one part. Building the Python binding writes its module into `bindings/python/compress_utils/`, replacing one you built normally.
+Pass `--groups core` (or `cpp`, `python`) for one part, and `--min-lines 90 --min-functions 95` to apply CI's minimums. Building the Python binding writes its module into `bindings/python/compress_utils/`, replacing one you built normally.
 
 ## Adding an algorithm
 

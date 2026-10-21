@@ -4,7 +4,9 @@ name: Coverage
 # own language, so one suite can't make another look better than it is: the C
 # core by the C tests, each binding by its own suite (tools/coverage.py has the
 # details for the C-family parts). Results go to each job's summary and an HTML
-# artifact. Informational: there is no threshold yet.
+# artifact. Each job fails if its part's line or function coverage is below
+# COVERAGE_MIN_LINES / COVERAGE_MIN_FUNCTIONS, checked last so the reports are
+# published either way.
 
 on:
   pull_request:
@@ -20,6 +22,10 @@ permissions:
 concurrency:
   group: coverage-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  COVERAGE_MIN_LINES: 90
+  COVERAGE_MIN_FUNCTIONS: 95
 
 jobs:
   c-cpp-python:
@@ -56,8 +62,10 @@ jobs:
       - name: Build
         run: cmake --build build-cov -j 4
 
-      - name: Run tests and report
-        run: python tools/coverage.py --build-dir build-cov --out-dir coverage
+      - name: Run tests, report and check the minimum
+        run: >
+          python tools/coverage.py --build-dir build-cov --out-dir coverage
+          --min-lines $COVERAGE_MIN_LINES --min-functions $COVERAGE_MIN_FUNCTIONS
 
       - name: Job summary
         if: ${{ !cancelled() && hashFiles('coverage/summary.md') != '' }}
@@ -105,6 +113,19 @@ jobs:
           name: coverage-go
           path: go-coverage.html
 
+      - name: Check the minimums
+        # Statements stand in for lines; a function counts as covered once any
+        # of its statements ran.
+        run: |
+          go tool cover -func=go-coverage.out | awk -v ml="$COVERAGE_MIN_LINES" -v mf="$COVERAGE_MIN_FUNCTIONS" '
+            /^total:/ { sub("%", "", $NF); lines = $NF; next }
+            { n++; if ($NF + 0 > 0) hit++ }
+            END {
+              funcs = 100 * hit / n
+              printf "Go: statements %.1f%% (minimum %s%%), functions %.1f%% (minimum %s%%)\n", lines, ml, funcs, mf
+              exit !(lines >= ml && funcs >= mf)
+            }'
+
   rust:
     name: Rust binding
     runs-on: ubuntu-latest
@@ -142,6 +163,11 @@ jobs:
           name: coverage-rust
           path: target/llvm-cov/html/
 
+      - name: Check the minimums
+        run: >
+          cargo llvm-cov report --summary-only
+          --fail-under-lines $COVERAGE_MIN_LINES --fail-under-functions $COVERAGE_MIN_FUNCTIONS
+
   wasm:
     name: WASM binding
     runs-on: ubuntu-latest
@@ -176,11 +202,14 @@ jobs:
           npm install --no-audit --no-fund
           npm run build:ts
 
-      - name: Test with coverage
+      - name: Test with coverage and check the minimum
         # Coverage of src/*.ts (see vitest.config.ts). The browser and Deno
-        # suites aren't included, so their runtime resolvers read 0%.
+        # suites aren't included, so their runtime resolvers read 0%. vitest
+        # writes the reports before failing on the threshold.
         working-directory: bindings/wasm
-        run: npx vitest run --coverage
+        run: >
+          npx vitest run --coverage --coverage.thresholds.lines=$COVERAGE_MIN_LINES
+          --coverage.thresholds.functions=$COVERAGE_MIN_FUNCTIONS
 
       - name: Report
         if: ${{ !cancelled() && hashFiles('bindings/wasm/coverage/coverage.txt') != '' }}

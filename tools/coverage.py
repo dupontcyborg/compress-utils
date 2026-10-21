@@ -23,10 +23,12 @@ language, so one suite can't make another look better than it is:
 clang merges counters for the same function across every binary that ran, so
 each group runs on its own and writes its own profile. Reports go to
 <out>/<group>.txt and <out>/<group>-html/, and <out>/summary.md collects them
-(CI appends it to the job summary). Exits 1 if any group's tests failed.
+(CI appends it to the job summary). Exits 1 if any group's tests failed, or
+if a group is below --min-lines / --min-functions (not the fuzz group).
 
 Usage:
     tools/coverage.py --build-dir build-cov [--out-dir coverage] [--groups core,cpp,python]
+                      [--min-lines 90] [--min-functions 95]
     tools/coverage.py --build-dir build-cov --groups fuzz --fuzz-dirs corpus/ seeds/
 """
 
@@ -144,11 +146,31 @@ def run_group(name, group, args, profile_dir):
     return ok, sorted({c[0] for c in commands})
 
 
+def totals(objects, profdata, sources, llvm_cov):
+    """(line %, function %) over the group's sources."""
+    out = subprocess.run(llvm_cov + ["export", "-summary-only"] + objects
+                         + ["-instr-profile", profdata] + sources,
+                         check=True, capture_output=True, text=True).stdout
+    t = json.loads(out)["data"][0]["totals"]
+    return t["lines"]["percent"], t["functions"]["percent"]
+
+
 def report(name, group, binaries, profdata, args, llvm_cov):
+    """Writes the group's reports. Returns (summary section, meets the minimums)."""
     objects = [binaries[0]] + [a for b in binaries[1:] for a in ("-object", b)]
     sources = [os.path.join(ROOT, s) for s in group["sources"]]
     base = llvm_cov + ["report"] + objects + ["-instr-profile", profdata]
     text = subprocess.run(base + sources, check=True, capture_output=True, text=True).stdout
+    lines, functions = totals(objects, profdata, sources, llvm_cov)
+    # The fuzz corpus is informational: it never runs the compression code.
+    checks = [] if name == "fuzz" else [
+        (kind, value, minimum) for kind, value, minimum in
+        (("lines", lines, args.min_lines), ("functions", functions, args.min_functions))
+        if minimum is not None]
+    ok = all(value >= minimum for _, value, minimum in checks)
+    verdict = f"lines {lines:.2f}%, functions {functions:.2f}%" + "".join(
+        f"; minimum {minimum:g}% {kind}: {'pass' if value >= minimum else 'FAIL'}"
+        for kind, value, minimum in checks)
     if name == "fuzz":
         # Which vendored decoder code the fuzzer reaches, as one total line.
         third = subprocess.run(base + [os.path.join(ROOT, "third_party")],
@@ -165,7 +187,7 @@ def report(name, group, binaries, profdata, args, llvm_cov):
                    "-show-branches=count", "-output-dir", html_dir] + html_sources, check=True)
     with open(os.path.join(args.out_dir, f"{name}.txt"), "w") as f:
         f.write(text)
-    return f"### {group['title']}\n\n```\n{text.rstrip()}\n```\n"
+    return f"### {group['title']}\n\n{verdict}\n\n```\n{text.rstrip()}\n```\n", ok
 
 
 def main():
@@ -174,6 +196,11 @@ def main():
     parser.add_argument("--out-dir", default="coverage")
     parser.add_argument("--groups", default="core,cpp,python")
     parser.add_argument("--fuzz-dirs", nargs="*", default=[])
+    parser.add_argument("--min-lines", type=float, default=None,
+                        help="fail if a group's line coverage is below this percentage "
+                             "(not applied to the fuzz group)")
+    parser.add_argument("--min-functions", type=float, default=None,
+                        help="the same for function coverage")
     args = parser.parse_args()
     args.build_dir = os.path.abspath(args.build_dir)
     args.out_dir = os.path.abspath(args.out_dir)
@@ -181,7 +208,7 @@ def main():
     llvm_profdata = llvm_tool("llvm-profdata", args.build_dir)
 
     os.makedirs(args.out_dir, exist_ok=True)
-    summary, failed = [], []
+    summary, failed, below = [], [], []
     for name in args.groups.split(","):
         if name not in GROUPS:
             sys.exit(f"coverage.py: unknown group {name!r} (one of {', '.join(GROUPS)})")
@@ -197,16 +224,19 @@ def main():
             continue
         profdata = os.path.join(args.out_dir, f"{name}.profdata")
         subprocess.run(llvm_profdata + ["merge", "-sparse", "-o", profdata] + raw, check=True)
-        section = report(name, group, binaries, profdata, args, llvm_cov)
+        section, meets = report(name, group, binaries, profdata, args, llvm_cov)
         print(section)
         summary.append(section)
+        if not meets:
+            below.append(name)
 
     with open(os.path.join(args.out_dir, "summary.md"), "w") as f:
         f.write("\n".join(summary))
     if failed:
         print(f"coverage.py: tests failed in: {', '.join(failed)}", file=sys.stderr)
-        return 1
-    return 0
+    if below:
+        print(f"coverage.py: below the coverage minimum: {', '.join(below)}", file=sys.stderr)
+    return 1 if failed or below else 0
 
 
 if __name__ == "__main__":
