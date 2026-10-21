@@ -163,6 +163,7 @@ second copy of the upstream or duplicate the implementation:
       The suite then exercises one-shot round-trip, tight-buffer streaming, and
       cross-API round-trips for it automatically. `size_hint` assertions accept
       both `CU_OK` and `CU_ERR_SIZE_UNKNOWN`, so either choice is fine.
+- [ ] **`tests/fuzz/fuzz_algos.h`** — append `CU_ALGO_<ALGO>` to the end of `FUZZ_ALGOS` (never reorder: the index is the first byte of every saved fuzz input). The fuzzer and its seed generator then cover it automatically.
 
 Build and run before touching bindings:
 

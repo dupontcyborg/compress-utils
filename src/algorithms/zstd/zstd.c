@@ -331,7 +331,7 @@ static cu_status_t cstream_feed(zstd_cstream_state_t* st, const uint8_t* in, siz
     }
     ZSTD_inBuffer ib = { in, in_len, 0 };
     s = cstream_pump(st, &ib, ob);
-    if (s == CU_ERR_BUF_TOO_SMALL) {
+    if (s == CU_ERR_BUF_TOO_SMALL && ib.pos < in_len) {
         cu_status_t a = pending_append(st, in + ib.pos, in_len - ib.pos);
         if (a != CU_OK) return a;
     }
@@ -558,7 +558,7 @@ static cu_status_t zstd_dstream_write(
     ZSTD_inBuffer ib = { in, in_len, 0 };
     s = dstream_pump(st, &ib, &ob);
     *out_len = ob.pos;
-    if (s == CU_ERR_BUF_TOO_SMALL) {
+    if (s == CU_ERR_BUF_TOO_SMALL && ib.pos < in_len) {
         cu_status_t a = dstream_pending_append(st, in + ib.pos, in_len - ib.pos);
         if (a != CU_OK) return a;
     } else if (s == CU_OK && st->ended && ib.pos < in_len) {

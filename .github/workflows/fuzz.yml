@@ -1,0 +1,99 @@
+name: Fuzz
+
+# Coverage-guided fuzzing of the decoders (tests/fuzz/). PRs get a short run
+# starting from the corpus the nightly run has grown; the nightly run fuzzes
+# longer, minimizes the grown corpus and saves it back to the cache. PRs only
+# read the cache, so they never overwrite main's corpus.
+
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+# Least-privilege default for all jobs; jobs needing more override below.
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '180' || '1800' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install clang + libFuzzer
+        # llvm-18 provides llvm-symbolizer, which turns sanitizer reports into
+        # function names and line numbers; the runtimes find it on PATH.
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-18 libclang-rt-18-dev llvm-18
+          echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
+
+      - name: Configure (every target instrumented for coverage + ASan/UBSan)
+        run: >
+          cmake -S . -B build-fuzz -DENABLE_FUZZ=ON -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_PYTHON_BINDINGS=OFF
+          -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+
+      - name: Build
+        run: cmake --build build-fuzz -j 4
+
+      - name: Generate seed corpus
+        run: cmake --build build-fuzz --target fuzz_seeds
+
+      - name: Replay regression inputs
+        # Only the fuzz replay: the rest of the suite expects checksum errors,
+        # which FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION turns off.
+        run: ctest --test-dir build-fuzz --output-on-failure -R fuzz_regressions
+
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz-corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Fuzz
+        # New inputs go to the first directory (fuzz-corpus). Fork mode ignores
+        # timeouts and OOMs by default; -ignore_*=0 makes a hang (the
+        # decompression-bomb class) or a memory blowup fail the job. lsan.supp
+        # silences a leak in libFuzzer's own fork-mode parent.
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/fuzz/lsan.supp
+        run: |
+          mkdir -p fuzz-corpus fuzz-artifacts
+          ./build-fuzz/tests/fuzz/fuzz_decompress fuzz-corpus build-fuzz/tests/fuzz/seeds \
+            -fork=$(nproc) -ignore_timeouts=0 -ignore_ooms=0 \
+            -max_total_time=$FUZZ_SECONDS -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=fuzz-artifacts/ -print_final_stats=1
+
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz-artifacts/
+          if-no-files-found: ignore
+
+      - name: Minimize corpus
+        if: github.event_name != 'pull_request' && !cancelled() && hashFiles('fuzz-corpus/**') != ''
+        run: |
+          mkdir fuzz-corpus-min
+          ./build-fuzz/tests/fuzz/fuzz_decompress -merge=1 fuzz-corpus-min fuzz-corpus
+          rm -rf fuzz-corpus && mv fuzz-corpus-min fuzz-corpus
+
+      - name: Save fuzz corpus
+        if: github.event_name != 'pull_request' && !cancelled() && hashFiles('fuzz-corpus/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz-corpus
+          key: fuzz-corpus-${{ github.run_id }}

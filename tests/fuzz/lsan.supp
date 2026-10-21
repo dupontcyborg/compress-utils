@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for fuzzing runs (LSAN_OPTIONS=suppressions=...).
+# Needs llvm-symbolizer on PATH: suppressions match symbolized frames.
+#
+# libFuzzer's -fork parent leaks a small allocation in its own bookkeeping
+# (LLVM 18), failing every fork-mode run at exit. Only the parent's frames
+# match, so leaks in the fuzzed code (run in the child jobs) still report.
+leak:fuzzer::FuzzWithFork
