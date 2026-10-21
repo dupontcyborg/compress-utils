@@ -117,7 +117,7 @@
 - [X] `c`
 - [X] `go`
 - [X] `js/ts` (WebAssembly via Emscripten)
-- [X] `python` (3.10 - 3.14)
+- [X] `python` (3.11 - 3.15)
 - [X] `rust`
 - [ ] `java`
 - [ ] `swift`
