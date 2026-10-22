@@ -3,13 +3,16 @@
 Python benchmark driver.
 
 Speaks the shared benchmark driver protocol (see benchmarks/README.md): reads
-"<algo> <level> [<mode>] <path>" job lines from stdin, emits one NDJSON result
+"<algo> <level> [<mode>] <path>" job lines from stdin (mode: oneshot, stream or
+msgset), emits one NDJSON result
 (or skip/error marker) per line, honours BENCH_SAMPLES / BENCH_WARMUP /
 BENCH_CHUNK, and answers `--info`.
 
 Drives the compress-utils Python binding (bindings/python) the way a consumer
 would: compress/decompress for one-shot, CompressStream/DecompressStream for
-streaming.
+streaming. A message set (benchmarks/corpus/msgset.py) runs one compress call per
+message, and decompresses each with expected_size, its fastest path when the
+size is known.
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "bindings" / "python"))
+sys.path.insert(0, str(REPO / "benchmarks" / "corpus"))
 import compress_utils as cu  # noqa: E402
+import msgset  # noqa: E402
 
 ALGOS = {"zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"}
 SAMPLES = int(os.environ.get("BENCH_SAMPLES") or 5)
@@ -105,6 +110,49 @@ def _run_job(algo_name: str, level: int, is_stream: bool, path: str) -> dict:
     }
 
 
+def _run_msgset_job(algo_name: str, level: int, path: str) -> dict:
+    algo = getattr(cu.Algorithm, algo_name)
+    messages = msgset.read(Path(path))
+
+    comp: list[bytes] = []
+    c_t = []
+    for r in range(WARMUP + SAMPLES):
+        t0 = time.perf_counter_ns()
+        comp = [cu.compress(m, algo, level) for m in messages]
+        if r >= WARMUP:
+            c_t.append(time.perf_counter_ns() - t0)
+
+    d_t = []
+    for r in range(WARMUP + SAMPLES):
+        t0 = time.perf_counter_ns()
+        for c, m in zip(comp, messages):
+            cu.decompress(c, algo, expected_size=len(m))
+        if r >= WARMUP:
+            d_t.append(time.perf_counter_ns() - t0)
+
+    verified = all(cu.decompress(c, algo, expected_size=len(m)) == m
+                   for c, m in zip(comp, messages))
+    c, d = _stats(c_t), _stats(d_t)
+    return {
+        "lang": "python",
+        "impl": "compress-utils",
+        "algo": algo_name,
+        "level": level,
+        "mode": "msgset",
+        "chunk_bytes": 0,
+        "input": path,
+        "input_bytes": sum(map(len, messages)),
+        "output_bytes": sum(map(len, comp)),
+        "messages": len(messages),
+        "decompress_size_known": True,
+        "compress_ns_median": c["median"], "compress_ns_mad": c["mad"], "compress_ns_min": c["min"],
+        "decompress_ns_median": d["median"], "decompress_ns_mad": d["mad"], "decompress_ns_min": d["min"],
+        "samples": SAMPLES,
+        "warmup": WARMUP,
+        "verified": verified,
+    }
+
+
 def _emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
@@ -129,21 +177,23 @@ def main() -> None:
             _emit({"error": True})
             continue
         algo, level_s, rest = m.group(1), m.group(2), m.group(3)
-        is_stream = False
-        if rest.startswith("stream "):
-            is_stream, rest = True, rest[7:]
-        elif rest.startswith("oneshot "):
-            rest = rest[8:]
+        mode = "oneshot"
+        for m in ("stream", "msgset", "oneshot"):
+            if rest.startswith(m + " "):
+                mode, rest = m, rest[len(m) + 1:]
+                break
         path = rest.strip()
 
         if algo not in ALGOS:
             _emit({"skipped": True})
             continue
         try:
-            _emit(_run_job(algo, int(level_s), is_stream, path))
+            if mode == "msgset":
+                _emit(_run_msgset_job(algo, int(level_s), path))
+            else:
+                _emit(_run_job(algo, int(level_s), mode == "stream", path))
         except Exception as e:  # noqa: BLE001
-            sys.stderr.write(f"bench-py: {algo} L{level_s} "
-                             f"{'stream' if is_stream else 'oneshot'} failed: {e}\n")
+            sys.stderr.write(f"bench-py: {algo} L{level_s} {mode} failed: {e}\n")
             _emit({"error": True})
 
 

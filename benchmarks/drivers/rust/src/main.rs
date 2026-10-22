@@ -1,13 +1,16 @@
 //! Rust benchmark driver.
 //!
 //! Speaks the shared benchmark driver protocol (see benchmarks/README.md): reads
-//! "<algo> <level> [<mode>] <path>" job lines from stdin, emits one NDJSON result
+//! "<algo> <level> [<mode>] <path>" job lines from stdin (mode: oneshot, stream or
+//! msgset), emits one NDJSON result
 //! (or skip/error marker) per line, honours BENCH_SAMPLES / BENCH_WARMUP /
 //! BENCH_CHUNK, and answers `--info`.
 //!
 //! Drives the compress-utils Rust binding the way a consumer would:
 //! `compress`/`decompress` for one-shot, `Compressor`/`Decompressor` for
-//! streaming. The crate compiles the C core from source via its build script, so
+//! streaming. A message set (benchmarks/corpus/msgset.py) runs one `compress`
+//! call per message and decompresses each with `decompress_with_capacity`, its
+//! fastest path when the size is known. The crate compiles the C core from source via its build script, so
 //! this is the same codec code the other drivers measure — only the language
 //! wrapper differs.
 
@@ -16,7 +19,9 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Read, Write};
 use std::time::Instant;
 
-use compress_utils::{compress, decompress, Algorithm, Compressor, Decompressor};
+use compress_utils::{
+    compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor,
+};
 
 fn algo_from_name(name: &str) -> Option<Algorithm> {
     Some(match name {
@@ -163,6 +168,97 @@ fn run_job(
     Ok(s)
 }
 
+/// Reads a message set: records of a u32 little-endian length followed by that
+/// many bytes.
+fn read_msgset(path: &str) -> io::Result<Vec<Vec<u8>>> {
+    let data = std::fs::read(path)?;
+    let bad = || io::Error::new(io::ErrorKind::InvalidData, "truncated message set");
+    let mut msgs = Vec::new();
+    let mut pos = 0;
+    while pos < data.len() {
+        let len = data.get(pos..pos + 4).ok_or_else(bad)?;
+        let n = u32::from_le_bytes(len.try_into().unwrap()) as usize;
+        pos += 4;
+        msgs.push(data.get(pos..pos + n).ok_or_else(bad)?.to_vec());
+        pos += n;
+    }
+    Ok(msgs)
+}
+
+fn run_msgset_job(
+    algo_name: &str,
+    algo: Algorithm,
+    level: i32,
+    path: &str,
+    samples: usize,
+    warmup: usize,
+) -> io::Result<String> {
+    let msgs = read_msgset(path)?;
+
+    let mut comp: Vec<Vec<u8>> = Vec::new();
+    let mut c_t = Vec::with_capacity(samples);
+    for r in 0..warmup + samples {
+        let t0 = Instant::now();
+        comp = msgs
+            .iter()
+            .map(|m| compress(algo, m, level))
+            .collect::<Result<_, _>>()
+            .map_err(io::Error::from)?;
+        if r >= warmup {
+            c_t.push(t0.elapsed().as_nanos());
+        }
+    }
+
+    let mut d_t = Vec::with_capacity(samples);
+    for r in 0..warmup + samples {
+        let t0 = Instant::now();
+        for (c, m) in comp.iter().zip(&msgs) {
+            decompress_with_capacity(algo, c, m.len()).map_err(io::Error::from)?;
+        }
+        if r >= warmup {
+            d_t.push(t0.elapsed().as_nanos());
+        }
+    }
+
+    let verified = comp
+        .iter()
+        .zip(&msgs)
+        .all(|(c, m)| decompress_with_capacity(algo, c, m.len()).is_ok_and(|d| d == *m));
+    let in_bytes: usize = msgs.iter().map(Vec::len).sum();
+    let out_bytes: usize = comp.iter().map(Vec::len).sum();
+    let (c, d) = (stats(&c_t), stats(&d_t));
+
+    let mut s = String::new();
+    write!(
+        s,
+        concat!(
+            r#"{{"lang":"rust","impl":"compress-utils","algo":{},"level":{},"#,
+            r#""mode":"msgset","chunk_bytes":0,"input":{},"input_bytes":{},"output_bytes":{},"#,
+            r#""messages":{},"decompress_size_known":true,"#,
+            r#""compress_ns_median":{},"compress_ns_mad":{},"compress_ns_min":{},"#,
+            r#""decompress_ns_median":{},"decompress_ns_mad":{},"decompress_ns_min":{},"#,
+            r#""samples":{},"warmup":{},"verified":{}}}"#,
+        ),
+        json_string(algo_name),
+        level,
+        json_string(path),
+        in_bytes,
+        out_bytes,
+        msgs.len(),
+        c.median,
+        c.mad,
+        c.min,
+        d.median,
+        d.mad,
+        d.min,
+        samples,
+        warmup,
+        verified,
+    )
+    .expect("writing to a String cannot fail");
+    Ok(s)
+}
+
 /// Minimal JSON string escaping — corpus paths are plain filesystem paths, but
 /// a stray backslash or quote must not produce a line the runner can't parse.
 fn json_string(s: &str) -> String {
@@ -225,13 +321,14 @@ fn main() {
             }
         };
 
-        let (is_stream, rest) = if let Some(r) = rest.strip_prefix("stream ") {
-            (true, r)
-        } else if let Some(r) = rest.strip_prefix("oneshot ") {
-            (false, r)
-        } else {
-            (false, rest)
-        };
+        let (mode, rest) = ["stream", "msgset", "oneshot"]
+            .iter()
+            .find_map(|m| {
+                rest.strip_prefix(m)
+                    .and_then(|r| r.strip_prefix(' '))
+                    .map(|r| (*m, r))
+            })
+            .unwrap_or(("oneshot", rest));
         let path = rest.trim();
 
         let algo = match algo_from_name(algo_name) {
@@ -249,10 +346,23 @@ fn main() {
             }
         };
 
-        match run_job(algo_name, algo, level, is_stream, path, samples, warmup, chunk) {
+        let result = if mode == "msgset" {
+            run_msgset_job(algo_name, algo, level, path, samples, warmup)
+        } else {
+            run_job(
+                algo_name,
+                algo,
+                level,
+                mode == "stream",
+                path,
+                samples,
+                warmup,
+                chunk,
+            )
+        };
+        match result {
             Ok(rec) => emit(&rec),
             Err(e) => {
-                let mode = if is_stream { "stream" } else { "oneshot" };
                 eprintln!("bench-rust: {algo_name} L{level} {mode} failed: {e}");
                 emit(r#"{"error":true}"#);
             }

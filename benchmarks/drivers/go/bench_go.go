@@ -1,12 +1,16 @@
 // Go benchmark driver.
 //
 // Speaks the shared benchmark driver protocol (see benchmarks/README.md): reads
-// "<algo> <level> [<mode>] <path>" job lines from stdin, emits one NDJSON result
+// "<algo> <level> [<mode>] <path>" job lines from stdin (mode: oneshot, stream or
+// msgset), emits one NDJSON result
 // (or skip/error marker) per line, honours BENCH_SAMPLES / BENCH_WARMUP /
 // BENCH_CHUNK, and answers `--info`.
 //
 // Drives the compress-utils Go binding (bindings/go) the way a consumer would:
-// Compress/Decompress for one-shot, NewWriter/NewReader for streaming. The
+// Compress/Decompress for one-shot, NewWriter/NewReader for streaming. A message
+// set (benchmarks/corpus/msgset.py) runs one Compress call per message and
+// decompresses each with DecompressWithCapacity, its fastest path when the size
+// is known. The
 // binding compiles the C core from source via cgo, so this is the same codec
 // code the other drivers measure — only the language wrapper differs.
 package main
@@ -14,7 +18,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -184,6 +190,97 @@ func runJob(algoName string, level int, isStream bool, path string) (map[string]
 	}, nil
 }
 
+// readMsgset reads a message set: records of a u32 little-endian length
+// followed by that many bytes.
+func readMsgset(path string) ([][]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var msgs [][]byte
+	for pos := 0; pos < len(data); {
+		if len(data)-pos < 4 {
+			return nil, errors.New("truncated message set")
+		}
+		n := int(binary.LittleEndian.Uint32(data[pos:]))
+		pos += 4
+		if n > len(data)-pos {
+			return nil, errors.New("truncated message set")
+		}
+		msgs = append(msgs, data[pos:pos+n])
+		pos += n
+	}
+	return msgs, nil
+}
+
+func runMsgsetJob(algoName string, level int, path string) (map[string]any, error) {
+	algo := algos[algoName]
+	msgs, err := readMsgset(path)
+	if err != nil {
+		return nil, err
+	}
+
+	comp := make([][]byte, len(msgs))
+	cT := make([]int64, 0, samples)
+	for r := 0; r < warmup+samples; r++ {
+		t0 := time.Now()
+		for i, m := range msgs {
+			if comp[i], err = cu.Compress(algo, m, level); err != nil {
+				return nil, err
+			}
+		}
+		if r >= warmup {
+			cT = append(cT, time.Since(t0).Nanoseconds())
+		}
+	}
+
+	dT := make([]int64, 0, samples)
+	for r := 0; r < warmup+samples; r++ {
+		t0 := time.Now()
+		for i, m := range msgs {
+			if _, err = cu.DecompressWithCapacity(algo, comp[i], len(m)); err != nil {
+				return nil, err
+			}
+		}
+		if r >= warmup {
+			dT = append(dT, time.Since(t0).Nanoseconds())
+		}
+	}
+
+	verified := true
+	inBytes, outBytes := 0, 0
+	for i, m := range msgs {
+		dec, err := cu.DecompressWithCapacity(algo, comp[i], len(m))
+		verified = verified && err == nil && bytes.Equal(dec, m)
+		inBytes += len(m)
+		outBytes += len(comp[i])
+	}
+
+	c, d := computeStats(cT), computeStats(dT)
+	return map[string]any{
+		"lang":                  "go",
+		"impl":                  "compress-utils",
+		"algo":                  algoName,
+		"level":                 level,
+		"mode":                  "msgset",
+		"chunk_bytes":           0,
+		"input":                 path,
+		"input_bytes":           inBytes,
+		"output_bytes":          outBytes,
+		"messages":              len(msgs),
+		"decompress_size_known": true,
+		"compress_ns_median":    c.median,
+		"compress_ns_mad":       c.mad,
+		"compress_ns_min":       c.min,
+		"decompress_ns_median":  d.median,
+		"decompress_ns_mad":     d.mad,
+		"decompress_ns_min":     d.min,
+		"samples":               samples,
+		"warmup":                warmup,
+		"verified":              verified,
+	}, nil
+}
+
 func emit(obj map[string]any) {
 	b, _ := json.Marshal(obj)
 	fmt.Println(string(b))
@@ -209,12 +306,12 @@ func main() {
 			continue
 		}
 		algoName, levelS, rest := f[0], f[1], f[2]
-		isStream := false
-		switch {
-		case strings.HasPrefix(rest, "stream "):
-			isStream, rest = true, rest[len("stream "):]
-		case strings.HasPrefix(rest, "oneshot "):
-			rest = rest[len("oneshot "):]
+		mode := "oneshot"
+		for _, m := range []string{"stream", "msgset", "oneshot"} {
+			if strings.HasPrefix(rest, m+" ") {
+				mode, rest = m, rest[len(m)+1:]
+				break
+			}
 		}
 		path := strings.TrimSpace(rest)
 
@@ -227,12 +324,13 @@ func main() {
 			emit(map[string]any{"error": true})
 			continue
 		}
-		rec, err := runJob(algoName, level, isStream, path)
+		var rec map[string]any
+		if mode == "msgset" {
+			rec, err = runMsgsetJob(algoName, level, path)
+		} else {
+			rec, err = runJob(algoName, level, mode == "stream", path)
+		}
 		if err != nil {
-			mode := "oneshot"
-			if isStream {
-				mode = "stream"
-			}
 			fmt.Fprintf(os.Stderr, "bench-go: %s L%d %s failed: %v\n", algoName, level, mode, err)
 			emit(map[string]any{"error": true})
 			continue
