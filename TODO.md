@@ -13,9 +13,23 @@ Direction: stop adding breadth and find out where the library wins. Likely posit
   - [ ] Fix the open stream bugs below.
   - [ ] Add CHANGELOG.md.
 
+## Findings from the C ecosystem benchmarks (2026-10-22)
+
+Measured on branch `ecosystem-benchmarks` (M-series MacBook, single-threaded, release builds; details in `docs/ecosystem-benchmarks.md`). Proposals, not yet decided:
+
+- [ ] **xz: cap the dictionary at the input size** (rounded up to a power of two, at least 4 KiB), as 7-Zip does. liblzma otherwise sets up the preset's full dictionary (8 MiB at preset 6, 64 MiB at 9) on every call. Measured as `c-liblzma-fitdict`: compression up to 7.5× faster on 1 KB-4 KB messages at high levels (0.13× the time at level 9), ratio unchanged, neutral on large files; matches the LZMA SDK's small-input lead. Output headers then record the smaller dictionary, so bytes differ from `xz -N` (still standard `.xz`).
+- [ ] **Deflate backend (zlib, gzip, deflate): we ship the slowest mainstream implementation** (madler zlib). At equal or better ratio, on silesia-mini: libdeflate 2.7× compress / 2.45× decompress (one-shot only, no streaming); zlib-ng 1.4× / 1.6× (one-shot and streaming, ~+40 KiB binary); zlib-rs similar to zlib-ng. Recommendation: zlib-ng. Lifts every binding.
+- [ ] **Snappy: Google's C++ snappy decompresses 1.5-2.0× faster** than the andikleen C port we switched to in 2026-07, and compresses ~1.3-1.5× faster at 0.6% lower ratio. Trade-off against taking back the C++ runtime dependency.
+- [ ] **Level map on small inputs:** our xz level 9 maps to preset 8, which is slower than preset 9 at the same ratio on small inputs; revisit together with the lz4 levels 1/2 item below.
+- [ ] **Small fixed per-call costs:** one-shot lz4 decompression is 5-12% slower than raw liblz4 on 1 KB messages, brotli decompression 2-4% slower everywhere. Everything else is within 1-2% of the raw library, with byte-identical output.
+- [ ] **Reusable compressor/decompressor objects: post-1.0.** Measured gain is modest: zstd 0-8% even on 1 KB messages (it already sizes its tables to the pledged input size); libdeflate 1.2-1.5× on messages of 4 KB and under, nothing from 16 KB up.
+- [ ] **Document single-codec builds.** A stripped static binary with the default all-codec archive carries 1.6 MiB; with one codec (`INCLUDE_<CODEC>`) it's 11-811 KiB, and decode-only (`-DCU_OMIT_COMPRESS`) less. Neither is documented as a supported native configuration.
+- [ ] **Benchmarks: rerun github-users with ~9 samples before publishing.** At 3-5 samples, identical code varies 0.6-1.9× level to level on that tier (per-call allocation noise); the block tiers and large files are stable.
+
 ## Bugs & Critical Issues
 
 - [x] **The decompressed-size cap was bypassed for formats without a recorded size (fixed 2026-10-22).** `set_max_decompressed_size` (default 1 GiB) was only enforced when the size probe succeeded (zstd, lz4, Snappy). For zlib, gzip, deflate, brotli, bz2 and xz, one-shot `decompress()` fell back to an uncapped streaming decode in C++, Python, Go and WASM: with a 1 MiB cap, a 102-byte brotli and a 110-byte bz2 input each decompressed to 64 MiB. Separately, `cu_decompress_size_hint` returned the declared size without checking the cap, so bindings allocated an attacker-chosen size before `cu_decompress` rejected it. Fix: a per-stream output limit in the C core (`cu_decompress_stream_set_max_output`, exposed in every binding as `set_max_output` / `max_output` / `SetMaxOutput` / `maxOutput`), which every binding's one-shot fallback sets to the global cap (`cu_get_max_decompressed_size`, now public); and the size hint returns `CU_ERR_SIZE_LIMIT` above the cap. Rust's binding-side cap mirror was removed, so every binding enforces the cap the same way. Tests per codec in C, C++, Python, Go, Rust and WASM.
+- [ ] **lz4 levels 1 and 2 produce identical output.** They map to native 0 and 1 (`lz4_native_level` in `src/algorithms/lz4/lz4.c`), which LZ4F both treats as its default fast mode, so the 1..10 scale loses a step at the fast end. Found while building `benchmarks/levels.json` (2026-10-22). A fix changes what level 2 produces, so it's a behavior change; consider spreading 1..3 over LZ4's acceleration settings instead.
 - [ ] **xz `size_hint` contradicts the header docs.** `include/compress_utils.h` says XZ size is available via the stream footer/index, but `xz_decompress_size_hint` returns `CU_ERR_SIZE_UNKNOWN` (TODO in `src/algorithms/xz/xz.c`). Either parse the index or fix the docs.
 - [X] **XZ decompress hang / bomb on malformed input (fixed 2026-07).** Feeding a
   non-xz-magic byte (e.g. a lone `0x00`) to the xz decompressor never terminated.
