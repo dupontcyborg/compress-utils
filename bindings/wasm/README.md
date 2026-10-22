@@ -134,6 +134,8 @@ await compress(input, { level: 10 });  // smallest
 
 ## Errors and limits
 
+Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+
 Every failure throws a `CompressError`, which carries the underlying C status code and the algorithm name:
 
 ```ts
@@ -146,7 +148,7 @@ try {
 }
 ```
 
-`await version()` returns the library version (for example `"0.11.1"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
+`await version()` returns the library version (for example `"0.11.1"`), and `await setMaxDecompressedSize(bytes)` caps `decompress` for every algorithm (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression. Streams have no limit unless you pass one: `createDecompressStream({ maxOutput })` and `decompressionStream({ maxOutput })` throw a `CompressError` with code `SizeLimit` once the output passes it.
 
 ## Preloading and synchronous calls
 
