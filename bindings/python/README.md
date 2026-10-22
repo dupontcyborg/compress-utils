@@ -107,10 +107,13 @@ Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The bin
 
 ## Errors and limits
 
+Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+
 ```python
 cu.version()                                  # e.g. "0.11.1"
-cu.set_max_decompressed_size(256 * 1024**2)   # bound one-shot decompression
+cu.set_max_decompressed_size(256 * 1024**2)   # cap decompress() for every algorithm
                                               # (default: 1 GiB; 0 = unbounded)
+ds = cu.DecompressStream("gzip", max_output=256 * 1024**2)  # streams: no limit unless set
 
 try:
     cu.decompress(garbage, "zstd")

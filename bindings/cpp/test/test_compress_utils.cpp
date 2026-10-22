@@ -295,6 +295,48 @@ static int test_moves_and_cap() {
     return 0;
 }
 
+/* The cap holds for every format in one-shot decompress, including those
+ * that don't record their size and so decode through a stream. A
+ * DecompressStream's own limit throws once passed. */
+static int test_cap_every_format() {
+    const auto in = sample(64 * 1024);
+    const std::size_t default_cap = cu_get_max_decompressed_size();
+    std::vector<cu::Algorithm> algos(std::begin(ALL), std::end(ALL));
+    algos.push_back(cu::Algorithm::Lz4Raw);
+    for (cu::Algorithm a : algos) {
+        if (!cu::is_available(a)) continue;
+        const std::string name = cu::algorithm_name(a);
+        const auto packed = cu::compress(a, in);
+
+        cu::set_max_decompressed_size(in.size() - 1);
+        int code = CU_OK;
+        try {
+            (void)cu::decompress(a, packed);
+        } catch (const cu::Error& e) {
+            code = e.code();
+        }
+        cu::set_max_decompressed_size(in.size());
+        const bool at_cap = cu::decompress(a, packed) == in;
+        cu::set_max_decompressed_size(0);
+        const bool no_cap = cu::decompress(a, packed) == in;
+        cu::set_max_decompressed_size(default_cap);
+        CHECK(code == CU_ERR_SIZE_LIMIT, "%s over the cap: code %d", name.c_str(), code);
+        CHECK(at_cap && no_cap, "%s at the cap / with no cap", name.c_str());
+
+        cu::DecompressStream ds(a);
+        ds.set_max_output(in.size() - 1);
+        code = CU_OK;
+        try {
+            (void)ds.write(packed);
+            (void)ds.finish();
+        } catch (const cu::Error& e) {
+            code = e.code();
+        }
+        CHECK(code == CU_ERR_SIZE_LIMIT, "%s stream over its limit: code %d", name.c_str(), code);
+    }
+    return 0;
+}
+
 int main() {
     std::printf("cu version: %s\n", cu::version().c_str());
     if (test_freefn_roundtrip())  return 1;
@@ -305,6 +347,7 @@ int main() {
     if (test_raw_formats())       return 1;
     if (test_single_stream())     return 1;
     if (test_moves_and_cap())     return 1;
+    if (test_cap_every_format())  return 1;
     std::printf("OK\n");
     return 0;
 }

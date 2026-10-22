@@ -223,7 +223,15 @@ cu_status_t cu_decompress_size_hint(
 
     cu_clear_last_error();
     if (!v->decompress_size_hint) { cu_set_last_error("operation unsupported for this algorithm"); return CU_ERR_UNSUPPORTED_ALGO; }
-    return v->decompress_size_hint(in, in_len, out_size);
+    s = v->decompress_size_hint(in, in_len, out_size);
+    /* The declared size comes from the input, so a caller that allocates it
+     * would let a few header bytes choose the allocation. */
+    size_t cap = CU_CAP_LOAD();
+    if (s == CU_OK && cap > 0 && *out_size > cap) {
+        cu_set_last_errorf("%s: declared size %zu exceeds cap %zu", v->name, *out_size, cap);
+        return CU_ERR_SIZE_LIMIT;
+    }
+    return s;
 }
 
 /* ============================================================================
@@ -250,6 +258,8 @@ struct cu_decompress_stream {
     int single;  /* CU_DSTREAM_SINGLE */
     int eof;     /* single: the end was decoded and all its output delivered */
     cu_status_t failed;  /* the codec's first error; the stream is dead */
+    size_t max_output;   /* cu_decompress_stream_set_max_output; 0 = none */
+    size_t produced;     /* output delivered so far */
 };
 
 cu_status_t cu_compress_stream_create(
@@ -439,6 +449,26 @@ static cu_status_t dstream_settle(cu_decompress_stream_t* stream, cu_status_t s)
     return s;
 }
 
+/* Applies the stream's output limit to a codec call that wrote *out_len
+ * bytes: output past the limit is cut off and the call fails with
+ * CU_ERR_SIZE_LIMIT (unless the codec already failed). */
+static cu_status_t dstream_limit(cu_decompress_stream_t* stream, cu_status_t s, size_t* out_len) {
+    if (stream->max_output > 0) {
+        size_t room = stream->produced < stream->max_output
+                          ? stream->max_output - stream->produced : 0;
+        if (*out_len > room) {
+            *out_len = room;
+            if (s == CU_OK || s == CU_ERR_BUF_TOO_SMALL) {
+                cu_set_last_errorf("%s: decompressed output exceeds limit %zu",
+                                   stream->vtbl->name, stream->max_output);
+                s = CU_ERR_SIZE_LIMIT;
+            }
+        }
+    }
+    stream->produced += *out_len;
+    return s;
+}
+
 /* Every call on a failed stream repeats its error. */
 static cu_status_t dstream_failed(const cu_decompress_stream_t* stream) {
     if (stream->failed != CU_OK) {
@@ -456,12 +486,14 @@ cu_status_t cu_decompress_stream_write(
     if (!stream || !out_len)            return CU_ERR_INVALID_ARG;
     if (in_len > 0 && !in)              return CU_ERR_INVALID_ARG;
     if (*out_len > 0 && !out)           return CU_ERR_INVALID_ARG;
+    /* Every return without calling the codec wrote nothing. */
+    size_t out_cap = *out_len;
+    *out_len = 0;
     if (stream->eof) {
         if (in_len > 0) {
             cu_set_last_error("write after end of stream; the input is not consumed");
             return CU_ERR_STREAM_FINISHED;
         }
-        *out_len = 0;
         return CU_OK;
     }
     if (stream->finished) {
@@ -476,8 +508,9 @@ cu_status_t cu_decompress_stream_write(
     }
 
     cu_clear_last_error();
+    *out_len = out_cap;
     cu_status_t s = stream->vtbl->decompress_stream_write(stream->state, in, in_len, out, out_len);
-    return dstream_settle(stream, s);
+    return dstream_settle(stream, dstream_limit(stream, s, out_len));
 }
 
 cu_status_t cu_decompress_stream_finish(
@@ -486,24 +519,33 @@ cu_status_t cu_decompress_stream_finish(
 ) {
     if (!stream || !out_len)            return CU_ERR_INVALID_ARG;
     if (*out_len > 0 && !out)           return CU_ERR_INVALID_ARG;
+    /* Every return without calling the codec wrote nothing. */
+    size_t out_cap = *out_len;
+    *out_len = 0;
 
     if (stream->eof) {
-        *out_len = 0;
         stream->finished = 1;
         return CU_OK;
     }
     if (stream->failed != CU_OK) return dstream_failed(stream);
+    *out_len = out_cap;
 
     cu_clear_last_error();
     /* Single mode past the end: only output is left, which a write drains. */
     cu_status_t s = dstream_ended(stream)
         ? stream->vtbl->decompress_stream_write(stream->state, NULL, 0, out, out_len)
         : stream->vtbl->decompress_stream_finish(stream->state, out, out_len);
-    s = dstream_settle(stream, s);
+    s = dstream_settle(stream, dstream_limit(stream, s, out_len));
     if (s == CU_OK) {
         stream->finished = 1;
     }
     return s;
+}
+
+cu_status_t cu_decompress_stream_set_max_output(cu_decompress_stream_t* stream, size_t bytes) {
+    if (!stream) return CU_ERR_INVALID_ARG;
+    stream->max_output = bytes;
+    return CU_OK;
 }
 
 int cu_decompress_stream_eof(const cu_decompress_stream_t* stream) {

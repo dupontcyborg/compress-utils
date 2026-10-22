@@ -236,6 +236,10 @@ CU_API cu_status_t cu_decompress(
  *   CU_OK                 — *out_size holds the exact decompressed size
  *   CU_ERR_SIZE_UNKNOWN   — wire format does not carry the size; the
  *                           caller should use cu_decompress_stream_t
+ *   CU_ERR_SIZE_LIMIT     — the declared size exceeds the global cap (see
+ *                           cu_set_max_decompressed_size), so the caller
+ *                           never allocates a size an attacker chose;
+ *                           *out_size still holds the declared size
  *   CU_ERR_DECOMPRESSION  — header is malformed
  *   CU_ERR_TRUNCATED      — input is shorter than the minimum header
  *
@@ -253,16 +257,25 @@ CU_API cu_status_t cu_decompress_size_hint(
 );
 
 /*
- * Sets a global cap on the decompressed size that cu_decompress will
- * accept. Defaults to 1 GiB. Set to 0 to disable. Inputs that would
- * decompress to more than this return CU_ERR_SIZE_LIMIT. Stream
- * raw LZ4/LZO and Snappy decoders capture this cap at stream creation (Snappy
- * because it allocates the declared size before emitting anything). Other
- * streaming decoders are unaffected; their callers enforce their own caps.
+ * Sets a global cap on the decompressed size that cu_decompress and
+ * cu_decompress_size_hint will accept. Defaults to 1 GiB. Set to 0 to
+ * disable. Inputs that would decompress to more than this return
+ * CU_ERR_SIZE_LIMIT.
+ *
+ * Streams don't apply it by default: a stream may legitimately decode more
+ * than any in-memory cap. Set a stream's limit with
+ * cu_decompress_stream_set_max_output. Every binding's one-shot decompress
+ * that falls back to a stream (formats that don't record their size) sets
+ * that limit to this cap, so the cap holds for every format. Raw LZ4/LZO and
+ * Snappy stream decoders also capture this cap at creation (Snappy because it
+ * allocates the declared size before emitting anything).
  *
  * Thread-safe; takes effect for subsequent calls.
  */
 CU_API void cu_set_max_decompressed_size(size_t bytes);
+
+/* Returns the current cap set by cu_set_max_decompressed_size (0 = none). */
+CU_API size_t cu_get_max_decompressed_size(void);
 
 /* ============================================================================
  * Streaming compression
@@ -413,6 +426,22 @@ typedef struct cu_decompress_stream cu_decompress_stream_t;
 CU_API cu_status_t cu_decompress_stream_create(
     cu_algorithm_t algo,
     cu_decompress_stream_t** out_stream
+);
+
+/*
+ * Limits the total decompressed output of a stream to `bytes` (0 = no limit,
+ * the default). Output up to the limit is delivered; the call that would go
+ * past it delivers only the bytes up to the limit and returns
+ * CU_ERR_SIZE_LIMIT, which is final like any other decoding error. Exactly
+ * `bytes` of output is allowed. Counts all output since the stream was
+ * created, so it can be set or changed at any time.
+ *
+ * To decompress untrusted input of unknown size into memory, set this to the
+ * most you're willing to hold, e.g. cu_get_max_decompressed_size().
+ */
+CU_API cu_status_t cu_decompress_stream_set_max_output(
+    cu_decompress_stream_t* stream,
+    size_t bytes
 );
 
 /* Flags for cu_decompress_stream_create_ex. */

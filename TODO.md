@@ -1,7 +1,22 @@
 # Compress Utils TODO
 
+## Next up (2026-10)
+
+Direction: stop adding breadth and find out where the library wins. Likely positioning is "every format, including the browser, hardened against untrusted input", to be confirmed by the ecosystem benchmarks.
+
+- [x] **Fix the decompressed-size cap bypass** (see Bugs; fixed 2026-10-22).
+- [x] **README: untrusted-input section** (2026-10-22): root README "Untrusted input" section (output cap for every format, stream limits, bounded decoder memory, final errors, `.xz`-only decoding, fuzzing in CI with a regression corpus, pinned offline builds), linked from each binding's "Errors and limits".
+- [ ] **Ecosystem benchmark baselines** — plan in [docs/ecosystem-benchmarks.md](docs/ecosystem-benchmarks.md). The harness supports them (`impl` field, baseline overlays) but no driver exists. Python: cramjam, zstandard, stdlib zlib/bz2/lzma/`compression.zstd` (3.14). JS: `node:zlib`, fflate, pako, a zstd WASM package. Rust: the native crates. Until this lands, "high-performance" in the README is a claim, not a result.
+- [ ] **Path to 1.0:** settle the ABI questions that are expensive to change later, then freeze the C ABI.
+  - [ ] An escape hatch past the 1–10 level (parameters struct: window size, zstd long mode, ...).
+  - [ ] zstd dictionaries: decide the API shape, even if it ships after 1.0.
+  - [ ] Fix the open stream bugs below.
+  - [ ] Add CHANGELOG.md.
+
 ## Bugs & Critical Issues
 
+- [x] **The decompressed-size cap was bypassed for formats without a recorded size (fixed 2026-10-22).** `set_max_decompressed_size` (default 1 GiB) was only enforced when the size probe succeeded (zstd, lz4, Snappy). For zlib, gzip, deflate, brotli, bz2 and xz, one-shot `decompress()` fell back to an uncapped streaming decode in C++, Python, Go and WASM: with a 1 MiB cap, a 102-byte brotli and a 110-byte bz2 input each decompressed to 64 MiB. Separately, `cu_decompress_size_hint` returned the declared size without checking the cap, so bindings allocated an attacker-chosen size before `cu_decompress` rejected it. Fix: a per-stream output limit in the C core (`cu_decompress_stream_set_max_output`, exposed in every binding as `set_max_output` / `max_output` / `SetMaxOutput` / `maxOutput`), which every binding's one-shot fallback sets to the global cap (`cu_get_max_decompressed_size`, now public); and the size hint returns `CU_ERR_SIZE_LIMIT` above the cap. Rust's binding-side cap mirror was removed, so every binding enforces the cap the same way. Tests per codec in C, C++, Python, Go, Rust and WASM.
+- [ ] **xz `size_hint` contradicts the header docs.** `include/compress_utils.h` says XZ size is available via the stream footer/index, but `xz_decompress_size_hint` returns `CU_ERR_SIZE_UNKNOWN` (TODO in `src/algorithms/xz/xz.c`). Either parse the index or fix the docs.
 - [X] **XZ decompress hang / bomb on malformed input (fixed 2026-07).** Feeding a
   non-xz-magic byte (e.g. a lone `0x00`) to the xz decompressor never terminated.
   Two independent causes, both fixed in `src/algorithms/xz/xz.c`:
@@ -20,7 +35,7 @@
   bounded loop for every codec and fails if it doesn't terminate.
 - [X] **Default-mode Snappy stream decoder allocated the declared size uncapped.** `snappy_dstream_finish` malloc'd the uncompressed length read from the block header (up to ~4 GiB from a few header bytes) before the caller saw any output, so the caller couldn't enforce its own cap. Every Snappy stream decoder now enforces the decompressed-size cap captured at creation, as single-stream mode and the raw LZ4/LZO decoders do; a stream over the cap fails with `CU_ERR_SIZE_LIMIT`.
 - [ ] **Misleading bz2 error after trailing bytes (default mode).** After a complete bz2 stream followed by extra bytes in the same write, `decompress` returns the full output but `finish()` fails with "bz2: sequence error" (`BZ2_bzDecompress` called again after `BZ_STREAM_END`). It should report data after the end of the stream, as the other codecs do. Single-stream mode is unaffected.
-- [ ] **Default-mode stream errors drop the output decoded before them in the bindings.** The C core reports that output (`*out_len` alongside the error status), but the C++ wrapper's `drain_loop` (and so Python) throws it away when it raises. Returning it would change what the default mode raises, so it needs its own design (e.g. attaching the partial output to the exception).
+- [ ] **Default-mode stream errors drop the output decoded before them in the bindings.** The C core reports that output (`*out_len` alongside the error status). The Go `Reader` and Rust `Decompressor` return it before the error, but the C++ wrapper's `drain_loop` (and so Python) and the WASM streams throw it away when they raise. Returning it would change what the default mode raises, so it needs its own design (e.g. attaching the partial output to the exception).
 - [X] **Fix comment/code mismatch in zlib.cpp:60-61** - Comment says "max 4 times" but code uses `retries = 10`
 - [X] **C API discards all error context** - `catch (const std::exception& e)` returns `-1` with no way to diagnose failures
   - [X] Add error retrieval function (`compress_utils_last_error()`)
@@ -48,7 +63,7 @@
 - [x] **Deduplicate buffer resizing logic** — every algorithm's streaming impl now shares the same `pending_append` / drain pattern, and the C++/Python bindings have a single drain loop in their stream classes.
 - [X] **Remove `using namespace` from compress_utils_py.cpp** — file rewritten in Phase 4; no `using namespace` anywhere.
 - [x] ~~Add allocation failure checks in C tests~~ — N/A; C tests rewritten in `tests/smoke_test.c` using `CHECK()` macros and use the library API not raw malloc.
-- [ ] **Replace hardcoded test values with named constants** — minor cleanup in `tests/smoke_test.c`.
+- [x] ~~Replace hardcoded test values with named constants in `tests/smoke_test.c`~~ — N/A; `smoke_test.c` no longer exists (C tests are now split across `tests/test_*.c`).
 
 ## Build System Fixes
 
@@ -93,7 +108,7 @@
   - [X] zlib: 1-10 → 1-9 (capped at ZLIB_MAX_LEVEL=9)
   - [X] XZ: 1-10 → 0-9 (via MapLevelZeroBased)
 - [ ] **Add API reference documentation** (Doxygen or similar)
-- [ ] **Add CHANGELOG.md** for tracking releases
+- [ ] **Add CHANGELOG.md** for tracking releases (part of the path to 1.0 above)
 
 ## New Features
 
@@ -119,9 +134,9 @@
 - [X] `js/ts` (WebAssembly via Emscripten)
 - [X] `python` (3.11 - 3.15)
 - [X] `rust`
-- [ ] `java`
-- [ ] `swift`
-- [ ] `cli` (standalone command-line tool)
+- [ ] `java` — deferred until someone asks for it; each new binding multiplies the maintenance matrix.
+- [ ] `swift` — deferred, same reason.
+- [ ] `cli` (standalone command-line tool) — deferred; if one new surface is added, this is the cheapest and most visible, but it comes after the "Next up" items.
 
 ## Algorithms
 
@@ -156,9 +171,7 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
   `v*` tag (a tag-gated `publish` job in the same workflow, matching the WASM/
   Python pattern; verifies Cargo.toml == tag first) plus a `cargo publish
   --dry-run` package gate on every run. Packaged crate is 7.1 MiB / 1.7 MiB
-  compressed (well under the 10 MiB limit). **Prerequisite: add the
-  `CARGO_REGISTRY_TOKEN` repo secret (crates.io API token) before the first
-  tag** — until then only the publish step fails, nothing else.
+  compressed (well under the 10 MiB limit). Published since 2026-07 (0.11.1 is live on crates.io).
 - [ ] `java` -> `maven`
 - [ ] `swift` -> ?
 - [ ] `cli-macos` -> `homebrew`

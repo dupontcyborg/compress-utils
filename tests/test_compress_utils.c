@@ -574,6 +574,107 @@ static int test_snappy_stream_cap(void) {
     return 0;
 }
 
+/* Decodes `in` through `ds` in 1000-byte output steps into `out` (room for
+ * `out_cap`), adding the bytes delivered to *total. Returns the first status
+ * that is neither CU_OK nor CU_ERR_BUF_TOO_SMALL, or CU_OK once finish is. */
+static cu_status_t drain_decode(cu_decompress_stream_t* ds, const uint8_t* in, size_t in_len,
+                                uint8_t* out, size_t out_cap, size_t* total) {
+    cu_status_t s;
+    int first = 1;
+    do {
+        size_t got = out_cap - *total < 1000 ? out_cap - *total : 1000;
+        s = cu_decompress_stream_write(ds, first ? in : NULL, first ? in_len : 0,
+                                       out + *total, &got);
+        first = 0;
+        *total += got;
+    } while (s == CU_ERR_BUF_TOO_SMALL);
+    if (s != CU_OK) return s;
+    do {
+        size_t got = out_cap - *total < 1000 ? out_cap - *total : 1000;
+        s = cu_decompress_stream_finish(ds, out + *total, &got);
+        *total += got;
+    } while (s == CU_ERR_BUF_TOO_SMALL);
+    return s;
+}
+
+/* A stream's output limit stops it at exactly the limit for every format, and
+ * cu_decompress_size_hint refuses a declared size over the global cap. */
+static int test_stream_output_limit_one(cu_algorithm_t algo) {
+    const char* name = cu_algorithm_name(algo);
+    static uint8_t plain[64 * 1024];
+    const char* msg = "The quick brown fox jumps over the lazy dog. ";
+    for (size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)msg[i % strlen(msg)];
+
+    size_t c_len = cu_compress_bound(sizeof(plain), algo);
+    uint8_t* compressed = malloc(c_len);
+    uint8_t* out = malloc(sizeof(plain) + 8192);
+    CHECK(compressed && out, "oom\n");
+    CHECK_OK(cu_compress(algo, plain, sizeof(plain), compressed, &c_len, 5));
+
+    /* One byte under the decoded size: exactly the limit is delivered, then
+     * CU_ERR_SIZE_LIMIT, which is final. */
+    cu_decompress_stream_t* ds;
+    CHECK_OK(cu_decompress_stream_create(algo, &ds));
+    CHECK_OK(cu_decompress_stream_set_max_output(ds, sizeof(plain) - 1));
+    size_t total = 0;
+    cu_status_t s = drain_decode(ds, compressed, c_len, out, sizeof(plain) + 8192, &total);
+    CHECK(s == CU_ERR_SIZE_LIMIT, "%s over the limit: %s\n", name, cu_strerror(s));
+    CHECK(total == sizeof(plain) - 1 && memcmp(out, plain, total) == 0,
+          "%s delivered %zu bytes, want the %zu up to the limit\n", name, total,
+          sizeof(plain) - 1);
+    size_t got = 1000;
+    s = cu_decompress_stream_finish(ds, out, &got);
+    CHECK(s == CU_ERR_SIZE_LIMIT && got == 0, "%s after the limit: %s, %zu bytes\n", name,
+          cu_strerror(s), got);
+    got = 1000;
+    s = cu_decompress_stream_write(ds, NULL, 0, out, &got);
+    CHECK(s == CU_ERR_SIZE_LIMIT && got == 0, "%s write after the limit: %s, %zu bytes\n", name,
+          cu_strerror(s), got);
+    cu_decompress_stream_destroy(ds);
+
+    /* Exactly the decoded size, and no limit, both decode everything. */
+    const size_t limits[] = {sizeof(plain), 0};
+    for (size_t i = 0; i < 2; i++) {
+        CHECK_OK(cu_decompress_stream_create(algo, &ds));
+        CHECK_OK(cu_decompress_stream_set_max_output(ds, limits[i]));
+        total = 0;
+        s = drain_decode(ds, compressed, c_len, out, sizeof(plain) + 8192, &total);
+        cu_decompress_stream_destroy(ds);
+        CHECK(s == CU_OK && total == sizeof(plain) && memcmp(out, plain, total) == 0,
+              "%s with limit %zu: %s, %zu bytes\n", name, limits[i], cu_strerror(s), total);
+    }
+
+    /* A declared size over the global cap is refused before anyone allocates it. */
+    size_t hint = 0;
+    s = cu_decompress_size_hint(algo, compressed, c_len, &hint);
+    if (s == CU_OK) {
+        size_t default_cap = cu_get_max_decompressed_size();
+        cu_set_max_decompressed_size(sizeof(plain) - 1);
+        s = cu_decompress_size_hint(algo, compressed, c_len, &hint);
+        cu_set_max_decompressed_size(default_cap);
+        CHECK(s == CU_ERR_SIZE_LIMIT, "%s size hint over the cap: %s\n", name, cu_strerror(s));
+    }
+
+    printf("  %s stream output limit ok\n", name);
+    free(compressed);
+    free(out);
+    return 0;
+}
+
+static int test_stream_output_limit(void) {
+    CHECK(cu_get_max_decompressed_size() == (size_t)1024 * 1024 * 1024,
+          "default cap is %zu, want 1 GiB\n", cu_get_max_decompressed_size());
+    for (size_t i = 0; i < N_ALGOS; i++) {
+        if (!cu_algorithm_available(ALL_ALGOS[i])) continue;
+        if (test_stream_output_limit_one(ALL_ALGOS[i])) return 1;
+    }
+    if (cu_algorithm_available(CU_ALGO_LZ4_RAW) && test_stream_output_limit_one(CU_ALGO_LZ4_RAW))
+        return 1;
+    CHECK(cu_decompress_stream_set_max_output(NULL, 1) == CU_ERR_INVALID_ARG,
+          "set_max_output(NULL) should be INVALID_ARG\n");
+    return 0;
+}
+
 int main(void) {
     if (test_version_and_introspection())   return 1;
     if (test_oneshot_roundtrip())           return 1;
@@ -583,6 +684,7 @@ int main(void) {
     if (test_reject_garbage())              return 1;
     if (test_raw_lz4())                     return 1;
     if (test_snappy_stream_cap())           return 1;
+    if (test_stream_output_limit())         return 1;
     printf("OK\n");
     return 0;
 }

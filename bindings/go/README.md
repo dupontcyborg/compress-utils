@@ -97,9 +97,12 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 
 ## Errors and limits
 
+Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+
 ```go
 cu.Version()                              // e.g. "0.11.1"
-cu.SetMaxDecompressedSize(256 << 20)      // cap one-shot Decompress (default 1 GiB; 0 = unbounded)
+cu.SetMaxDecompressedSize(256 << 20)      // cap Decompress for every algorithm (default 1 GiB; 0 = unbounded)
+r.SetMaxOutput(256 << 20)                 // a Reader has no limit unless set
 
 var e *cu.Error                           // errors carry the C status code
 if errors.As(err, &e) { _ = e.Code }

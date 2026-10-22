@@ -149,8 +149,11 @@ export class Dispatcher {
         }
     }
 
+    /* Bounded by the same cap as the one-shot path. */
     private decompressStreaming(input: Uint8Array): Uint8Array {
-        const stream = this.createDecompressStream();
+        const stream = this.createDecompressStream({
+            maxOutput: this.exports.cu_get_max_decompressed_size(),
+        });
         try {
             const body = stream.write(input);
             const tail = stream.finish();
@@ -202,7 +205,16 @@ export class Dispatcher {
                 streamPP,
             );
             checkStatus(this.exports, status, this.algorithmName);
-            return new DecompressStream(this, this.readU32(streamPP), single);
+            const handle = this.readU32(streamPP);
+            if (opts.maxOutput) {
+                // size_t is 32-bit here, and no output can exceed the 4 GiB
+                // address space, so larger limits saturate.
+                this.exports.cu_decompress_stream_set_max_output(
+                    handle,
+                    Math.min(opts.maxOutput, 0xffffffff),
+                );
+            }
+            return new DecompressStream(this, handle, single);
         } finally {
             arena.freeAll();
         }
@@ -522,17 +534,19 @@ export interface AlgorithmBindings {
      * TransformStream that decompresses bytes as they flow through. It always
      * decodes concatenated frames as one stream: a TransformStream can't hand
      * back bytes after the end, so use `createDecompressStream({ singleStream:
-     * true })` for that.
+     * true })` for that. `maxOutput` limits the total decompressed output; the
+     * stream errors with a `CompressError` (code `SizeLimit`) past it.
      */
-    decompressionStream(): TransformStream<Uint8Array, Uint8Array>;
+    decompressionStream(
+        opts?: Pick<DecompressStreamOptions, "maxOutput">,
+    ): TransformStream<Uint8Array, Uint8Array>;
     /** Library version, e.g. "0.6.0". */
     version(): Promise<string>;
     /**
-     * Cap on decompressed size (bytes) for the one-shot decompress path.
-     * Defaults to 1 GiB. Set 0 to disable. Streaming decompress is not
-     * affected except raw LZ4/LZO, which capture the cap at creation. Bound
-     * buffers for other streams yourself. Thread-local in C; in WASM
-     * it's effectively global to this module instance.
+     * Cap on decompressed size (bytes) for one-shot decompress, for every
+     * algorithm. Defaults to 1 GiB. Set 0 to disable. Streams have no limit
+     * unless given `maxOutput` (raw LZ4/LZO and Snappy also capture this cap
+     * at creation). Global to this module instance.
      */
     setMaxDecompressedSize(bytes: number): Promise<void>;
 }
@@ -648,11 +662,11 @@ export function createBindings(
                 },
             });
         },
-        decompressionStream() {
+        decompressionStream(opts) {
             let stream: DecompressStream | undefined;
             return new TransformStream<Uint8Array, Uint8Array>({
                 async start() {
-                    stream = (await getDispatcher()).createDecompressStream();
+                    stream = (await getDispatcher()).createDecompressStream(opts);
                 },
                 transform(chunk, controller) {
                     const out = stream!.write(chunk);

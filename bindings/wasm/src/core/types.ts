@@ -93,6 +93,14 @@ export interface DecompressStreamOptions {
      * raw LZ4 and LZO (throws `UnsupportedAlgo`, 5).
      */
     singleStream?: boolean;
+    /**
+     * Limit on the total decompressed output in bytes (default: no limit).
+     * The write or finish that would go past it throws `CompressError` (code
+     * `SizeLimit`, 9), and the stream can't be used after that. Set it when
+     * decompressing untrusted input, which can expand to far more than its
+     * own size.
+     */
+    maxOutput?: number;
 }
 
 export interface DecompressOptions {

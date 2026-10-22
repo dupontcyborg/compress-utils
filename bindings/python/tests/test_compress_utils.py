@@ -115,6 +115,38 @@ class TestCompressUtils(unittest.TestCase):
                 with self.assertRaises(cu.CompressError):
                     cu.decompress(compressed, name, expected_size=len(data) // 2)
 
+    def test_max_decompressed_size_every_format(self):
+        # The cap holds for formats that don't record their size too: those
+        # decode through a stream that the cap also bounds.
+        data = b"The quick brown fox jumps over the lazy dog. " * 1500
+        for name in available_algorithms() + ["lz4_raw"]:
+            with self.subTest(algorithm=name):
+                compressed = cu.compress(data, name)
+                try:
+                    cu.set_max_decompressed_size(len(data) - 1)
+                    with self.assertRaisesRegex(cu.CompressError, "limit|cap"):
+                        cu.decompress(compressed, name)
+                    cu.set_max_decompressed_size(len(data))
+                    self.assertEqual(cu.decompress(compressed, name), data)
+                    cu.set_max_decompressed_size(0)
+                    self.assertEqual(cu.decompress(compressed, name), data)
+                finally:
+                    cu.set_max_decompressed_size(1 << 30)
+
+    def test_stream_max_output(self):
+        data = b"The quick brown fox jumps over the lazy dog. " * 1500
+        for name in available_algorithms() + ["lz4_raw"]:
+            with self.subTest(algorithm=name):
+                compressed = cu.compress(data, name)
+                ds = cu.DecompressStream(name, max_output=len(data) - 1)
+                with self.assertRaisesRegex(cu.CompressError, "limit|cap"):
+                    ds.decompress(compressed)
+                    ds.finish()
+                ds = cu.DecompressStream(name, max_output=len(data))
+                self.assertEqual(ds.decompress(compressed) + ds.finish(), data)
+        with self.assertRaises(TypeError):
+            cu.DecompressStream("zstd", 10)  # keyword-only
+
     def test_concatenated_frames(self):
         # zstd/pzstd and gzip/pigz output can hold several frames or members.
         a, b = b"first part " * 50, b"second part " * 70

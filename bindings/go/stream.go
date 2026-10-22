@@ -189,9 +189,10 @@ type Reader struct {
 	err       error
 	closed    bool
 
-	single  bool   // Multistream(false): stop at the end of the first stream
-	started bool   // Read has been called
-	unused  []byte // single mode: bytes read from src past the end
+	single    bool   // Multistream(false): stop at the end of the first stream
+	started   bool   // Read has been called
+	unused    []byte // single mode: bytes read from src past the end
+	maxOutput uint64 // SetMaxOutput; 0 = no limit
 }
 
 // NewReader returns a Reader that decompresses src using the given
@@ -253,6 +254,22 @@ func (r *Reader) Multistream(ok bool) {
 	C.cu_decompress_stream_destroy(r.stream)
 	r.stream = s
 	r.single = !ok
+	C.cu_decompress_stream_set_max_output(r.stream, C.size_t(r.maxOutput))
+}
+
+// SetMaxOutput limits the total decompressed output to n bytes (0, the
+// default, means no limit). The Read that would go past it returns the bytes
+// up to the limit and then an *Error with Code ErrSizeLimit; the Reader is
+// done after that. Use it when decompressing untrusted input, which can
+// expand to far more than its own size.
+func (r *Reader) SetMaxOutput(n uint64) {
+	r.maxOutput = n
+	if r.stream == nil {
+		return // closed
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	C.cu_decompress_stream_set_max_output(r.stream, C.size_t(n))
 }
 
 // Unused returns, in single-stream mode (Multistream(false)) once Read has
