@@ -25,23 +25,33 @@ Your app → │  C / C++ / Go / JS / Python / TS / Rust  │
 ## Same API, every language
 
 ```python
-cu.compress(data, "zstd", level=5)                    # Python
+# Python
+import compress_utils as cu
+cu.compress(data, "zstd", level=5)
 ```
 
 ```ts
-await compress(data, { level: 5 })                    // JavaScript / TypeScript: import from "compress-utils/zstd"
+// JavaScript / TypeScript
+import { compress } from "compress-utils/zstd";
+await compress(data, { level: 5 });
 ```
 
 ```go
-cu.Compress(cu.Zstd, data, 5)                         // Go
+// Go
+import cu "github.com/dupontcyborg/compress-utils/bindings/go"
+cu.Compress(cu.Zstd, data, 5)
 ```
 
 ```rust
-compress(Algorithm::Zstd, data, 5)?                   // Rust
+// Rust
+use compress_utils::{compress, Algorithm};
+compress(Algorithm::Zstd, data, 5)?;
 ```
 
 ```cpp
-cu::compress(cu::Algorithm::Zstd, data, 5);           // C++
+// C++
+#include <compress_utils.hpp>
+cu::compress(cu::Algorithm::Zstd, data, 5);
 ```
 
 ## Supported languages
