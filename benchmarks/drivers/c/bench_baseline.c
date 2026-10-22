@@ -3,55 +3,42 @@
  *
  * Same language (C), same harness, same protocol as bench.c — but each codec
  * calls the upstream library directly instead of going through the cu_* ABI.
- * This isolates compress-utils' wrapper overhead: identical level mapping and
- * frame settings (mirrored from src/algorithms/<algo>/<algo>.c), so any
- * ratio difference is a bug and any speed difference is dispatch cost.
+ * This isolates compress-utils' wrapper overhead: the same native level (the
+ * runner translates each job's level through benchmarks/levels.json) and frame
+ * settings (mirrored from src/algorithms/<algo>/<algo>.c), so any ratio
+ * difference is a bug and any speed difference is dispatch cost.
  *
  * Records carry impl="lib<algo>". Run alongside the compress-utils driver and
  * report.py overlays them per algorithm.
  *
- * Mirrored mappings (keep in sync with src/utils/levels.h + the wrappers):
- *   zstd   user*22/10 (≥1)        ZSTD_compress2 + pledgedSrcSize
- *   brotli user(+1 if 10), 1..11  BrotliEncoderCompress, default window/mode
- *   zlib   clamp 1..9             compress2 / uncompress
- *   bz2    clamp 1..9             BZ2_bzBuffToBuff{Compress,Decompress}, wf=0
- *   lz4    fast/HC split          LZ4F frame, contentSize + checksum + linked
- *   xz     clamp(user-1,0..9)     lzma_easy_buffer_encode, CRC64
+ * Mirrored frame settings (keep in sync with the wrappers):
+ *   zstd   ZSTD_compress2 + pledgedSrcSize
+ *   brotli BrotliEncoderCompress, default window/mode
+ *   zlib   compress2 / uncompress
+ *   gzip, deflate  deflateInit2 windowBits 31 / -15 (bench_zapi.h), one-shot only
+ *   bz2    BZ2_bzBuffToBuff{Compress,Decompress}, wf=0
+ *   lz4    LZ4F frame, contentSize + checksum + linked
+ *   xz     lzma_easy_buffer_encode, CRC64
+ *   snappy snappy-c (andikleen), a snappy_env per compress call, one-shot only
  */
 
 #include <stdint.h>
 
 #include "brotli/decode.h"
 #include "brotli/encode.h"
-#include "bz2/bzlib.h"
-#include "lz4/lz4frame.h"
-#include "xz/lzma.h"
-#include "zlib/zlib.h"
-#include "zstd/zstd.h"
+#include "bzlib.h"
+#include "lz4frame.h"
+#include "lzma.h"
+#include "snappy.h"
+#include "zlib.h"
+#include "zstd.h"
 
 #include "bench_harness.h"
 
-/* ---- level mappings (mirrored from the compress-utils wrappers) ---------- */
-
-static int clamp_level(int user, int lo, int hi) {
-    if (user < lo) return lo;
-    if (user > hi) return hi;
-    return user;
-}
-
-static int zstd_level(int u) {
-    int n = (u * 22) / 10;
-    return n < 1 ? 1 : (n > 22 ? 22 : n);
-}
-static int brotli_level(int u) {
-    if (u < 1) return 1;
-    if (u > 11) return 11;
-    return u + (u == 10 ? 1 : 0);
-}
-static int lz4_level(int u) {
-    if (u <= 3) return u - 1;
-    return 4 + ((u - 4) * 8) / 6;
-}
+#define ZPFX
+#define ZSTREAM z_stream
+#define ZLEN uLongf
+#include "bench_zapi.h"
 
 /* ---- zstd ---------------------------------------------------------------- */
 
@@ -62,7 +49,7 @@ static int z_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
     (void)c;
     ZSTD_CCtx* cctx = ZSTD_createCCtx();
     if (!cctx) { *err = "ZSTD_createCCtx failed"; return 1; }
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, zstd_level(level));
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     ZSTD_CCtx_setPledgedSrcSize(cctx, in_len);
     size_t r = ZSTD_compress2(cctx, out, *out_len, in, in_len);
     ZSTD_freeCCtx(cctx);
@@ -92,7 +79,7 @@ static int br_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                        uint8_t* out, size_t* out_len, int level, const char** err) {
     (void)c;
     size_t enc = *out_len;
-    BROTLI_BOOL ok = BrotliEncoderCompress(brotli_level(level), BROTLI_DEFAULT_WINDOW,
+    BROTLI_BOOL ok = BrotliEncoderCompress(level, BROTLI_DEFAULT_WINDOW,
                                            BROTLI_DEFAULT_MODE, in_len, in, &enc, out);
     if (!ok) { *err = "BrotliEncoderCompress failed"; return 1; }
     *out_len = enc;
@@ -117,7 +104,7 @@ static int zl_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                        uint8_t* out, size_t* out_len, int level, const char** err) {
     (void)c;
     uLongf cap = (uLongf)*out_len;
-    int r = compress2(out, &cap, in, (uLong)in_len, clamp_level(level, 1, 9));
+    int r = compress2(out, &cap, in, (uLong)in_len, level);
     if (r != Z_OK) { *err = "zlib compress2 failed"; return 1; }
     *out_len = cap;
     return 0;
@@ -142,7 +129,7 @@ static int bz_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
     (void)c;
     unsigned int cap = (unsigned int)*out_len;
     int r = BZ2_bzBuffToBuffCompress((char*)out, &cap, (char*)(uintptr_t)in,
-                                     (unsigned int)in_len, clamp_level(level, 1, 9), 0, 0);
+                                     (unsigned int)in_len, level, 0, 0);
     if (r != BZ_OK) { *err = "BZ2 compress failed"; return 1; }
     *out_len = cap;
     return 0;
@@ -163,7 +150,7 @@ static int bz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
 
 static void lz4_prefs(LZ4F_preferences_t* p, int level, size_t content_size) {
     memset(p, 0, sizeof(*p));
-    p->compressionLevel = lz4_level(level);
+    p->compressionLevel = level;
     p->frameInfo.contentSize = content_size;
     p->frameInfo.contentChecksumFlag = LZ4F_contentChecksumEnabled;
     p->frameInfo.blockMode = LZ4F_blockLinked;
@@ -220,7 +207,7 @@ static size_t xz_bound(const bench_codec_t* c, size_t n) { (void)c; return lzma_
 static int xz_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                        uint8_t* out, size_t* out_len, int level, const char** err) {
     (void)c;
-    uint32_t preset = (uint32_t)clamp_level(level - 1, 0, 9);
+    uint32_t preset = (uint32_t)level;
     size_t out_pos = 0;
     lzma_ret r = lzma_easy_buffer_encode(preset, LZMA_CHECK_CRC64, NULL,
                                          in, in_len, out, &out_pos, *out_len);
@@ -255,7 +242,7 @@ static int z_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
     (void)c; if (chunk == 0) chunk = 64 * 1024;
     ZSTD_CCtx* z = ZSTD_createCCtx();
     if (!z) { *err = "ZSTD_createCCtx"; return 1; }
-    ZSTD_CCtx_setParameter(z, ZSTD_c_compressionLevel, zstd_level(level));
+    ZSTD_CCtx_setParameter(z, ZSTD_c_compressionLevel, level);
     ZSTD_outBuffer ob = {out, *out_len, 0};
     int rc = 0;
     for (size_t off = 0; off < in_len && !rc; off += chunk) {
@@ -305,7 +292,7 @@ static int br_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
     (void)c; if (chunk == 0) chunk = 64 * 1024;
     BrotliEncoderState* e = BrotliEncoderCreateInstance(NULL, NULL, NULL);
     if (!e) { *err = "BrotliEncoderCreateInstance"; return 1; }
-    BrotliEncoderSetParameter(e, BROTLI_PARAM_QUALITY, brotli_level(level));
+    BrotliEncoderSetParameter(e, BROTLI_PARAM_QUALITY, level);
     BrotliEncoderSetParameter(e, BROTLI_PARAM_LGWIN, BROTLI_DEFAULT_WINDOW);
     size_t cap = *out_len, avail_out = cap;
     uint8_t* next_out = out;
@@ -364,7 +351,7 @@ static int zl_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                       uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
     (void)c; if (chunk == 0) chunk = 64 * 1024;
     z_stream s; memset(&s, 0, sizeof(s));
-    if (deflateInit(&s, clamp_level(level, 1, 9)) != Z_OK) { *err = "deflateInit"; return 1; }
+    if (deflateInit(&s, level) != Z_OK) { *err = "deflateInit"; return 1; }
     size_t cap = *out_len;
     s.next_out = out; s.avail_out = (uInt)cap;
     int rc = 0;
@@ -412,7 +399,7 @@ static int bz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                       uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
     (void)c; if (chunk == 0) chunk = 64 * 1024;
     bz_stream s; memset(&s, 0, sizeof(s));
-    if (BZ2_bzCompressInit(&s, clamp_level(level, 1, 9), 0, 0) != BZ_OK) {
+    if (BZ2_bzCompressInit(&s, level, 0, 0) != BZ_OK) {
         *err = "bzCompressInit"; return 1;
     }
     size_t cap = *out_len;
@@ -514,7 +501,7 @@ static int xz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                       uint8_t* out, size_t* out_len, int level, size_t chunk, const char** err) {
     (void)c; if (chunk == 0) chunk = 64 * 1024;
     lzma_stream s = LZMA_STREAM_INIT;
-    if (lzma_easy_encoder(&s, (uint32_t)clamp_level(level - 1, 0, 9), LZMA_CHECK_CRC64) != LZMA_OK) {
+    if (lzma_easy_encoder(&s, (uint32_t)level, LZMA_CHECK_CRC64) != LZMA_OK) {
         *err = "lzma encoder"; return 1;
     }
     size_t cap = *out_len;
@@ -559,6 +546,41 @@ static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
     return rc;
 }
 
+/* ---- snappy (one-shot, as src/algorithms/snappy/snappy.c) --------------- */
+
+static size_t sn_bound(const bench_codec_t* c, size_t n) {
+    (void)c;
+    return snappy_max_compressed_length(n);
+}
+
+static int sn_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                       size_t* out_len, int level, const char** err) {
+    (void)c;
+    (void)level;
+    struct snappy_env env;
+    if (snappy_init_env(&env) != 0) { *err = "snappy_init_env"; return 1; }
+    int rc = snappy_compress(&env, (const char*)in, in_len, (char*)out, out_len);
+    snappy_free_env(&env);
+    if (rc != 0) { *err = "snappy_compress"; return 1; }
+    return 0;
+}
+
+static int sn_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                         size_t* out_len, const char** err) {
+    (void)c;
+    size_t needed = 0;
+    if (!snappy_uncompressed_length((const char*)in, in_len, &needed) || needed > *out_len) {
+        *err = "snappy_uncompressed_length";
+        return 1;
+    }
+    if (snappy_uncompress((const char*)in, in_len, (char*)out) != 0) {
+        *err = "snappy_uncompress";
+        return 1;
+    }
+    *out_len = needed;
+    return 0;
+}
+
 /* ---- registry ------------------------------------------------------------ */
 
 static const bench_codec_t CODECS[] = {
@@ -568,6 +590,9 @@ static const bench_codec_t CODECS[] = {
     {"bz2", "libbz2", 0, bz_bound, bz_compress, bz_decompress, bz_cstream, bz_dstream},
     {"lz4", "liblz4", 0, l4_bound, l4_compress, l4_decompress, l4_cstream, l4_dstream},
     {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream},
+    ZA_GZIP("zlib", 0, 0),
+    ZA_DEFLATE("zlib", 0, 0),
+    {"snappy", "snappy-c", 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0},
 };
 static const size_t N_CODECS = sizeof(CODECS) / sizeof(CODECS[0]);
 

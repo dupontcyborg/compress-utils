@@ -12,9 +12,11 @@
  * every result record, so the report tooling can overlay our binding against
  * the native baseline for the same (lang, algo).
  *
- * Modes: each job runs in one-shot or streaming mode. A codec may leave its
- * *_stream pointers NULL; stream-mode jobs for such codecs are skipped (a skip
- * marker keeps the runner's line-synchronous protocol in step), not failed.
+ * Modes: each job runs in one-shot, streaming or message-set mode (one one-shot
+ * call per message of a message set, timed over the whole set). A codec may
+ * leave its *_stream pointers NULL; stream-mode jobs for such codecs are
+ * skipped (a skip marker keeps the runner's line-synchronous protocol in
+ * step), not failed.
  *
  * Header-only: each driver is a single translation unit that includes this and
  * provides main(). Timing wraps only the compress / decompress calls.
@@ -54,6 +56,10 @@ typedef struct bench_codec {
                            const char** err);
     int (*decompress_stream)(const struct bench_codec*, const uint8_t* in, size_t in_len,
                              uint8_t* out, size_t* out_len, size_t chunk, const char** err);
+    /* The library's own level range for this format, reported by --info so the
+     * runner can sweep it. Both 0 (the default when omitted): the range in
+     * benchmarks/levels.json applies. */
+    int level_min, level_max;
 } bench_codec_t;
 
 /* ---- timing -------------------------------------------------------------- */
@@ -128,6 +134,51 @@ static const bench_codec_t* bench_find(const bench_codec_t* codecs, size_t n,
         if (!strcmp(codecs[i].name, name)) return &codecs[i];
     }
     return NULL;
+}
+
+/* ---- result record ------------------------------------------------------ */
+
+/* Sorts the sample arrays and prints one NDJSON result. `messages` > 0 marks a
+ * message-set record: the times are for the whole set, the byte counts its
+ * totals, and decompression was given each message's size. */
+static void bench_emit_result(const char* lang, const bench_codec_t* codec, int level,
+                              const char* mode, size_t chunk, const char* path,
+                              size_t in_bytes, size_t out_bytes, size_t messages,
+                              uint64_t* c_t, uint64_t* d_t, size_t samples, size_t warmup,
+                              int verified) {
+    qsort(c_t, samples, sizeof(uint64_t), bench_cmp_u64);
+    qsort(d_t, samples, sizeof(uint64_t), bench_cmp_u64);
+    uint64_t c_med = bench_median_sorted(c_t, samples);
+    uint64_t d_med = bench_median_sorted(d_t, samples);
+    uint64_t c_mad = bench_mad(c_t, samples, c_med);
+    uint64_t d_mad = bench_mad(d_t, samples, d_med);
+
+    FILE* o = stdout;
+    fputs("{", o);
+    fputs("\"lang\":", o); bench_emit_json_string(o, lang); fputs(",", o);
+    fputs("\"impl\":", o); bench_emit_json_string(o, codec->impl); fputs(",", o);
+    fputs("\"algo\":", o); bench_emit_json_string(o, codec->name); fputs(",", o);
+    fprintf(o, "\"level\":%d,", level);
+    fputs("\"mode\":", o); bench_emit_json_string(o, mode); fputs(",", o);
+    fprintf(o, "\"chunk_bytes\":%zu,", chunk);
+    fputs("\"input\":", o); bench_emit_json_string(o, path); fputs(",", o);
+    fprintf(o, "\"input_bytes\":%zu,", in_bytes);
+    fprintf(o, "\"output_bytes\":%zu,", out_bytes);
+    if (messages) {
+        fprintf(o, "\"messages\":%zu,", messages);
+        fputs("\"decompress_size_known\":true,", o);
+    }
+    fprintf(o, "\"compress_ns_median\":%llu,", (unsigned long long)c_med);
+    fprintf(o, "\"compress_ns_mad\":%llu,", (unsigned long long)c_mad);
+    fprintf(o, "\"compress_ns_min\":%llu,", (unsigned long long)c_t[0]);
+    fprintf(o, "\"decompress_ns_median\":%llu,", (unsigned long long)d_med);
+    fprintf(o, "\"decompress_ns_mad\":%llu,", (unsigned long long)d_mad);
+    fprintf(o, "\"decompress_ns_min\":%llu,", (unsigned long long)d_t[0]);
+    fprintf(o, "\"samples\":%zu,", samples);
+    fprintf(o, "\"warmup\":%zu,", warmup);
+    fprintf(o, "\"verified\":%s", verified ? "true" : "false");
+    fputs("}\n", o);
+    fflush(o);
 }
 
 /* ---- one job ------------------------------------------------------------- */
@@ -211,40 +262,124 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
     }
 
     int verified = (dec_len == in_len) && (in_len == 0 || memcmp(in, dec, in_len) == 0);
-
-    qsort(c_t, samples, sizeof(uint64_t), bench_cmp_u64);
-    qsort(d_t, samples, sizeof(uint64_t), bench_cmp_u64);
-    uint64_t c_med = bench_median_sorted(c_t, samples);
-    uint64_t d_med = bench_median_sorted(d_t, samples);
-    uint64_t c_mad = bench_mad(c_t, samples, c_med);
-    uint64_t d_mad = bench_mad(d_t, samples, d_med);
-
-    FILE* o = stdout;
-    fputs("{", o);
-    fputs("\"lang\":", o); bench_emit_json_string(o, lang); fputs(",", o);
-    fputs("\"impl\":", o); bench_emit_json_string(o, codec->impl); fputs(",", o);
-    fputs("\"algo\":", o); bench_emit_json_string(o, codec->name); fputs(",", o);
-    fprintf(o, "\"level\":%d,", level);
-    fputs("\"mode\":", o); bench_emit_json_string(o, is_stream ? "stream" : "oneshot");
-    fputs(",", o);
-    fprintf(o, "\"chunk_bytes\":%zu,", is_stream ? chunk : (size_t)0);
-    fputs("\"input\":", o); bench_emit_json_string(o, path); fputs(",", o);
-    fprintf(o, "\"input_bytes\":%zu,", in_len);
-    fprintf(o, "\"output_bytes\":%zu,", comp_len);
-    fprintf(o, "\"compress_ns_median\":%llu,", (unsigned long long)c_med);
-    fprintf(o, "\"compress_ns_mad\":%llu,", (unsigned long long)c_mad);
-    fprintf(o, "\"compress_ns_min\":%llu,", (unsigned long long)c_t[0]);
-    fprintf(o, "\"decompress_ns_median\":%llu,", (unsigned long long)d_med);
-    fprintf(o, "\"decompress_ns_mad\":%llu,", (unsigned long long)d_mad);
-    fprintf(o, "\"decompress_ns_min\":%llu,", (unsigned long long)d_t[0]);
-    fprintf(o, "\"samples\":%zu,", samples);
-    fprintf(o, "\"warmup\":%zu,", warmup);
-    fprintf(o, "\"verified\":%s", verified ? "true" : "false");
-    fputs("}\n", o);
-    fflush(o);
+    bench_emit_result(lang, codec, level, is_stream ? "stream" : "oneshot",
+                      is_stream ? chunk : 0, path, in_len, comp_len, 0, c_t, d_t,
+                      samples, warmup, verified);
 
     free(in); free(comp); free(dec); free(c_t); free(d_t);
     return 1;
+}
+
+/* ---- message sets -------------------------------------------------------- */
+
+/* Reads a message set (benchmarks/corpus/msgset.py): records of a u32
+ * little-endian length followed by that many bytes. Returns the file buffer
+ * and sets *n, *offs and *lens (n entries each, malloc'd); NULL if the file
+ * can't be read or is malformed. */
+static uint8_t* bench_read_msgset(const char* path, size_t* n, size_t** offs, size_t** lens) {
+    size_t len = 0;
+    uint8_t* buf = bench_read_file(path, &len);
+    if (!buf) return NULL;
+    size_t count = 0;
+    for (size_t pos = 0; pos < len; count++) {
+        if (len - pos < 4) { free(buf); return NULL; }
+        size_t m = (size_t)buf[pos] | (size_t)buf[pos + 1] << 8 |
+                   (size_t)buf[pos + 2] << 16 | (size_t)buf[pos + 3] << 24;
+        if (m > len - pos - 4) { free(buf); return NULL; }
+        pos += 4 + m;
+    }
+    *offs = (size_t*)malloc((count ? count : 1) * sizeof(size_t));
+    *lens = (size_t*)malloc((count ? count : 1) * sizeof(size_t));
+    if (!*offs || !*lens) { free(buf); free(*offs); free(*lens); return NULL; }
+    size_t pos = 0;
+    for (size_t i = 0; i < count; i++) {
+        (*lens)[i] = (size_t)buf[pos] | (size_t)buf[pos + 1] << 8 |
+                     (size_t)buf[pos + 2] << 16 | (size_t)buf[pos + 3] << 24;
+        (*offs)[i] = pos + 4;
+        pos += 4 + (*lens)[i];
+    }
+    *n = count;
+    return buf;
+}
+
+/* Times compressing every message of a set with its own one-shot call, then
+ * decompressing each into a buffer of its known size. Returns 1 = result
+ * emitted, 0 = failure. Verification runs after timing, untimed. */
+static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, int level,
+                                const char* path, size_t samples, size_t warmup) {
+    size_t n = 0, *offs = NULL, *lens = NULL;
+    uint8_t* buf = bench_read_msgset(path, &n, &offs, &lens);
+    if (!buf) {
+        fprintf(stderr, "bench: cannot read message set '%s'\n", path);
+        return 0;
+    }
+
+    /* Each message gets its own bound-sized slot in one compressed arena. */
+    size_t in_total = 0, arena = 0, max_len = 0;
+    size_t* coffs = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
+    size_t* caps = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
+    size_t* clens = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
+    for (size_t i = 0; coffs && caps && i < n; i++) {
+        coffs[i] = arena;
+        caps[i] = codec->bound(codec, lens[i]);
+        arena += caps[i];
+        in_total += lens[i];
+        if (lens[i] > max_len) max_len = lens[i];
+    }
+    uint8_t* comp = (uint8_t*)malloc(arena ? arena : 1);
+    uint8_t* dec = (uint8_t*)malloc(max_len ? max_len : 1);
+    uint64_t* c_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
+    uint64_t* d_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
+    int ok = coffs && caps && clens && comp && dec && c_t && d_t;
+    if (!ok) fprintf(stderr, "bench: OOM sizing '%s'\n", path);
+
+    const char* err = NULL;
+    for (size_t r = 0; ok && r < warmup + samples; r++) {
+        uint64_t t0 = bench_now_ns();
+        for (size_t i = 0; ok && i < n; i++) {
+            clens[i] = caps[i];
+            ok = !codec->compress(codec, buf + offs[i], lens[i], comp + coffs[i], &clens[i],
+                                  level, &err);
+        }
+        uint64_t t1 = bench_now_ns();
+        if (r >= warmup) c_t[r - warmup] = t1 - t0;
+    }
+    if (!ok && c_t) {
+        fprintf(stderr, "bench: compress(%s/%s L%d msgset) failed: %s\n",
+                codec->name, codec->impl, level, err ? err : "?");
+    }
+    int compressed = ok;
+    for (size_t r = 0; ok && r < warmup + samples; r++) {
+        uint64_t t0 = bench_now_ns();
+        for (size_t i = 0; ok && i < n; i++) {
+            size_t dec_len = lens[i];
+            ok = !codec->decompress(codec, comp + coffs[i], clens[i], dec, &dec_len, &err);
+        }
+        uint64_t t1 = bench_now_ns();
+        if (r >= warmup) d_t[r - warmup] = t1 - t0;
+    }
+    if (!ok && compressed) {
+        fprintf(stderr, "bench: decompress(%s/%s L%d msgset) failed: %s\n",
+                codec->name, codec->impl, level, err ? err : "?");
+    }
+
+    if (ok) {
+        int verified = 1;
+        size_t out_total = 0;
+        for (size_t i = 0; i < n; i++) {
+            size_t dec_len = lens[i];
+            verified = verified &&
+                       !codec->decompress(codec, comp + coffs[i], clens[i], dec, &dec_len, &err) &&
+                       dec_len == lens[i] && (!dec_len || !memcmp(dec, buf + offs[i], dec_len));
+            out_total += clens[i];
+        }
+        bench_emit_result(lang, codec, level, "msgset", 0, path, in_total, out_total, n,
+                          c_t, d_t, samples, warmup, verified);
+    }
+
+    free(buf); free(offs); free(lens); free(coffs); free(caps); free(clens);
+    free(comp); free(dec); free(c_t); free(d_t);
+    return ok;
 }
 
 /* ---- driver entry points ------------------------------------------------- */
@@ -273,11 +408,28 @@ static int bench_info(const char* lang, const char* version, const char* driver)
     return 0;
 }
 
+/* bench_info plus "impl" and "levels": {algo: [min, max]} for the codecs that
+ * declare their own level range. */
+static int bench_info_codecs(const char* lang, const char* version, const char* driver,
+                             const char* impl, const bench_codec_t* codecs, size_t n) {
+    printf("{\"lang\":\"%s\",\"version\":\"%s\",\"driver\":\"%s\",\"impl\":\"%s\","
+           "\"levels\":{", lang, version, driver, impl);
+    int first = 1;
+    for (size_t i = 0; i < n; i++) {
+        if (!codecs[i].level_min && !codecs[i].level_max) continue;
+        printf("%s\"%s\":[%d,%d]", first ? "" : ",", codecs[i].name, codecs[i].level_min,
+               codecs[i].level_max);
+        first = 0;
+    }
+    printf("}}\n");
+    return 0;
+}
+
 /* Read jobs from stdin, run each, emit NDJSON. Returns process exit code.
  *
- * Job line: "<algo> <level> [<mode>] <path>". `mode` is "oneshot" or "stream";
- * it's optional for backward compatibility — a 3-field line is treated as
- * one-shot. `path` may contain spaces. */
+ * Job line: "<algo> <level> [<mode>] <path>". `mode` is "oneshot", "stream" or
+ * "msgset" (path is a message set); it's optional for backward compatibility —
+ * a 3-field line is treated as one-shot. `path` may contain spaces. */
 static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_codecs) {
     size_t samples = bench_env_size("BENCH_SAMPLES", 5);
     size_t warmup = bench_env_size("BENCH_WARMUP", 1);
@@ -306,10 +458,13 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
         /* Remainder is "[mode ]path". Detect an optional leading mode token. */
         char* rest = sp2 + 1;
         while (*rest == ' ') rest++;
-        int is_stream = 0;
+        int is_stream = 0, is_msgset = 0;
         char* path = rest;
         if (!strncmp(rest, "stream ", 7)) {
             is_stream = 1;
+            path = rest + 7;
+        } else if (!strncmp(rest, "msgset ", 7)) {
+            is_msgset = 1;
             path = rest + 7;
         } else if (!strncmp(rest, "oneshot ", 8)) {
             path = rest + 8;
@@ -322,7 +477,9 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
             continue;
         }
 
-        int r = bench_run_job(lang, codec, level, is_stream, chunk, path, samples, warmup);
+        int r = is_msgset ? bench_run_msgset_job(lang, codec, level, path, samples, warmup)
+                          : bench_run_job(lang, codec, level, is_stream, chunk, path, samples,
+                                          warmup);
         if (r == 1) {
             /* result line already emitted by bench_run_job */
         } else if (r == -1) {

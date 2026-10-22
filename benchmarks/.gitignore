@@ -12,3 +12,12 @@ drivers/rust/Cargo.lock
 
 # Run outputs. Commit baselines explicitly with `git add -f`.
 results/
+
+# Benchmark-only alternative libraries (deps/deps.py). Pinned by deps/deps.lock.json (tracked).
+deps/cache/
+deps/src/
+deps/out/
+drivers/c/bench_alt_*
+
+# Binary-size probes and per-codec compress-utils builds (size/size.py).
+size/build/

@@ -33,6 +33,9 @@ import bench_common as bc  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent / "corpus"))
 import corpora  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "deps"))
+import deps  # noqa: E402
+
 ALL_ALGOS = ["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy", "gzip"]
 DEFAULT_LEVELS = [1, 3, 6, 9]
 
@@ -40,8 +43,8 @@ DRIVER_DIR = bc.BENCH_ROOT / "drivers" / "c"
 
 
 # --------------------------------------------------------------------------- #
-# C drivers. Both link the prebuilt artifacts under dist/c (the binding) and
-# algorithms/dist (the upstream static libs the binding was built from).
+# C drivers. The binding driver links the prebuilt library under dist/c; the
+# baseline links the vendored codecs directly (see _baseline_flags).
 # --------------------------------------------------------------------------- #
 
 
@@ -56,19 +59,36 @@ def _cu_paths() -> tuple[Path, Path]:
              "       Build it first:  ./build.sh --release\n")
 
 
-def _baseline_paths() -> tuple[Path, Path]:
-    lib_dir = bc.REPO_ROOT / "algorithms" / "dist" / "lib"
-    inc_dir = bc.REPO_ROOT / "algorithms" / "dist" / "include"
-    needed = ["libzstd.a", "libbrotlienc.a", "libbz2_static.a", "liblz4.a",
-              "liblzma.a", "libz.a"]
-    if all(lib_dir.joinpath(n).exists() for n in needed) and inc_dir.is_dir():
-        return lib_dir, inc_dir
-    sys.exit("error: upstream static libs not found under algorithms/dist/.\n"
-             "       They are produced by a normal build:  ./build.sh --release\n")
+# The baseline links the vendored codecs as built for compress-utils (same
+# sources, same defines), from the per-codec archives a normal CMake build
+# leaves under build/algorithms/, with their public headers from third_party/.
+BASELINE_CODECS = {
+    # codec: (archive name, public include dir under third_party/<codec>)
+    "zstd": ("zstd_library", "lib"),
+    "brotli": ("brotli_library", "c/include"),
+    "bz2": ("bz2_library", "."),
+    "lz4": ("lz4_library", "lib"),
+    "xz": ("xz_library", "src/liblzma/api"),
+    "zlib": ("zlib_library", "."),
+    "snappy": ("snappy_library", "."),
+}
+
+
+def _baseline_flags() -> tuple[list[str], list[str]]:
+    build = bc.REPO_ROOT / "build" / "algorithms"
+    cflags, ldflags = ["-DLZMA_API_STATIC"], []
+    for codec, (archive, inc) in BASELINE_CODECS.items():
+        lib = build / codec / f"lib{archive}.a"
+        if not lib.exists():
+            sys.exit(f"error: {lib.relative_to(bc.REPO_ROOT)} not found.\n"
+                     "       It's produced by a normal build:  ./build.sh --release\n")
+        cflags.append(f"-I{bc.REPO_ROOT / 'third_party' / codec / inc}")
+        ldflags.append(str(lib))
+    return cflags, ldflags
 
 
 def _compile(src: Path, out: Path, cflags: list[str], ldflags: list[str]) -> Path:
-    deps = [src, DRIVER_DIR / "bench_harness.h"]
+    deps = [src, DRIVER_DIR / "bench_harness.h", DRIVER_DIR / "bench_zapi.h"]
     if out.exists() and all(out.stat().st_mtime >= d.stat().st_mtime for d in deps):
         return out
     cmd = ["cc", "-O2", "-std=c11", f"-I{DRIVER_DIR}", *cflags, str(src), "-o", str(out), *ldflags]
@@ -93,15 +113,48 @@ def build_c() -> list[str]:
 
 
 def build_c_baseline() -> list[str]:
-    lib, inc = _baseline_paths()
-    # brotli enc/dec depend on common → list common last for picky linkers.
-    libs = ["-lzstd", "-lbrotlienc", "-lbrotlidec", "-lbrotlicommon",
-            "-lbz2_static", "-llz4", "-llzma", "-lz"]
+    cflags, ldflags = _baseline_flags()
     out = _compile(
         DRIVER_DIR / "bench_baseline.c",
         DRIVER_DIR / "bench_baseline",
-        cflags=[f"-I{inc}"],
-        ldflags=[f"-L{lib}", *libs],
+        cflags=cflags,
+        ldflags=ldflags,
+    )
+    return [str(out)]
+
+
+def build_c_alt(name: str, variant: str = "") -> list[str]:
+    """An alternative C library (benchmarks/deps/deps.py builds it): bench_alt.c
+    compiled with -DALT_<NAME>[_<VARIANT>], linking only that library."""
+    dep = deps.DEPS[name]
+    out_dir = deps.build(name)
+    ldflags = [str(out_dir / "lib" / lib) for lib in dep["libs"]]
+    if dep.get("cxx"):
+        ldflags.append("-lc++" if sys.platform == "darwin" else "-lstdc++")
+    key = f"{name}-{variant}" if variant else name
+    macro = "ALT_" + key.upper().replace("-", "_")
+    out = _compile(
+        DRIVER_DIR / "bench_alt.c",
+        DRIVER_DIR / f"bench_alt_{key}",
+        cflags=[f"-D{macro}", f'-DALT_VERSION="{dep["version"]}"', f"-I{out_dir / 'include'}"],
+        ldflags=ldflags,
+    )
+    return [str(out)]
+
+
+def build_c_vendored_variant(codec: str, variant: str, extra: list[str] = ()) -> list[str]:
+    """A vendored codec called with different settings (bench_alt.c
+    ALT_<VARIANT>), linked from the same archive as c-baseline."""
+    archive, inc = BASELINE_CODECS[codec]
+    lib = bc.REPO_ROOT / "build" / "algorithms" / codec / f"lib{archive}.a"
+    if not lib.exists():
+        sys.exit(f"error: {lib} not found. Build first:  ./build.sh --release\n")
+    out = _compile(
+        DRIVER_DIR / "bench_alt.c",
+        DRIVER_DIR / f"bench_alt_{variant}",
+        cflags=[f"-DALT_{variant.upper().replace('-', '_')}", '-DALT_VERSION="vendored"',
+                f"-I{bc.REPO_ROOT / 'third_party' / codec / inc}", *extra],
+        ldflags=[str(lib)],
     )
     return [str(out)]
 
@@ -154,6 +207,20 @@ def build_rust() -> list[str]:
     return [str(out)]
 
 
+# The alternative C libraries, one driver each: "c-zlib-ng", "c-libdeflate", ...
+ALT_DRIVERS = {f"c-{name}": (lambda name=name: build_c_alt(name))
+               for name, dep in deps.DEPS.items() if dep.get("driver", True)}
+# Setup-cost variants: the same library with its setup moved in or out of each
+# call, to separate codec speed from what reusing a context saves.
+ALT_DRIVERS["c-libdeflate-percall"] = lambda: build_c_alt("libdeflate", "percall")
+ALT_DRIVERS["c-libzstd-ctx"] = lambda: build_c_vendored_variant("zstd", "libzstd-ctx")
+ALT_DRIVERS["c-liblzma-fitdict"] = lambda: build_c_vendored_variant(
+    "xz", "liblzma-fitdict", ["-DLZMA_API_STATIC"])
+
+# Drivers for native libraries take native levels: the runner translates each
+# job's compress-utils level through levels.json before sending it.
+NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS}
+
 DRIVERS = {
     "c": build_c,
     "c-baseline": build_c_baseline,
@@ -161,6 +228,7 @@ DRIVERS = {
     "python": build_python,
     "go": build_go,
     "rust": build_rust,
+    **ALT_DRIVERS,
 }
 
 
@@ -178,11 +246,61 @@ def build_jobs(datasets: list[dict], algos: list[str], levels: list[int],
                modes: list[str]) -> list[tuple]:
     jobs = []
     for ds in datasets:
+        # A message set runs as one one-shot call per message ("msgset" mode),
+        # with the one-shot runs; it has no streaming form.
+        ds_modes = modes
+        if ds.get("kind") == "msgset":
+            ds_modes = ["msgset"] if "oneshot" in modes else []
         for algo in algos:
             for level in levels:
-                for mode in modes:
+                for mode in ds_modes:
                     jobs.append((algo, level, mode, ds["path"], ds["id"]))
     return jobs
+
+
+def _native_range(info: dict, algo: str) -> list[int]:
+    """The native levels a driver supports for `algo`: the range it declares in
+    --info, else levels.json's, else [0] (a format without levels)."""
+    lo_hi = (info.get("levels") or {}).get(algo) or bc.level_range(algo)
+    return list(range(lo_hi[0], lo_hi[1] + 1)) if lo_hi else [0]
+
+
+def plan_steps(jobs: list[tuple], built: list[tuple], sweep: bool) -> list[tuple]:
+    """Turn jobs into interleaved steps: (algo, mode, path, ds_id, sends), where
+    sends maps a driver key to (level sent, compress-utils level or None, native
+    level or None); a driver missing from sends sits that step out.
+
+    Default: every driver runs each job's compress-utils level; a native-level
+    driver gets it translated through levels.json, and sits it out if the result
+    is outside its own range. With sweep, compress-utils drivers run the job
+    levels and each native-level driver runs its whole native range instead,
+    so every implementation gets a full ratio/speed curve; steps interleave the
+    drivers level by level."""
+    native_keys = [(k, info) for k, info, _ in built if k in NATIVE_LEVEL_DRIVERS]
+    cu_keys = [k for k, _, _ in built if k not in NATIVE_LEVEL_DRIVERS]
+    steps = []
+    if not sweep:
+        for a, lvl, mode, path, ds_id in jobs:
+            native = bc.native_level(a, lvl)
+            sends = {k: (lvl, lvl, native) for k in cu_keys}
+            for k, info in native_keys:
+                n = native if native is not None else 0
+                if n in _native_range(info, a):
+                    sends[k] = (n, lvl, native)
+            steps.append((a, mode, path, ds_id, sends))
+        return steps
+
+    groups: dict[tuple, list[int]] = {}
+    for a, lvl, mode, path, ds_id in jobs:
+        groups.setdefault((a, mode, path, ds_id), []).append(lvl)
+    for (a, mode, path, ds_id), levels in groups.items():
+        plans = {k: [(lvl, lvl, bc.native_level(a, lvl)) for lvl in levels] for k in cu_keys}
+        for k, info in native_keys:
+            plans[k] = [(n, None, n) for n in _native_range(info, a)]
+        for i in range(max(map(len, plans.values()), default=0)):
+            sends = {k: plan[i] for k, plan in plans.items() if i < len(plan)}
+            steps.append((a, mode, path, ds_id, sends))
+    return steps
 
 
 # --------------------------------------------------------------------------- #
@@ -218,7 +336,7 @@ def _read_line(proc: subprocess.Popen, timeout: float) -> str | None:
     return proc.stdout.readline()
 
 
-def run_interleaved(built: list[tuple], jobs: list[tuple], samples: int, warmup: int,
+def run_interleaved(built: list[tuple], steps: list[tuple], samples: int, warmup: int,
                     chunk: int, checkpoint=None) -> list[dict]:
     """Run every driver on each job spec back-to-back, so all impls are measured
     in the same thermal window. Drivers are persistent processes; the protocol
@@ -238,10 +356,13 @@ def run_interleaved(built: list[tuple], jobs: list[tuple], samples: int, warmup:
 
     records: list[dict] = []
     try:
-        for i, (a, lvl, mode, path, ds_id) in enumerate(jobs):
-            line = f"{a} {lvl} {mode} {path}\n"
+        for i, (a, mode, path, ds_id, sends) in enumerate(steps):
             for entry in procs:
                 key, p, dead = entry
+                if key not in sends:
+                    continue
+                sent, lvl, native = sends[key]
+                line = f"{a} {sent} {mode} {path}\n"
                 if dead or p.poll() is not None:
                     entry[2] = True
                     continue
@@ -253,7 +374,7 @@ def run_interleaved(built: list[tuple], jobs: list[tuple], samples: int, warmup:
                     continue
                 out = _read_line(p, JOB_TIMEOUT_S)
                 if out is None:
-                    print(f"[runner] {key}: job timed out ({a} L{lvl} {mode}); "
+                    print(f"[runner] {key}: job timed out ({a} L{sent} {mode}); "
                           f"killing driver", file=sys.stderr)
                     p.kill()
                     entry[2] = True
@@ -265,6 +386,8 @@ def run_interleaved(built: list[tuple], jobs: list[tuple], samples: int, warmup:
                 if rec.get("skipped") or rec.get("error"):
                     continue
                 rec["input_id"] = ds_id
+                rec["level"] = lvl  # the compress-utils level; None in a native sweep
+                rec["native_level"] = native
                 records.append(rec)
             if checkpoint and (i + 1) % 64 == 0:
                 checkpoint(records)
@@ -289,8 +412,12 @@ def main() -> None:
     ap.add_argument("--corpus", default="smoke",
                     help=f"comma-separated corpus tiers ({', '.join(corpora.TIERS)}, all)")
     ap.add_argument("--algos", default=",".join(ALL_ALGOS), help="comma-separated algorithms")
-    ap.add_argument("--levels", default=",".join(map(str, DEFAULT_LEVELS)),
-                    help="comma-separated levels (1..10)")
+    ap.add_argument("--levels", default=None,
+                    help="comma-separated compress-utils levels, 1..10 (default "
+                         f"{','.join(map(str, DEFAULT_LEVELS))}; all ten with --sweep)")
+    ap.add_argument("--sweep", action="store_true",
+                    help="run each native-library driver over its own whole level range "
+                         "(compress-utils drivers run --levels), for full ratio/speed curves")
     ap.add_argument("--modes", default="oneshot",
                     help="comma-separated modes: oneshot, stream")
     ap.add_argument("--chunk", type=int, default=64 * 1024,
@@ -304,7 +431,10 @@ def main() -> None:
         if k not in DRIVERS:
             sys.exit(f"error: unknown driver '{k}'. Known: {', '.join(DRIVERS)}")
     algos = [a.strip() for a in args.algos.split(",") if a.strip()]
-    levels = [int(x) for x in args.levels.split(",") if x.strip()]
+    if args.levels is None:
+        levels = list(range(1, 11)) if args.sweep else DEFAULT_LEVELS
+    else:
+        levels = [int(x) for x in args.levels.split(",") if x.strip()]
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
     for m in modes:
         if m not in ("oneshot", "stream"):
@@ -322,21 +452,29 @@ def main() -> None:
         built.append((key, info, argv))
         driver_meta.append({"key": key, "lang": info["lang"], "version": info["version"]})
 
+    steps = plan_steps(jobs, built, args.sweep)
     meta = bc.RunMeta(drivers=driver_meta, corpus=args.corpus, chunk=args.chunk,
-                      samples=args.samples, warmup=args.warmup)
+                      samples=args.samples, warmup=args.warmup, sweep=args.sweep)
     stamp = meta.timestamp.replace(":", "").replace("-", "")[:15]
+    drivers_tag = "+".join(driver_keys)
     corpus_tag = args.corpus.replace(",", "+")
-    fname = f"{stamp}-{'+'.join(driver_keys)}-{corpus_tag}-{meta.git_sha}.json"
+    if len(drivers_tag) > 60:
+        drivers_tag = f"{len(driver_keys)}drivers"
+    if len(corpus_tag) > 60:
+        corpus_tag = f"{len(datasets)}inputs"
+    fname = f"{stamp}-{drivers_tag}-{corpus_tag}-{meta.git_sha}.json"
     path = bc.RESULTS_DIR / fname
 
-    print(f"[runner] drivers={','.join(driver_keys)}  {len(jobs)} specs × {len(built)} drivers "
+    n_runs = sum(len(sends) for *_, sends in steps)
+    print(f"[runner] drivers={','.join(driver_keys)}  {len(jobs)} specs "
           f"({len(datasets)} inputs × {len(algos)} algos × {len(levels)} levels × "
-          f"{len(modes)} modes), {args.samples} samples + {args.warmup} warmup")
+          f"{len(modes)} modes){', native sweep' if args.sweep else ''}: {n_runs} driver runs, "
+          f"{args.samples} samples + {args.warmup} warmup")
 
     keep_awake()
     # Checkpoint progressively so a long run is never all-or-nothing.
     checkpoint = lambda recs: bc.save_results(meta, recs, path)  # noqa: E731
-    all_records = run_interleaved(built, jobs, args.samples, args.warmup, args.chunk, checkpoint)
+    all_records = run_interleaved(built, steps, args.samples, args.warmup, args.chunk, checkpoint)
     path = bc.save_results(meta, all_records, path)
 
     n_bad = sum(1 for r in all_records if not r.get("verified", False))
