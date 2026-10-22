@@ -164,9 +164,10 @@ func TestDecompressConcatenatedZstd(t *testing.T) {
 // payloads again.
 func TestSetMaxDecompressedSize(t *testing.T) {
 	data := bytes.Repeat([]byte("The quick brown fox jumps over the lazy dog. "), 400)
-	// These codecs record the decompressed size in the frame, so Decompress
-	// takes the one-shot path, which the C core caps.
-	for _, a := range []Algorithm{Zstd, Lz4, Snappy} {
+	// zstd, LZ4 and Snappy record the decompressed size, so Decompress takes
+	// the one-shot path; the others decode through a stream, which the cap
+	// bounds too.
+	for _, a := range []Algorithm{Zstd, Lz4, Snappy, Zlib, Gzip, Deflate, Brotli, Bz2, Xz} {
 		if !Available(a) {
 			continue
 		}
@@ -235,6 +236,41 @@ func TestSetMaxDecompressedSizeStreaming(t *testing.T) {
 		r.Close()
 		if err != nil || !bytes.Equal(got, data) {
 			t.Fatalf("%s: Reader under a 16-byte cap: %d bytes, err %v", a.Name(), len(got), err)
+		}
+	}
+}
+
+// TestReaderSetMaxOutput: a Reader stops with ErrSizeLimit after exactly its
+// limit, also across Multistream, and decodes everything at the limit.
+func TestReaderSetMaxOutput(t *testing.T) {
+	data := bytes.Repeat([]byte("stream past the reader limit "), 1000)
+	for _, a := range []Algorithm{Zstd, Zlib, Gzip, Brotli, Bz2, Xz, Lz4, Snappy, Deflate} {
+		if !Available(a) {
+			continue
+		}
+		c := mustCompress(t, a, data)
+		for _, single := range []bool{false, true} {
+			r, err := NewReader(bytes.NewReader(c), a)
+			if err != nil {
+				t.Fatalf("%s: NewReader: %v", a.Name(), err)
+			}
+			r.SetMaxOutput(uint64(len(data) - 1))
+			r.Multistream(!single) // recreates the C stream; the limit must survive
+			got, err := io.ReadAll(r)
+			r.Close()
+			wantStatus(t, a.Name()+" Reader over its limit", err, ErrSizeLimit)
+			if !bytes.Equal(got, data[:len(data)-1]) {
+				t.Fatalf("%s: Reader over its limit returned %d bytes, want %d", a.Name(), len(got), len(data)-1)
+			}
+
+			r, _ = NewReader(bytes.NewReader(c), a)
+			r.Multistream(!single)
+			r.SetMaxOutput(uint64(len(data)))
+			got, err = io.ReadAll(r)
+			r.Close()
+			if err != nil || !bytes.Equal(got, data) {
+				t.Fatalf("%s: Reader at its limit: %d bytes, err %v", a.Name(), len(got), err)
+			}
 		}
 	}
 }

@@ -208,6 +208,17 @@ restored = ds.decompress(compressed) + ds.finish()
 
 `CompressStream.flush()` returns everything a decoder needs to recover the data so far without ending the stream (not available for `snappy` and `bz2`). `finish()` ends the stream; on a `DecompressStream` it raises `CompressError` if the input stopped partway through a frame.
 
+### Limiting Decompressed Output
+
+`set_max_decompressed_size(n)` caps what `decompress()` will return, for every algorithm (default 1 GiB; `0` disables it). A `DecompressStream` has no limit by default, since a stream may legitimately decode more than you'd hold in memory at once. When decompressing untrusted input, pass `max_output`:
+
+```python
+ds = DecompressStream("gzip", max_output=64 * 1024**2)
+ds.decompress(untrusted)  # raises CompressError once the output passes 64 MiB
+```
+
+The call that would go past the limit raises `CompressError`, and the stream can't be used after that.
+
 ### Stopping at the End of a Stream
 
 By default, concatenated zstd/LZ4 frames, gzip members and xz streams decode as one stream. To stop at the end of the first one and recover what follows it, pass `single_stream=True`:
@@ -221,7 +232,7 @@ ds.unused_data                     # bytes passed in after the end (empty until 
 
 | Member | Description |
 |--------|-------------|
-| `DecompressStream(algorithm, *, single_stream=False)` | `single_stream` must be passed by keyword. Not supported for `lz4_raw` and `lzo` (raises `CompressError`). |
+| `DecompressStream(algorithm, *, single_stream=False, max_output=None)` | `single_stream` and `max_output` must be passed by keyword. `single_stream` is not supported for `lz4_raw` and `lzo` (raises `CompressError`). |
 | `eof` | `True` once a single-stream decoder has reached the end and returned all of its output. Always `False` otherwise. |
 | `unused_data` | The input received after the end, as `bytes`. Empty until `eof`, and always empty otherwise. |
 | `EndOfStreamError` | Raised by `decompress()` with non-empty data after `eof`. The data is not consumed and `unused_data` is unchanged. Subclasses both `CompressError` and `EOFError`. |

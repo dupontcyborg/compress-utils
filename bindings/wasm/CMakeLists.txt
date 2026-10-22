@@ -114,7 +114,8 @@ set(_CU_EXPORTS_DECOMPRESS
     cu_decompress_stream_create cu_decompress_stream_write
     cu_decompress_stream_finish cu_decompress_stream_destroy
     cu_decompress_stream_create_ex cu_decompress_stream_eof
-    cu_decompress_stream_unused)
+    cu_decompress_stream_unused cu_decompress_stream_set_max_output
+    cu_get_max_decompressed_size)
 
 find_program(WASM_STRIP wasm-strip)
 find_program(WASM_OPT wasm-opt)

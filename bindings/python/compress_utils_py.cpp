@@ -244,12 +244,18 @@ PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
         "With single_stream=True, decoding stops at the end of the first frame:\n"
         ".eof turns True and .unused_data holds the input that came after it, as\n"
         "with bz2.BZ2Decompressor. Concatenated frames otherwise decode as one.\n"
+        "max_output limits the total decompressed output in bytes: the call that\n"
+        "would go past it raises CompressError and the stream can't be used after.\n"
         "Safe to share between threads: calls on one stream run one at a time.")
-        .def(py::init([](const py::object& algorithm, bool single_stream) {
-            return new PyDecompressStream(parse_algorithm(algorithm),
-                                          single_stream ? cu::StreamMode::Single
-                                                        : cu::StreamMode::Concatenated);
-        }), py::arg("algorithm"), py::kw_only(), py::arg("single_stream") = false)
+        .def(py::init([](const py::object& algorithm, bool single_stream,
+                         std::optional<std::size_t> max_output) {
+            auto* self = new PyDecompressStream(parse_algorithm(algorithm),
+                                                single_stream ? cu::StreamMode::Single
+                                                              : cu::StreamMode::Concatenated);
+            if (max_output) self->stream.set_max_output(*max_output);
+            return self;
+        }), py::arg("algorithm"), py::kw_only(), py::arg("single_stream") = false,
+            py::arg("max_output") = py::none())
         .def("decompress", [](PyDecompressStream& self, py::buffer data) {
             InputView in(data);
             auto out = run_locked(self, worth_releasing(in.span().size()),

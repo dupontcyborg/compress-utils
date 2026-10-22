@@ -105,9 +105,11 @@ class DecompressStream:
     With single_stream=True, decoding stops at the end of the first frame:
     .eof turns True and .unused_data holds the input that came after it, as
     with bz2.BZ2Decompressor. Concatenated frames otherwise decode as one.
+    max_output limits the total decompressed output in bytes: the call that
+    would go past it raises CompressError and the stream can't be used after.
     Safe to share between threads: calls on one stream run one at a time.
     """
-    def __init__(self, algorithm: typing.Any, *, single_stream: bool = False) -> None:
+    def __init__(self, algorithm: typing.Any, *, single_stream: bool = False, max_output: typing.SupportsInt | typing.SupportsIndex | None = None) -> None:
         ...
     def decompress(self, data: typing_extensions.Buffer) -> bytes:
         """

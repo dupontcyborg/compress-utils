@@ -23,7 +23,6 @@
 
 use std::ffi::CStr;
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod ffi;
 pub mod stream;
@@ -220,24 +219,13 @@ pub fn version() -> &'static str {
     unsafe { CStr::from_ptr(ffi::cu_version()).to_str().unwrap_or("") }
 }
 
-/// Mirror of the C core's decompressed-size cap (default 1 GiB, matching the C
-/// default). `usize::MAX` means "disabled". Consulted by [`decompress`] when it
-/// falls back to streaming for size-unknown formats — that path bypasses
-/// `cu_decompress`, so we re-apply the cap here to keep the decompress-to-memory
-/// API safe against decompression bombs (e.g. malformed xz that liblzma's
-/// legacy `.lzma` auto-detection expands without bound).
-static MAX_DECOMPRESSED: AtomicUsize = AtomicUsize::new(1024 * 1024 * 1024);
-
-/// Set a global cap on the output size one-shot [`decompress`] will accept.
-/// Defaults to 1 GiB; `0` disables the cap. Does not affect the streaming
-/// [`Decompressor`], which should enforce its own limit.
+/// Set a global cap on the output size [`decompress`] and
+/// [`decompress_with_capacity`] will accept, for every algorithm. Defaults to
+/// 1 GiB; `0` disables the cap. A [`Decompressor`] has no limit unless set
+/// with [`Decompressor::set_max_output`].
 pub fn set_max_decompressed_size(bytes: usize) {
     // SAFETY: plain scalar setter, thread-safe per the C ABI contract.
     unsafe { ffi::cu_set_max_decompressed_size(bytes) }
-    MAX_DECOMPRESSED.store(
-        if bytes == 0 { usize::MAX } else { bytes },
-        Ordering::Relaxed,
-    );
 }
 
 /// Compress `data` with `algo` at `level` (1 fastest ..= 10 smallest).
@@ -270,34 +258,16 @@ pub fn compress(algo: Algorithm, data: &[u8], level: i32) -> Result<Vec<u8>, Err
 pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
     match decompress_one_shot(algo, data)? {
         Some(out) => Ok(out),
-        // Wire format does not carry the size (zlib, gzip, brotli, bz2,
-        // snappy, raw LZ4): stream-decompress the whole buffer, bounded by the same
-        // cap the C one-shot path enforces so a malformed bomb can't run us out
-        // of memory here.
+        // Wire format does not carry the size (zlib, gzip, brotli, bz2, xz,
+        // raw LZ4): stream-decompress the whole buffer, bounded by the same cap
+        // as the one-shot path.
         None => {
             use std::io::Read;
             let mut r = Decompressor::new(data, algo)?;
+            // SAFETY: plain scalar getter.
+            r.set_max_output(unsafe { ffi::cu_get_max_decompressed_size() });
             let mut out = Vec::new();
-            let cap = MAX_DECOMPRESSED.load(Ordering::Relaxed);
-            if cap == usize::MAX {
-                // Cap disabled by the caller — honour their choice, unbounded.
-                r.read_to_end(&mut out).map_err(stream::io_to_error)?;
-            } else {
-                // Read at most cap+1 bytes; more than cap means it exceeded.
-                let limit = (cap as u64).saturating_add(1);
-                r.by_ref()
-                    .take(limit)
-                    .read_to_end(&mut out)
-                    .map_err(stream::io_to_error)?;
-                if out.len() > cap {
-                    return Err(Error {
-                        code: Status::SizeLimit,
-                        message: format!(
-                            "compress-utils: decompressed size exceeds cap of {cap} bytes"
-                        ),
-                    });
-                }
-            }
+            r.read_to_end(&mut out).map_err(stream::io_to_error)?;
             Ok(out)
         }
     }

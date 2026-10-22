@@ -801,6 +801,33 @@ fn into_parts_error_formats_and_converts() {
     }
 }
 
+#[test]
+fn decompressor_max_output() {
+    let data = pseudo_random(8192, 21);
+    for &algo in &available(ALGOS) {
+        let packed = compress(algo, &data, 5).unwrap();
+
+        // One byte under: the bytes up to the limit, then SizeLimit.
+        let mut d = Decompressor::new(&packed[..], algo).unwrap();
+        d.set_max_output(data.len() - 1);
+        let mut out = Vec::new();
+        let err = d.read_to_end(&mut out).unwrap_err();
+        let inner = err
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<compress_utils::Error>())
+            .unwrap_or_else(|| panic!("{algo}: not a library error: {err}"));
+        assert_eq!(inner.code, Status::SizeLimit, "{algo}: {inner}");
+        assert_eq!(out, data[..data.len() - 1], "{algo}");
+
+        // Exactly the limit decodes everything.
+        let mut d = Decompressor::new(&packed[..], algo).unwrap();
+        d.set_max_output(data.len());
+        let mut out = Vec::new();
+        d.read_to_end(&mut out).unwrap();
+        assert_eq!(out, data, "{algo}");
+    }
+}
+
 /// Set in the environment of the child process that runs
 /// `size_cap_in_child_process`.
 const SIZE_CAP_CHILD: &str = "COMPRESS_UTILS_SIZE_CAP_CHILD";
@@ -862,7 +889,7 @@ fn size_cap_in_child_process() {
         assert_eq!(err.code, Status::SizeLimit, "{algo}: {err}");
         assert!(err.message.contains("exceeds"), "{algo}: {err}");
     }
-    // The streaming fallback names the cap it enforced.
+    // The stream behind the fallback names the cap it enforced.
     if Algorithm::Gzip.available() {
         let err = decompress(Algorithm::Gzip, &packed(Algorithm::Gzip, &over_cap)).unwrap_err();
         assert!(err.message.contains(&cap.to_string()), "{err}");
