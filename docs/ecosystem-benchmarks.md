@@ -1,6 +1,6 @@
 # Ecosystem benchmarks — plan
 
-Status: phase 1 (harness) and the C ecosystem comparison done on branch `ecosystem-benchmarks` (2026-10-22); phase 2 (Python) next. C results below. Tracked in [`TODO.md`](../TODO.md) under "Next up".
+Status: phase 1 (harness), C and Python (phase 2) done on branch `ecosystem-benchmarks` (2026-10-23); phase 3 (Node) next. Results below. Tracked in [`TODO.md`](../TODO.md) under "Next up".
 
 ## Why
 
@@ -206,6 +206,37 @@ Hardware: the maintainer's Apple Silicon MacBook for now (decided 2026-10-22). P
 - **zstd dictionaries.** `github-users` is the standard dictionary demo corpus. Once the dictionary API is designed (path to 1.0), add a dictionary scenario. Until then, competitors run without dictionaries too.
 - **Streaming (decided 2026-10-23): every language gets both one-shot and streaming results.** Each competitor driver implements its library's streaming API where it has one (fed in 64 KiB chunks, as our drivers are), and runs on the file tiers with `--modes stream`. Message sets have no streaming form. Libraries without a streaming API (libdeflate, raw snappy) appear in the one-shot results only, and the tables say so.
 - **Concurrency.** Python GIL release and Go goroutine scaling are real differences between libraries, but they are a separate benchmark. Defer it.
+
+## Python run (2026-10-23)
+
+compress-utils and the competitors (cramjam, stdlib, zstandard, brotli, lz4) on Python 3.14, at compress-utils levels 1, 4, 6 and 10, each competitor at the native level ours maps to (`levels.json`), one-shot and streaming. Large files at 1 sample (their spread is a few percent), everything else at 3. About 55 minutes on an idle machine.
+
+```sh
+D=python,python-stdlib,python-cramjam,python-zstandard,python-brotli,python-lz4
+A=zstd,brotli,zlib,gzip,deflate,bz2,lz4,xz,snappy
+python3 benchmarks/runner.py --drivers $D --algos $A --levels 1,4,6,10 --modes oneshot,stream \
+    --corpus silesia-mini --samples 1
+python3 benchmarks/runner.py --drivers $D --algos $A --levels 1,4,6,10 --modes oneshot,stream \
+    --corpus canterbury,github-users,silesia-blocks --samples 3
+```
+
+cramjam can't decode chunked input (its `Decompressor` needs a whole stream per call), so it has no streaming results.
+
+**Results** (M-series MacBook; 5,760 records, all verified; compress-utils decodes every competitor's output). Competitor speed relative to compress-utils at the same native level, compress / decompress, geometric mean over levels 1, 4, 6, 10; >1 means the competitor is faster.
+
+| Format | Competitor | Large files (one-shot) | 1 KB messages | Streaming | Ratio vs ours |
+|--------|-----------|------------------------|---------------|-----------|---------------|
+| zlib / gzip / deflate | stdlib (macOS system zlib 1.2.12) | 0.9-0.97 / 2.0-2.7× | 1.0 / 1.15-1.23× | 0.95 / 2.0-2.7× | identical |
+| | cramjam 2.14.0 | 1.2-1.4× / 0.8-1.0 | 1.5-1.6× / 0.67-0.73 | none | 0.4-2.6% worse |
+| zstd | zstandard 0.25.0, stdlib, cramjam | ~1.0 / 0.72-1.07 | ~1.0 / 0.92-1.07 | ~1.0 / 0.89-1.06 | identical |
+| brotli | brotli 1.2.1 | 0.9-1.0 / ~1.05 | ~1.0 / 1.1 | ~1.03 / ~1.08 | identical |
+| | cramjam | 0.83-0.93 / 0.81-0.89 | 0.8 / 0.39 | none | 0-3% worse |
+| lz4 | lz4 4.4.5 | 0.88-0.92 / 1.10 | 0.82 / 1.09 | 0.91-0.96 / ~1.0 | identical |
+| | cramjam | 0.92-1.0 / 0.83-1.0 | 0.89 / 0.37 | none | 0.1-0.4% worse |
+| bz2, xz | stdlib, cramjam | 0.85-1.07 | 0.87-1.24 | ~1.0 | identical |
+| snappy | cramjam | 1.0-1.05 / 1.06-1.23× | 1.2 / 1.4× | none | ~1% worse |
+
+We match or beat every competitor on zstd, brotli, lz4, bz2 and xz, and our binding adds no per-call penalty on 1 KB messages. We lose on deflate (the stdlib's Apple-optimized system zlib decompresses 2-2.7× faster on macOS; Linux distributions usually ship plain madler zlib, so expect a smaller gap there, unmeasured) and on snappy (cramjam's Rust snappy decompresses 1.1-1.5× faster), both matching the C findings (zlib-ng swap, snappy decision in `TODO.md`).
 
 ## C results (2026-10-22)
 

@@ -21,3 +21,7 @@ drivers/c/bench_alt_*
 
 # Binary-size probes and per-codec compress-utils builds (size/size.py).
 size/build/
+
+# Python benchmark interpreter (runner.py python_env) and its binding build.
+drivers/python/.venv/
+drivers/python/build/

@@ -310,6 +310,21 @@ Each driver uses its library's documented one-shot API, and its streaming API wh
 
 **Sweeps.** Libraries number their levels differently (libdeflate 1–12, ISA-L 0–3, the LZMA SDK's levels pick different dictionaries than xz's presets), so comparing "level 6" across them means little. `--sweep` runs every native-library driver over its whole level range (declared in `--info`, else `levels.json`'s `range`) and compress-utils over all ten levels, and the Pareto plots then show each implementation's full ratio/speed curve. Without `--sweep`, native drivers get compress-utils' levels translated through `levels.json` and sit out levels outside their range.
 
+### Python: competitors
+
+All Python drivers run `drivers/python/bench_py.py` on one interpreter: a Python 3.14 venv (`drivers/python/.venv`, the first version with `compression.zstd`) that the runner creates on first use with the pinned competitors in `drivers/python/requirements.txt`, plus compress-utils' binding built from this checkout for it (an incremental CMake build in `drivers/python/build`). `--impl` selects the implementation; the runner's keys are:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `python` | compress-utils | all |
+| `python-stdlib` | `zlib`, `bz2`, `lzma`, `compression.zstd` | zlib, gzip, deflate, bz2, xz, zstd |
+| `python-cramjam` | cramjam 2.14.0 | all; no streaming (its decompressor can't take chunked input) |
+| `python-zstandard` | zstandard 0.25.0 | zstd |
+| `python-brotli` | brotli 1.2.1 | brotli |
+| `python-lz4` | lz4 4.4.5 (`lz4.frame`) | lz4 |
+
+Competitors get native levels and are set to compress-utils' wire format where their API allows (zstd content size, LZ4 content size + checksum, xz CRC64). compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. The exact run behind the published numbers is in `docs/ecosystem-benchmarks.md`.
+
 ### Binary size
 
 `size/size.py` measures what each library adds to a stripped, statically linked, dead-stripped program that uses one format, compressing and decompressing or decompressing only (`size/probe.c`), against an empty program. compress-utils is built the way a size-conscious user would: a static archive with only that codec, and `-DCU_OMIT_COMPRESS` for decode-only; a separate row is the default all-codec archive. All libraries are release builds as their projects ship them (not rebuilt with `-Os`).

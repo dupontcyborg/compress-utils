@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -169,17 +170,43 @@ def build_wasm() -> list[str]:
     return ["node", str(script)]
 
 
-def build_python() -> list[str]:
-    """The Python driver runs the compress-utils Python binding."""
-    script = bc.BENCH_ROOT / "drivers" / "python" / "bench_py.py"
-    pkg = bc.REPO_ROOT / "bindings" / "python"
-    check = subprocess.run(
-        [sys.executable, "-c", "import compress_utils"],
-        env={**os.environ, "PYTHONPATH": str(pkg)}, capture_output=True,
-    )
-    if check.returncode != 0:
-        sys.exit("error: Python binding not importable. Build it first:  ./build.sh\n")
-    return [sys.executable, str(script)]
+PY_DIR = bc.BENCH_ROOT / "drivers" / "python"
+PY_VENV = PY_DIR / ".venv"
+PY_BUILD = PY_DIR / "build"
+# Every Python driver (compress-utils and the competitors) runs on one
+# interpreter: 3.14, the first with compression.zstd in the stdlib.
+PY_VERSION = "3.14"
+
+
+def python_env() -> Path:
+    """The benchmark interpreter: a venv on Python 3.14 with the pinned
+    competitors (drivers/python/requirements.txt) and compress-utils' binding
+    built from this checkout for it (an incremental CMake build in
+    drivers/python/build, writing the extension into bindings/python)."""
+    py = PY_VENV / "bin" / "python"
+    if not py.exists():
+        base = os.environ.get("BENCH_PYTHON") or shutil.which(f"python{PY_VERSION}")
+        if not base:
+            sys.exit(f"error: python{PY_VERSION} not found (or set BENCH_PYTHON)")
+        print(f"[runner] creating {PY_VENV.relative_to(bc.REPO_ROOT)} with {base}")
+        subprocess.run([base, "-m", "venv", str(PY_VENV)], check=True)
+        subprocess.run([str(py), "-m", "pip", "install", "-q", "-r",
+                        str(PY_DIR / "requirements.txt")], check=True)
+    if not (PY_BUILD / "CMakeCache.txt").exists():
+        subprocess.run(["cmake", "-S", str(bc.REPO_ROOT), "-B", str(PY_BUILD),
+                        "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_PYTHON_BINDINGS=ON",
+                        "-DENABLE_TESTS=OFF", f"-DPython3_EXECUTABLE={py}"],
+                       check=True, capture_output=True)
+    print("[runner] building the Python binding for the benchmark interpreter")
+    subprocess.run(["cmake", "--build", str(PY_BUILD), "--target", "compress_utils_py", "-j"],
+                   check=True, capture_output=True)
+    return py
+
+
+def build_python(impl: str = "compress-utils") -> list[str]:
+    """A Python driver (drivers/python/bench_py.py) for one implementation:
+    compress-utils' binding, or a competitor library."""
+    return [str(python_env()), str(PY_DIR / "bench_py.py"), "--impl", impl]
 
 
 def build_go() -> list[str]:
@@ -210,6 +237,10 @@ def build_rust() -> list[str]:
 # The alternative C libraries, one driver each: "c-zlib-ng", "c-libdeflate", ...
 ALT_DRIVERS = {f"c-{name}": (lambda name=name: build_c_alt(name))
                for name, dep in deps.DEPS.items() if dep.get("driver", True)}
+# Python competitors, one driver each: "python-cramjam", "python-stdlib", ...
+PY_DRIVERS = {f"python-{impl}": (lambda impl=impl: build_python(impl))
+              for impl in ("cramjam", "stdlib", "zstandard", "brotli", "lz4")}
+
 # Setup-cost variants: the same library with its setup moved in or out of each
 # call, to separate codec speed from what reusing a context saves.
 ALT_DRIVERS["c-libdeflate-percall"] = lambda: build_c_alt("libdeflate", "percall")
@@ -219,7 +250,7 @@ ALT_DRIVERS["c-liblzma-fitdict"] = lambda: build_c_vendored_variant(
 
 # Drivers for native libraries take native levels: the runner translates each
 # job's compress-utils level through levels.json before sending it.
-NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS}
+NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS, *PY_DRIVERS}
 
 DRIVERS = {
     "c": build_c,
@@ -229,6 +260,7 @@ DRIVERS = {
     "go": build_go,
     "rust": build_rust,
     **ALT_DRIVERS,
+    **PY_DRIVERS,
 }
 
 
