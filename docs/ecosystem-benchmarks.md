@@ -174,6 +174,15 @@ Reuse the Playwright setup in `bindings/wasm/tests-browser` (`serve.mjs` already
 | 5 | **Rust** and **Go** baseline drivers | Their tables |
 | 6 | Publish | See below |
 
+Every language phase covers one-shot, message sets and streaming (`--modes oneshot,stream`).
+
+**Scope decisions (2026-10-23).** Keep the benchmarks lean and fast; these hold until revisited:
+
+- **C is done.** The conclusions are in "C results" below; no reruns for publication-grade sample counts. The speedups it found (xz dictionary cap, zlib-ng, snappy, level map) happen on a separate branch, from the list in `TODO.md`.
+- **Other languages: full level sweep (`--sweep`) and the competitors listed above.** These are the point of the exercise.
+- **Browser stays** (phase 4): it's the only place the WASM build is measured against native alternatives like `CompressionStream`.
+- **To be decided later:** Rust and Go competitor drivers, the publish-profile run, streaming beyond what each phase needs.
+
 Python goes first because cramjam is the most direct competitor and the answer decides whether the Python binding is worth investing in. JS comes next because it's where we most likely win.
 
 ## Run profiles
@@ -195,7 +204,7 @@ Hardware: the maintainer's Apple Silicon MacBook for now (decided 2026-10-22). P
 ## Open questions
 
 - **zstd dictionaries.** `github-users` is the standard dictionary demo corpus. Once the dictionary API is designed (path to 1.0), add a dictionary scenario. Until then, competitors run without dictionaries too.
-- **Streaming comparisons.** Phase 1–5 cover one-shot and message sets. Streaming against each library's stream API (and `CompressionStream`) is in scope for the browser and can extend to the others afterwards.
+- **Streaming (decided 2026-10-23): every language gets both one-shot and streaming results.** Each competitor driver implements its library's streaming API where it has one (fed in 64 KiB chunks, as our drivers are), and runs on the file tiers with `--modes stream`. Message sets have no streaming form. Libraries without a streaming API (libdeflate, raw snappy) appear in the one-shot results only, and the tables say so.
 - **Concurrency.** Python GIL release and Go goroutine scaling are real differences between libraries, but they are a separate benchmark. Defer it.
 
 ## C results (2026-10-22)

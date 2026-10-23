@@ -24,7 +24,7 @@ Measured on branch `ecosystem-benchmarks` (M-series MacBook, single-threaded, re
 - [ ] **Small fixed per-call costs:** one-shot lz4 decompression is 5-12% slower than raw liblz4 on 1 KB messages, brotli decompression 2-4% slower everywhere. Everything else is within 1-2% of the raw library, with byte-identical output.
 - [ ] **Reusable compressor/decompressor objects: post-1.0.** Measured gain is modest: zstd 0-8% even on 1 KB messages (it already sizes its tables to the pledged input size); libdeflate 1.2-1.5× on messages of 4 KB and under, nothing from 16 KB up.
 - [ ] **Document single-codec builds.** A stripped static binary with the default all-codec archive carries 1.6 MiB; with one codec (`INCLUDE_<CODEC>`) it's 11-811 KiB, and decode-only (`-DCU_OMIT_COMPRESS`) less. Neither is documented as a supported native configuration.
-- [ ] **Benchmarks: rerun github-users with ~9 samples before publishing.** At 3-5 samples, identical code varies 0.6-1.9× level to level on that tier (per-call allocation noise); the block tiers and large files are stable.
+- [x] ~~Benchmarks: rerun github-users with ~9 samples before publishing~~ — dropped 2026-10-23 (C is done; keep the benchmarks lean). Caveat for anyone quoting it: at 3-5 samples, identical code varies 0.6-1.9× level to level on that tier (per-call allocation noise); the block tiers and large files are stable.
 
 ## Bugs & Critical Issues
 

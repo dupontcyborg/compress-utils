@@ -14,6 +14,10 @@
  * 31) and raw DEFLATE (-15) use deflateInit2/inflateInit2 with zlib's
  * defaults (memLevel 8, default strategy) and a single Z_FINISH call, the same
  * settings src/algorithms/zlib/deflate_backend.h uses.
+ *
+ * Streaming (all three formats) feeds the input in chunk-sized pieces with
+ * Z_NO_FLUSH, then finishes with Z_FINISH, into one bound-sized output buffer,
+ * as c-baseline streams madler zlib.
  */
 
 #ifndef BENCH_ZAPI_H
@@ -84,7 +88,65 @@ static int za_inflate(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
     return 0;
 }
 
-#define ZA_FORMAT(NAME, WBITS)                                                               \
+static int za_cstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
+                      int level, int wbits, size_t chunk, const char** err) {
+    if (chunk == 0) chunk = 64 * 1024;
+    ZSTREAM s;
+    memset(&s, 0, sizeof(s));
+    if (ZAPI(deflateInit2)(&s, level, Z_DEFLATED, wbits, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        *err = "deflateInit2";
+        return 1;
+    }
+    size_t cap = *out_len;
+    s.next_out = out;
+    s.avail_out = (unsigned)cap;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (void*)(uintptr_t)(in + off);
+        s.avail_in = (unsigned)n;
+        while (s.avail_in > 0) {
+            if (ZAPI(deflate)(&s, Z_NO_FLUSH) != Z_OK) { *err = "deflate"; rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        int r;
+        do { r = ZAPI(deflate)(&s, Z_FINISH); } while (r == Z_OK);
+        if (r != Z_STREAM_END) { *err = "deflate finish"; rc = 1; }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    ZAPI(deflateEnd)(&s);
+    return rc;
+}
+
+static int za_dstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
+                      int wbits, size_t chunk, const char** err) {
+    if (chunk == 0) chunk = 64 * 1024;
+    ZSTREAM s;
+    memset(&s, 0, sizeof(s));
+    if (ZAPI(inflateInit2)(&s, wbits) != Z_OK) { *err = "inflateInit2"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = out;
+    s.avail_out = (unsigned)cap;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (void*)(uintptr_t)(in + off);
+        s.avail_in = (unsigned)n;
+        while (s.avail_in > 0) {
+            int r = ZAPI(inflate)(&s, Z_NO_FLUSH);
+            if (r == Z_STREAM_END) { done = 1; break; }
+            if (r != Z_OK) { *err = "inflate"; rc = 1; break; }
+        }
+    }
+    if (!rc && !done) { *err = "inflate: truncated"; rc = 1; }
+    if (!rc) *out_len = cap - s.avail_out;
+    ZAPI(inflateEnd)(&s);
+    return rc;
+}
+
+/* One-shot through deflateInit2/inflateInit2 (gzip, raw deflate). */
+#define ZA_ONESHOT(NAME, WBITS)                                                               \
     static int za_##NAME##_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len, \
                                     uint8_t* out, size_t* out_len, int level,                 \
                                     const char** err) {                                       \
@@ -97,16 +159,35 @@ static int za_inflate(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
         (void)c;                                                                              \
         return za_inflate(in, in_len, out, out_len, WBITS, err);                              \
     }
-ZA_FORMAT(gzip, 31)
-ZA_FORMAT(deflate, -15)
+#define ZA_STREAMS(NAME, WBITS)                                                               \
+    static int za_##NAME##_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,  \
+                                   uint8_t* out, size_t* out_len, int level, size_t chunk,    \
+                                   const char** err) {                                        \
+        (void)c;                                                                              \
+        return za_cstream(in, in_len, out, out_len, level, WBITS, chunk, err);                \
+    }                                                                                         \
+    static int za_##NAME##_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,  \
+                                   uint8_t* out, size_t* out_len, size_t chunk,               \
+                                   const char** err) {                                        \
+        (void)c;                                                                              \
+        return za_dstream(in, in_len, out, out_len, WBITS, chunk, err);                       \
+    }
+ZA_ONESHOT(gzip, 31)
+ZA_ONESHOT(deflate, -15)
+ZA_STREAMS(zlib, 15)
+ZA_STREAMS(gzip, 31)
+ZA_STREAMS(deflate, -15)
 
-/* Codec entries: one-shot only (no streaming functions), with a level range
- * (0, 0 = levels.json's). */
-#define ZA_ZLIB(IMPL, LO, HI) \
-    {"zlib", IMPL, 0, za_bound, za_zlib_compress, za_zlib_decompress, NULL, NULL, LO, HI}
-#define ZA_GZIP(IMPL, LO, HI) \
-    {"gzip", IMPL, 0, za_bound, za_gzip_compress, za_gzip_decompress, NULL, NULL, LO, HI}
-#define ZA_DEFLATE(IMPL, LO, HI) \
-    {"deflate", IMPL, 0, za_bound, za_deflate_compress, za_deflate_decompress, NULL, NULL, LO, HI}
+/* Codec entries, one-shot and streaming, with a level range (0, 0 =
+ * levels.json's). */
+#define ZA_ZLIB(IMPL, LO, HI)                                                                  \
+    {"zlib", IMPL, 0, za_bound, za_zlib_compress, za_zlib_decompress, za_zlib_cstream,         \
+     za_zlib_dstream, LO, HI}
+#define ZA_GZIP(IMPL, LO, HI)                                                                  \
+    {"gzip", IMPL, 0, za_bound, za_gzip_compress, za_gzip_decompress, za_gzip_cstream,         \
+     za_gzip_dstream, LO, HI}
+#define ZA_DEFLATE(IMPL, LO, HI)                                                               \
+    {"deflate", IMPL, 0, za_bound, za_deflate_compress, za_deflate_decompress,                 \
+     za_deflate_cstream, za_deflate_dstream, LO, HI}
 
 #endif /* BENCH_ZAPI_H */

@@ -8,7 +8,8 @@
  *
  * Each driver gets native levels (the runner translates through
  * benchmarks/levels.json) and reports its own level range through --info, for
- * sweeps. Calls are each library's documented one-shot API; a library whose
+ * sweeps. Calls are each library's documented one-shot API, plus its streaming
+ * API where it has one (fed and drained as c-baseline streams); a library whose
  * one-shot API takes a reusable context or work buffer (libdeflate, ISA-L)
  * gets one per level, reused across calls, as its documentation intends.
  * Records carry impl=<library>.
@@ -230,8 +231,8 @@ static const bench_codec_t CODECS[] = {
 
 /* ========================================================================= */
 #elif defined(ALT_ISA_L)
-/* igzip's stateless (one-shot) API, levels 0..3, with its level work buffer
- * allocated once per level and reused. */
+/* igzip's stateless (one-shot) API and its stateful (streaming) one, levels
+ * 0..3, with the level work buffer allocated once per level and reused. */
 #include <isa-l/igzip_lib.h>
 #define IMPL "isa-l"
 
@@ -280,6 +281,57 @@ static int isal_decompress_fmt(const uint8_t* in, size_t in_len, uint8_t* out, s
     return 0;
 }
 
+/* Stateful streaming: chunks in with NO_FLUSH, end_of_stream on the last. */
+static int isal_cstream_fmt(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
+                            int level, uint16_t gzip_flag, size_t chunk, const char** err) {
+    if (level < 0 || level > 3) { *err = "isa-l level out of range"; return 1; }
+    if (chunk == 0) chunk = 64 * 1024;
+    if (isal_buf_size[level] && !isal_buf[level]) isal_buf[level] = malloc(isal_buf_size[level]);
+    struct isal_zstream s;
+    isal_deflate_init(&s);
+    s.level = (uint32_t)level;
+    s.level_buf = isal_buf[level];
+    s.level_buf_size = isal_buf_size[level];
+    s.gzip_flag = gzip_flag;
+    s.flush = NO_FLUSH;
+    s.next_out = out;
+    s.avail_out = (uint32_t)*out_len;
+    size_t off = 0;
+    do {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (uint8_t*)in + off;
+        s.avail_in = (uint32_t)n;
+        off += n;
+        s.end_of_stream = off == in_len;
+        do {
+            if (isal_deflate(&s) != COMP_OK) { *err = "isal_deflate"; return 1; }
+        } while (s.avail_in > 0 || (s.end_of_stream && s.internal_state.state != ZSTATE_END));
+    } while (off < in_len);
+    *out_len = s.total_out;
+    return 0;
+}
+
+static int isal_dstream_fmt(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
+                            uint32_t crc_flag, size_t chunk, const char** err) {
+    if (chunk == 0) chunk = 64 * 1024;
+    struct inflate_state st;
+    isal_inflate_init(&st);
+    st.crc_flag = crc_flag;
+    st.next_out = out;
+    st.avail_out = (uint32_t)*out_len;
+    for (size_t off = 0; off < in_len && st.block_state != ISAL_BLOCK_FINISH; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        st.next_in = (uint8_t*)in + off;
+        st.avail_in = (uint32_t)n;
+        while (st.avail_in > 0 && st.block_state != ISAL_BLOCK_FINISH) {
+            if (isal_inflate(&st) != ISAL_DECOMP_OK) { *err = "isal_inflate"; return 1; }
+        }
+    }
+    if (st.block_state != ISAL_BLOCK_FINISH) { *err = "isal_inflate: truncated"; return 1; }
+    *out_len = st.total_out;
+    return 0;
+}
+
 #define ISAL_FORMAT(NAME, GZFLAG, CRCFLAG)                                                     \
     static int isal_##NAME##_compress(const bench_codec_t* c, const uint8_t* in,               \
                                       size_t in_len, uint8_t* out, size_t* out_len, int level, \
@@ -292,16 +344,30 @@ static int isal_decompress_fmt(const uint8_t* in, size_t in_len, uint8_t* out, s
                                         const char** err) {                                    \
         (void)c;                                                                               \
         return isal_decompress_fmt(in, in_len, out, out_len, CRCFLAG, err);                    \
+    }                                                                                          \
+    static int isal_##NAME##_cstream(const bench_codec_t* c, const uint8_t* in,               \
+                                     size_t in_len, uint8_t* out, size_t* out_len, int level,  \
+                                     size_t chunk, const char** err) {                         \
+        (void)c;                                                                               \
+        return isal_cstream_fmt(in, in_len, out, out_len, level, GZFLAG, chunk, err);          \
+    }                                                                                          \
+    static int isal_##NAME##_dstream(const bench_codec_t* c, const uint8_t* in,               \
+                                     size_t in_len, uint8_t* out, size_t* out_len,             \
+                                     size_t chunk, const char** err) {                         \
+        (void)c;                                                                               \
+        return isal_dstream_fmt(in, in_len, out, out_len, CRCFLAG, chunk, err);                \
     }
 ISAL_FORMAT(zlib, IGZIP_ZLIB, ISAL_ZLIB)
 ISAL_FORMAT(gzip, IGZIP_GZIP, ISAL_GZIP)
 ISAL_FORMAT(deflate, IGZIP_DEFLATE, ISAL_DEFLATE)
 
 static const bench_codec_t CODECS[] = {
-    {"zlib", IMPL, 0, isal_bound, isal_zlib_compress, isal_zlib_decompress, NULL, NULL, 0, 3},
-    {"gzip", IMPL, 0, isal_bound, isal_gzip_compress, isal_gzip_decompress, NULL, NULL, 0, 3},
-    {"deflate", IMPL, 0, isal_bound, isal_deflate_compress, isal_deflate_decompress, NULL, NULL,
-     0, 3},
+    {"zlib", IMPL, 0, isal_bound, isal_zlib_compress, isal_zlib_decompress, isal_zlib_cstream,
+     isal_zlib_dstream, 0, 3},
+    {"gzip", IMPL, 0, isal_bound, isal_gzip_compress, isal_gzip_decompress, isal_gzip_cstream,
+     isal_gzip_dstream, 0, 3},
+    {"deflate", IMPL, 0, isal_bound, isal_deflate_compress, isal_deflate_decompress,
+     isal_deflate_cstream, isal_deflate_dstream, 0, 3},
 };
 
 /* ========================================================================= */
@@ -348,16 +414,73 @@ static int bz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     return 0;
 }
 
+/* Streaming, as c-baseline streams libbzip2. */
+static int bz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                      size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c;
+    if (chunk == 0) chunk = 64 * 1024;
+    bz_stream s;
+    memset(&s, 0, sizeof(s));
+    if (BZ2_bzCompressInit(&s, level, 0, 0) != BZ_OK) { *err = "BZ2_bzCompressInit"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = (char*)out;
+    s.avail_out = (unsigned int)cap;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (char*)(uintptr_t)(in + off);
+        s.avail_in = (unsigned int)n;
+        while (s.avail_in > 0) {
+            if (BZ2_bzCompress(&s, BZ_RUN) != BZ_RUN_OK) { *err = "BZ2_bzCompress"; rc = 1; break; }
+        }
+    }
+    if (!rc) {
+        int r;
+        do { r = BZ2_bzCompress(&s, BZ_FINISH); } while (r == BZ_FINISH_OK);
+        if (r != BZ_STREAM_END) { *err = "BZ2_bzCompress finish"; rc = 1; }
+    }
+    if (!rc) *out_len = cap - s.avail_out;
+    BZ2_bzCompressEnd(&s);
+    return rc;
+}
+
+static int bz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                      size_t* out_len, size_t chunk, const char** err) {
+    (void)c;
+    if (chunk == 0) chunk = 64 * 1024;
+    bz_stream s;
+    memset(&s, 0, sizeof(s));
+    if (BZ2_bzDecompressInit(&s, 0, 0) != BZ_OK) { *err = "BZ2_bzDecompressInit"; return 1; }
+    size_t cap = *out_len;
+    s.next_out = (char*)out;
+    s.avail_out = (unsigned int)cap;
+    int rc = 0, done = 0;
+    for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        s.next_in = (char*)(uintptr_t)(in + off);
+        s.avail_in = (unsigned int)n;
+        while (s.avail_in > 0) {
+            int r = BZ2_bzDecompress(&s);
+            if (r == BZ_STREAM_END) { done = 1; break; }
+            if (r != BZ_OK) { *err = "BZ2_bzDecompress"; rc = 1; break; }
+        }
+    }
+    if (!rc && !done) { *err = "BZ2_bzDecompress: truncated"; rc = 1; }
+    if (!rc) *out_len = cap - s.avail_out;
+    BZ2_bzDecompressEnd(&s);
+    return rc;
+}
+
 static const bench_codec_t CODECS[] = {
-    {"bz2", IMPL, 0, bz_bound, bz_compress, bz_decompress, NULL, NULL, 0, 0},
+    {"bz2", IMPL, 0, bz_bound, bz_compress, bz_decompress, bz_cstream, bz_dstream, 0, 0},
 };
 
 /* ========================================================================= */
 #elif defined(ALT_LZMA_SDK)
 /* 7-Zip's xz encoder and decoder, built single-threaded (Z7_ST), CRC64 check.
  * Its levels 0..9 are LZMA SDK levels, which pick different dictionary sizes
- * than xz's presets. The encoder is told the input size (reduceSize), as 7-Zip
- * does, so small inputs get a small dictionary. */
+ * than xz's presets. One-shot, the encoder is told the input size (reduceSize),
+ * as 7-Zip does, so small inputs get a small dictionary; streaming, it isn't. */
 #include "7zCrc.h"
 #include "Alloc.h"
 #include "Xz.h"
@@ -369,11 +492,13 @@ typedef struct {
     ISeqInStream vt;
     const uint8_t* p;
     size_t left;
+    size_t chunk; /* streaming: hand out at most this much per read; 0 = no limit */
 } BufIn;
 
 static SRes bufin_read(ISeqInStreamPtr pp, void* buf, size_t* size) {
     BufIn* b = (BufIn*)(void*)pp;
     size_t n = *size < b->left ? *size : b->left;
+    if (b->chunk && n > b->chunk) n = b->chunk;
     memcpy(buf, b->p, n);
     b->p += n;
     b->left -= n;
@@ -401,20 +526,28 @@ static size_t xz_bound(const bench_codec_t* c, size_t n) {
     return n + n / 16 + 4096;
 }
 
-static int xz_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
-                       size_t* out_len, int level, const char** err) {
-    (void)c;
-    BufIn bin = {{bufin_read}, in, in_len};
+/* chunk == 0: one-shot, told the input size (reduceSize). Otherwise streaming:
+ * the encoder pulls at most `chunk` bytes per read and doesn't know the size,
+ * so it keeps the preset's dictionary, as a streaming liblzma encoder does. */
+static int xz_encode(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len, int level,
+                     size_t chunk, const char** err) {
+    BufIn bin = {{bufin_read}, in, in_len, chunk};
     BufOut bout = {{bufout_write}, out, *out_len, 0};
     CXzProps props;
     XzProps_Init(&props);
     props.lzma2Props.lzmaProps.level = level;
     props.checkId = XZ_CHECK_CRC64;
     props.numTotalThreads = 1;
-    props.reduceSize = in_len;
+    if (!chunk) props.reduceSize = in_len;
     if (Xz_Encode(&bout.vt, &bin.vt, &props, NULL) != SZ_OK) { *err = "Xz_Encode"; return 1; }
     *out_len = bout.written;
     return 0;
+}
+
+static int xz_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                       size_t* out_len, int level, const char** err) {
+    (void)c;
+    return xz_encode(in, in_len, out, out_len, level, 0, err);
 }
 
 static int xz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
@@ -433,8 +566,49 @@ static int xz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     return 0;
 }
 
+static int xz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                      size_t* out_len, int level, size_t chunk, const char** err) {
+    (void)c;
+    return xz_encode(in, in_len, out, out_len, level, chunk ? chunk : 64 * 1024, err);
+}
+
+/* Streaming decode: XzUnpacker_Code over chunk-sized input pieces. */
+static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
+                      size_t* out_len, size_t chunk, const char** err) {
+    (void)c;
+    if (chunk == 0) chunk = 64 * 1024;
+    CXzUnpacker u;
+    XzUnpacker_Construct(&u, &g_Alloc);
+    XzUnpacker_Init(&u);
+    size_t cap = *out_len, opos = 0;
+    int rc = 0;
+    for (size_t off = 0; off < in_len && !rc; off += chunk) {
+        size_t n = in_len - off < chunk ? in_len - off : chunk;
+        /* A call can stop early (at a block or stream boundary): keep feeding
+         * the rest of the chunk until it's consumed or nothing moves. */
+        for (size_t used = 0; used < n && !rc;) {
+            SizeT sl = n - used, dl = cap - opos;
+            ECoderStatus status;
+            /* FINISH_END: once the output is full, still read the stream's index
+             * and footer (the caller's buffer is exactly the decoded size). */
+            if (XzUnpacker_Code(&u, out + opos, &dl, in + off + used, &sl, off + n == in_len,
+                                CODER_FINISH_END, &status) != SZ_OK ||
+                (sl == 0 && dl == 0)) {
+                *err = "XzUnpacker_Code";
+                rc = 1;
+            }
+            used += sl;
+            opos += dl;
+        }
+    }
+    if (!rc && !XzUnpacker_IsStreamWasFinished(&u)) { *err = "xz: truncated"; rc = 1; }
+    XzUnpacker_Free(&u);
+    if (!rc) *out_len = opos;
+    return rc;
+}
+
 static const bench_codec_t CODECS[] = {
-    {"xz", IMPL, 0, xz_bound, xz_compress, xz_decompress, NULL, NULL, 0, 9},
+    {"xz", IMPL, 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream, 0, 9},
 };
 #define ALT_INIT() (CrcGenerateTable(), Crc64GenerateTable())
 

@@ -306,7 +306,7 @@ python3 benchmarks/deps/deps.py --list        # what's available
 python3 benchmarks/runner.py --drivers c,c-baseline,c-zlib-ng,c-libdeflate --algos zlib --sweep
 ```
 
-Each driver uses its library's documented one-shot API. A library whose one-shot API takes a reusable context or work buffer (libdeflate's compressor, ISA-L's level buffer) gets one per level, reused across calls, as its documentation intends; compress-utils has no reusable context, so it pays its setup on every call, which shows on small messages.
+Each driver uses its library's documented one-shot API, and its streaming API where it has one (libdeflate and raw snappy have none), fed in `--chunk`-sized pieces like the other drivers; run both with `--modes oneshot,stream`. A library whose one-shot API takes a reusable context or work buffer (libdeflate's compressor, ISA-L's level buffer) gets one per level, reused across calls, as its documentation intends; compress-utils has no reusable context, so it pays its setup on every call, which shows on small messages.
 
 **Sweeps.** Libraries number their levels differently (libdeflate 1–12, ISA-L 0–3, the LZMA SDK's levels pick different dictionaries than xz's presets), so comparing "level 6" across them means little. `--sweep` runs every native-library driver over its whole level range (declared in `--info`, else `levels.json`'s `range`) and compress-utils over all ten levels, and the Pareto plots then show each implementation's full ratio/speed curve. Without `--sweep`, native drivers get compress-utils' levels translated through `levels.json` and sit out levels outside their range.
 
