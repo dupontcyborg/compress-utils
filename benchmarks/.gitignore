@@ -25,3 +25,6 @@ size/build/
 # Python benchmark interpreter (runner.py python_env) and its binding build.
 drivers/python/.venv/
 drivers/python/build/
+
+# JavaScript competitors (drivers/wasm/package.json; pinned by package-lock.json, tracked).
+drivers/wasm/node_modules/

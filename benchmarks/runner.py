@@ -160,14 +160,35 @@ def build_c_vendored_variant(codec: str, variant: str, extra: list[str] = ()) ->
     return [str(out)]
 
 
-def build_wasm() -> list[str]:
-    """The WASM driver runs the built compress-utils WASM package via Node."""
-    script = bc.BENCH_ROOT / "drivers" / "wasm" / "bench_wasm.mjs"
+JS_DIR = bc.BENCH_ROOT / "drivers" / "wasm"
+# The portable JavaScript/WASM competitors (see bench_wasm.mjs), one driver each.
+JS_IMPLS = ["node-zlib", "compression-stream", "fflate", "pako", "brotli-wasm", "zstd-wasm",
+            "fzstd", "xz-decompress", "lz4js", "snappyjs"]
+
+
+def build_js(impl: str = "compress-utils") -> list[str]:
+    """A JavaScript driver (drivers/wasm/bench_wasm.mjs) for one implementation:
+    the built compress-utils WASM package, or a competitor from
+    drivers/wasm/package.json. BENCH_JS_RUNTIME (--js-runtime) picks node or bun."""
+    runtime = os.environ.get("BENCH_JS_RUNTIME", "node")
+    # BENCH_NODE / BENCH_BUN pick an exact binary; otherwise whichever is first on PATH
+    # (which can differ from your shell's, e.g. nvm). The version lands in every record.
+    exe = os.environ.get(f"BENCH_{runtime.upper()}") or shutil.which(runtime)
+    if not exe:
+        sys.exit(f"error: {runtime} not found on PATH")
     dist = bc.REPO_ROOT / "bindings" / "wasm" / "dist" / "algorithms"
     if not dist.joinpath("zstd", "zstd.wasm").exists():
         sys.exit("error: WASM package not built. Build it first:\n"
                  "       (cd bindings/wasm && npm run build)\n")
-    return ["node", str(script)]
+    if impl != "compress-utils" and not (JS_DIR / "node_modules").exists():
+        print("[runner] installing the JavaScript competitors (npm ci)")
+        subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=JS_DIR, check=True,
+                       capture_output=True)
+    return [exe, str(JS_DIR / "bench_wasm.mjs"), "--impl", impl]
+
+
+def build_wasm() -> list[str]:
+    return build_js("compress-utils")
 
 
 PY_DIR = bc.BENCH_ROOT / "drivers" / "python"
@@ -241,6 +262,9 @@ ALT_DRIVERS = {f"c-{name}": (lambda name=name: build_c_alt(name))
 PY_DRIVERS = {f"python-{impl}": (lambda impl=impl: build_python(impl))
               for impl in ("cramjam", "stdlib", "zstandard", "brotli", "lz4")}
 
+# JavaScript competitors: "js-fflate", "js-pako", ...
+JS_DRIVERS = {f"js-{impl}": (lambda impl=impl: build_js(impl)) for impl in JS_IMPLS}
+
 # Setup-cost variants: the same library with its setup moved in or out of each
 # call, to separate codec speed from what reusing a context saves.
 ALT_DRIVERS["c-libdeflate-percall"] = lambda: build_c_alt("libdeflate", "percall")
@@ -250,7 +274,7 @@ ALT_DRIVERS["c-liblzma-fitdict"] = lambda: build_c_vendored_variant(
 
 # Drivers for native libraries take native levels: the runner translates each
 # job's compress-utils level through levels.json before sending it.
-NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS, *PY_DRIVERS}
+NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS, *PY_DRIVERS, *JS_DRIVERS}
 
 DRIVERS = {
     "c": build_c,
@@ -261,6 +285,7 @@ DRIVERS = {
     "rust": build_rust,
     **ALT_DRIVERS,
     **PY_DRIVERS,
+    **JS_DRIVERS,
 }
 
 
@@ -293,6 +318,8 @@ def build_jobs(datasets: list[dict], algos: list[str], levels: list[int],
 def _native_range(info: dict, algo: str) -> list[int]:
     """The native levels a driver supports for `algo`: the range it declares in
     --info, else levels.json's, else [0] (a format without levels)."""
+    if algo in (info.get("levelless") or []):
+        return [0]
     lo_hi = (info.get("levels") or {}).get(algo) or bc.level_range(algo)
     return list(range(lo_hi[0], lo_hi[1] + 1)) if lo_hi else [0]
 
@@ -312,10 +339,18 @@ def plan_steps(jobs: list[tuple], built: list[tuple], sweep: bool) -> list[tuple
     cu_keys = [k for k, _, _ in built if k not in NATIVE_LEVEL_DRIVERS]
     steps = []
     if not sweep:
+        first = {}  # (algo, mode, path) -> the lowest requested level
+        for a, lvl, mode, path, ds_id in jobs:
+            first[(a, mode, path)] = min(lvl, first.get((a, mode, path), lvl))
         for a, lvl, mode, path, ds_id in jobs:
             native = bc.native_level(a, lvl)
             sends = {k: (lvl, lvl, native) for k in cu_keys}
             for k, info in native_keys:
+                if a in (info.get("levelless") or []):
+                    # A format without levels runs once per input, not once per level.
+                    if lvl == first[(a, mode, path)]:
+                        sends[k] = (0, None, 0)
+                    continue
                 n = native if native is not None else 0
                 if n in _native_range(info, a):
                     sends[k] = (n, lvl, native)
@@ -454,6 +489,8 @@ def main() -> None:
                     help="comma-separated modes: oneshot, stream")
     ap.add_argument("--chunk", type=int, default=64 * 1024,
                     help="streaming chunk size in bytes (stream mode only)")
+    ap.add_argument("--js-runtime", default="node", choices=["node", "bun"],
+                    help="runtime for the JavaScript drivers (wasm, js-*)")
     ap.add_argument("--samples", type=int, default=5)
     ap.add_argument("--warmup", type=int, default=1)
     args = ap.parse_args()
@@ -472,6 +509,7 @@ def main() -> None:
         if m not in ("oneshot", "stream"):
             sys.exit(f"error: unknown mode '{m}'. Known: oneshot, stream")
 
+    os.environ["BENCH_JS_RUNTIME"] = args.js_runtime
     datasets = corpora.resolve(args.corpus)
     jobs = build_jobs(datasets, algos, levels, modes)
 
@@ -489,6 +527,8 @@ def main() -> None:
                       samples=args.samples, warmup=args.warmup, sweep=args.sweep)
     stamp = meta.timestamp.replace(":", "").replace("-", "")[:15]
     drivers_tag = "+".join(driver_keys)
+    if any(k == "wasm" or k.startswith("js-") for k in driver_keys):
+        drivers_tag += f"@{args.js_runtime}"
     corpus_tag = args.corpus.replace(",", "+")
     if len(drivers_tag) > 60:
         drivers_tag = f"{len(driver_keys)}drivers"

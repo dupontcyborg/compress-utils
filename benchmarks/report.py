@@ -83,9 +83,15 @@ def print_table(data: dict) -> None:
         if has_msgs:
             msg_cell = (f" {r['compress_ns_per_msg'] / 1e3:>9.2f} {r['decompress_ns_per_msg'] / 1e3:>9.2f}"
                         if r.get("messages") else f" {'':>9} {'':>9}")
+        # A decode-only library has no compress step: its input came from another
+        # library, so its compress time (0) and ratio say nothing about it.
+        ratio_cell = f"{'-':>7}" if r.get("decode_only") else f"{r['ratio']:>7.3f}"
+        cmbps_cell = f"{'-':>9}" if r.get("decode_only") else f"{r['compress_mbps']:>9.1f}"
+        if r.get("decode_only") and r.get("messages"):
+            msg_cell = f" {'-':>9} {r['decompress_ns_per_msg'] / 1e3:>9.2f}"
         print(
             f"  {r['input_id']:{iw}} {r['algo']:7} {lang_cell}{impl_cell}{mode_cell}{level_label(r):>3} "
-            f"{r['ratio']:>7.3f} {r['compress_mbps']:>9.1f} {r['decompress_mbps']:>9.1f}"
+            f"{ratio_cell} {cmbps_cell} {r['decompress_mbps']:>9.1f}"
             f"{msg_cell}  {ok:>2}"
         )
     print()
@@ -107,7 +113,9 @@ def make_plots(data: dict) -> None:
         return
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    recs = data["records"]
+    # Decode-only libraries have no compress time or ratio of their own; every chart
+    # here is a compress-side chart (ratio and/or compress speed), so leave them out.
+    recs = [r for r in data["records"] if not r.get("decode_only")]
     inputs = sorted({r["input_id"] for r in recs})
     algos = sorted({r["algo"] for r in recs})
     cmap = {a: c for a, c in zip(algos, plt.cm.tab10.colors)}
@@ -298,7 +306,7 @@ def regress(new: dict, base: dict) -> int:
     regressions = 0
     for r in sorted(new["records"], key=key):
         b = bidx.get(key(r))
-        if not b:
+        if not b or r.get("decode_only"):
             continue
 
         def pct(new_v, old_v):

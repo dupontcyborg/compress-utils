@@ -131,6 +131,10 @@ def decompress_mbps(rec: dict) -> float:
 def enrich(rec: dict) -> dict:
     """Attach derived fields to a raw driver record (non-destructive).
 
+    A record with decode_only (a library that can't compress) has compress_ns 0 and
+    an output size from another library: its compress_mbps is 0 and its ratio is not
+    its own. Anything comparing compress speed or ratio must skip those records.
+
     `impl` distinguishes our binding from an ecosystem baseline for the same
     (lang, algo) — e.g. "compress-utils" vs "node:zlib" vs "zstandard". A
     driver that benchmarks a native alternative sets it; ours defaults here so

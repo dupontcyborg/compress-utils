@@ -132,7 +132,8 @@ benchmarks/
   lib/
     bench_common.py  run metadata, result schema, throughput math
   deps/deps.py       fetch + build the alternative C libraries (benchmark-only)
-  size/size.py       binary size of each library (probe.c linked statically)
+  size/size.py       binary size of each C library (probe.c linked statically)
+  size/js_size.py    JS bundle size and cold start of each JS/WASM library
   levels.json        compress-utils level → each codec's native level
   check_levels.py    verifies levels.json against the library (via c-baseline)
   runner.py          builds a driver, runs the matrix, writes results
@@ -324,6 +325,34 @@ All Python drivers run `drivers/python/bench_py.py` on one interpreter: a Python
 | `python-lz4` | lz4 4.4.5 (`lz4.frame`) | lz4 |
 
 Competitors get native levels and are set to compress-utils' wire format where their API allows (zstd content size, LZ4 content size + checksum, xz CRC64). compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. The exact run behind the published numbers is in `docs/ecosystem-benchmarks.md`.
+
+### JavaScript: competitors
+
+`drivers/wasm/bench_wasm.mjs` benchmarks compress-utils' WASM package and the portable JavaScript/WASM libraries it competes with, on Node and on Bun (`--js-runtime node|bun`), so the same code is measured on V8 and on JavaScriptCore. Competitors are limited to what also runs in browsers, edge runtimes and Deno: pure JavaScript and WASM libraries, plus the two built-ins every server has (`node:zlib`, labelled Node-only because it is native code, and `CompressionStream`, the browser standard). Native Node addons are out. They install from `drivers/wasm/package.json` (pinned, `npm ci`) on first use. The runner uses the first `node` and `bun` on `PATH`; set `BENCH_NODE` / `BENCH_BUN` to pick a binary (the version is recorded in every result, and e.g. brotli in `CompressionStream` needs Node 24.7 or newer).
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `wasm` | compress-utils (WASM) | all |
+| `js-node-zlib` | `node:zlib` (native, Node-only) | zlib, gzip, deflate, brotli, zstd |
+| `js-compression-stream` | `CompressionStream` (stream-only, no levels) | zlib, gzip, deflate (brotli where supported) |
+| `js-fflate` | fflate 0.8.3 | zlib, gzip, deflate |
+| `js-pako` | pako 3.0.2 | zlib, gzip, deflate |
+| `js-brotli-wasm` | brotli-wasm 3.0.1 | brotli |
+| `js-zstd-wasm` | @bokuweb/zstd-wasm 0.0.27 (no streaming) | zstd |
+| `js-fzstd` | fzstd 0.1.1 (decode only) | zstd |
+| `js-xz-decompress` | xz-decompress 0.2.3 (decode only, stream-only) | xz |
+| `js-lz4js` | lz4js 0.2.0 (no levels, no streaming, frames without content size or checksum) | lz4 |
+| `js-snappyjs` | snappyjs 0.7.0 (no levels, no streaming) | snappy |
+
+Decode-only libraries get their input from another library, untimed, and records carry `decode_only: true` with compress timings of 0. Formats without levels run once per input, not once per level (`levelless` in `--info`). Message sets use each library's synchronous API (compress-utils' `compressSync`/`decompressSync` after `preload()`), and records carry `runtime`.
+
+Two Bun quirks the driver works around, both of which end a process silently with exit code 0: it exits if the entry module finishes evaluating while a WebAssembly compile is pending (hence a top-level `await main()`), and `process.stdin` (and `node:readline` over it) ends after two jobs while the parent still has the pipe open (hence reading fd 0 synchronously).
+
+`size/js_size.py` measures what each library costs a page: minified browser bundle size (JS plus any WASM binary, and the gzip of both) and cold start (a fresh process imports the library and does one 1 KB round trip; median of 5 minus an empty process; Node and Bun). Cold start is a few milliseconds and noisy; treat it as an order of magnitude.
+
+```sh
+python3 benchmarks/size/js_size.py
+```
 
 ### Binary size
 
