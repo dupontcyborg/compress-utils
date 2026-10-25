@@ -98,7 +98,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 ## Errors and limits
 
 ```go
-cu.Version()                              // e.g. "0.11.1"
+cu.Version()                              // e.g. "0.11.2"
 cu.SetMaxDecompressedSize(256 << 20)      // cap one-shot Decompress (default 1 GiB; 0 = unbounded)
 
 var e *cu.Error                           // errors carry the C status code

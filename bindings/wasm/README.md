@@ -146,7 +146,7 @@ try {
 }
 ```
 
-`await version()` returns the library version (for example `"0.11.1"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
+`await version()` returns the library version (for example `"0.11.2"`), and `await setMaxDecompressedSize(bytes)` bounds one-shot decompression (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression.
 
 ## Preloading and synchronous calls
 

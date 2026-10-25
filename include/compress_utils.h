@@ -64,7 +64,7 @@ extern "C" {
 
 #define CU_VERSION_MAJOR 0
 #define CU_VERSION_MINOR 11
-#define CU_VERSION_PATCH 1
+#define CU_VERSION_PATCH 2
 
 /* Returns a static string of the form "MAJOR.MINOR.PATCH". */
 CU_API const char* cu_version(void);
