@@ -7,7 +7,7 @@
 [![Code size](https://img.shields.io/github/languages/code-size/dupontcyborg/compress-utils)](https://github.com/dupontcyborg/compress-utils)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A unified, high-performance interface for eight compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, gzip** — exposed identically across multiple languages.
+A unified, high-performance interface for eight compression algorithms — **Zstandard, Brotli, zlib, bzip2, LZ4, XZ/LZMA, Snappy, gzip** — exposed identically across multiple languages and hardened for [untrusted input](#untrusted-input).
 
 ```
            ┌──────────────────────────────────────────┐
@@ -25,23 +25,33 @@ Your app → │  C / C++ / Go / JS / Python / TS / Rust  │
 ## Same API, every language
 
 ```python
-cu.compress(data, "zstd", level=5)                    # Python
+# Python
+import compress_utils as cu
+cu.compress(data, "zstd", level=5)
 ```
 
 ```ts
-await compress(data, { level: 5 })                    // JavaScript / TypeScript: import from "compress-utils/zstd"
+// JavaScript / TypeScript
+import { compress } from "compress-utils/zstd";
+await compress(data, { level: 5 });
 ```
 
 ```go
-cu.Compress(cu.Zstd, data, 5)                         // Go
+// Go
+import cu "github.com/dupontcyborg/compress-utils/bindings/go"
+cu.Compress(cu.Zstd, data, 5)
 ```
 
 ```rust
-compress(Algorithm::Zstd, data, 5)?                   // Rust
+// Rust
+use compress_utils::{compress, Algorithm};
+compress(Algorithm::Zstd, data, 5)?;
 ```
 
 ```cpp
-cu::compress(cu::Algorithm::Zstd, data, 5);           // C++
+// C++
+#include <compress_utils.hpp>
+cu::compress(cu::Algorithm::Zstd, data, 5);
 ```
 
 ## Supported languages
@@ -89,6 +99,20 @@ Raw block formats, for reading data from other tools:
 For reading data from other tools, three raw block formats are available (`deflate`, `lz4_raw` and `lzo`). Raw blocks don't record their decompressed size, so every binding's `decompress` accepts an output capacity. It's fastest to pass one. Without it, `lz4_raw` is decoded with the slower incremental stream decoder. Code from each codec is credited in [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md), and the license texts are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 All algorithms expose the same API surface and the same level scale (`1` fastest → `10` smallest). The library maps each user level to the algorithm's native range so you don't need to remember that ZSTD goes 1–22 and zlib goes 1–9.
+
+## Untrusted input
+
+Decompression is an attack surface: a few bytes can declare or expand to gigabytes, and a malformed stream can push a decoder into states nobody tested. compress-utils is built to be pointed at data you don't control:
+
+- **Output is capped for every format.** One-shot `decompress` refuses to produce more than 1 GiB by default, in every language, whether or not the format records its size. A size declared in a header is checked against the cap before anything is allocated. Change it with `set_max_decompressed_size` (`0` disables it).
+- **Streams take their own limit.** Streams are unlimited by default, since a stream may legitimately decode more than you'd hold in memory. When the input isn't yours, set one: `max_output` (Python), `set_max_output` (C++, Rust), `SetMaxOutput` (Go), `maxOutput` (JS/TS) or `cu_decompress_stream_set_max_output` (C).
+- **Decoder memory is bounded.** xz decoders refuse streams that need more than 256 MiB of memory, and zstd streams refuse windows over 128 MiB (zstd's default limit). The other decoders work in a fixed window of at most 16 MiB, plus any input you've written that they haven't consumed yet. The exception is Snappy, which holds one whole block and its output, up to the cap.
+- **Errors are final, and nothing loops forever.** Corrupt or truncated input returns an error. A stream that has failed keeps returning that error without calling into the codec again, since some upstream decoders can't safely resume from an error state. Every codec is tested to stop on garbage input.
+- **Only the format you asked for.** The xz decoder accepts `.xz` streams only. It never falls back to the legacy `.lzma` format, whose "unknown size" header lets garbage expand without bound.
+- **Fuzzed continuously.** A libFuzzer harness drives every decoder under AddressSanitizer and UndefinedBehaviorSanitizer, with the upstream codec sources instrumented along with our own: 3 minutes on every pull request and 30 minutes nightly. Every input that ever crashed, hung or tripped a sanitizer is kept in [`tests/fuzz/regressions`](tests/fuzz/regressions) and replayed by every build.
+- **Pinned, offline builds.** Upstream codec sources are vendored with content hashes and built without network access. A weekly job flags new upstream releases, including security fixes, for review.
+
+None of this makes a hostile input free: under the default cap, one call can still cost up to 1 GiB of memory and the CPU time to produce it. Set the cap, and stream limits, to what your application actually expects.
 
 ## Benchmarks
 
