@@ -100,13 +100,13 @@
     "check": "biome check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.9",
+    "@biomejs/biome": "2.6.3",
     "@playwright/test": "^1.60.0",
     "@types/node": "^26.2.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.5",
     "esbuild": "^0.28.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.6"
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=18"
