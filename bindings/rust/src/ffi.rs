@@ -91,6 +91,7 @@ extern "C" {
     ) -> c_int;
 
     pub fn cu_set_max_decompressed_size(bytes: usize);
+    pub fn cu_get_max_decompressed_size() -> usize;
 
     pub fn cu_compress_stream_create(
         algo: c_int,
@@ -138,6 +139,10 @@ extern "C" {
         algo: c_int,
         flags: u32,
         out_stream: *mut *mut cu_decompress_stream,
+    ) -> c_int;
+    pub fn cu_decompress_stream_set_max_output(
+        stream: *mut cu_decompress_stream,
+        bytes: usize,
     ) -> c_int;
     pub fn cu_decompress_stream_eof(stream: *const cu_decompress_stream) -> c_int;
     pub fn cu_decompress_stream_unused(

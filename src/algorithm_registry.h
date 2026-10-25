@@ -83,9 +83,6 @@ const cu_algorithm_vtbl_t* cu_registry_lookup(cu_algorithm_t algo);
 void cu_set_last_error(const char* msg);
 void cu_set_last_errorf(const char* fmt, ...);
 
-/* Internal cap used by one-shot decompression. */
-size_t cu_get_max_decompressed_size(void);
-
 #ifdef __cplusplus
 }
 #endif

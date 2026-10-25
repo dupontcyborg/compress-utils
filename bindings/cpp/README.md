@@ -122,6 +122,8 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 
 ## Errors and limits
 
+Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+
 Every failure throws `cu::Error` (derived from `std::runtime_error`). It carries the underlying C status code via `.code()`:
 
 ```cpp
@@ -136,8 +138,11 @@ try {
 std::string v  = cu::version();                    // e.g. "0.11.2"
 bool        ok = cu::is_available(cu::Algorithm::Zstd);
 
-// Bound one-shot decompression output (default 1 GiB; 0 = unbounded).
+// Cap cu::decompress for every algorithm (default 1 GiB; 0 = unbounded).
 cu::set_max_decompressed_size(256 * 1024 * 1024);
+
+// A DecompressStream has no limit unless set.
+ds.set_max_output(256 * 1024 * 1024);
 ```
 
 ## Concurrency

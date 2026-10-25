@@ -253,6 +253,8 @@ pub struct Decompressor<R: Read> {
     eof: bool,
     /// Single mode: the bytes read from `src` after the end of the stream.
     unused: Vec<u8>,
+    /// An error held back until the output decoded before it has been read.
+    pending: Option<io::Error>,
 }
 
 impl<R: Read> Decompressor<R> {
@@ -322,7 +324,19 @@ impl<R: Read> Decompressor<R> {
             single: flags & ffi::CU_DSTREAM_SINGLE != 0,
             eof: false,
             unused: Vec::new(),
+            pending: None,
         })
+    }
+
+    /// Limit the total decompressed output to `bytes` (`0`, the default, means
+    /// no limit). The `read` that would go past it returns the bytes up to the
+    /// limit, then an error with [`Status::SizeLimit`]; the decompressor is
+    /// done after that. Use it when decompressing untrusted input, which can
+    /// expand to far more than its own size.
+    pub fn set_max_output(&mut self, bytes: usize) {
+        // SAFETY: `stream` is a live handle owned by `self`; the call only
+        // stores the limit.
+        unsafe { ffi::cu_decompress_stream_set_max_output(self.stream, bytes) };
     }
 
     /// Single-stream mode: whether the end of the stream has been decoded.
@@ -502,13 +516,24 @@ impl<R: Read> From<IntoPartsError<R>> for io::Error {
 impl<R: Read> Read for Decompressor<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         while self.out_pos == self.out.len() {
+            if let Some(e) = self.pending.take() {
+                return Err(e);
+            }
             if self.finished {
                 return Ok(0);
             }
             // Reset the output accumulator between refills to bound memory.
             self.out.clear();
             self.out_pos = 0;
-            self.pump()?;
+            if let Err(e) = self.pump() {
+                if self.out.is_empty() {
+                    return Err(e);
+                }
+                // Hand back the output decoded before the error first (e.g.
+                // the bytes up to a set_max_output limit); the error follows
+                // on the next call.
+                self.pending = Some(e);
+            }
         }
         let n = std::cmp::min(buf.len(), self.out.len() - self.out_pos);
         buf[..n].copy_from_slice(&self.out[self.out_pos..self.out_pos + n]);

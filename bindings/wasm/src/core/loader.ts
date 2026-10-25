@@ -99,6 +99,8 @@ export interface WasmExports {
         flags: number,
         out_stream_pp: number,
     ) => number;
+    readonly cu_decompress_stream_set_max_output: (stream: number, bytes: number) => number;
+    readonly cu_get_max_decompressed_size: () => number;
     readonly cu_decompress_stream_eof: (stream: number) => number;
     readonly cu_decompress_stream_unused: (
         stream: number,

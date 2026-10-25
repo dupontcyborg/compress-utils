@@ -142,9 +142,10 @@ func Available(a Algorithm) bool {
 	return C.cu_algorithm_available(C.cu_algorithm_t(a)) != 0
 }
 
-// SetMaxDecompressedSize sets a global cap on the output size one-shot
-// Decompress will accept. Defaults to 1 GiB; 0 disables the cap. Does not
-// affect the streaming Reader, which is expected to enforce its own limit.
+// SetMaxDecompressedSize sets a global cap on the output size Decompress and
+// DecompressWithCapacity will accept, for every algorithm. Defaults to 1 GiB;
+// 0 disables the cap. A Reader has no limit unless set with
+// Reader.SetMaxOutput.
 func SetMaxDecompressedSize(bytes uint64) {
 	C.cu_set_max_decompressed_size(C.size_t(bytes))
 }
@@ -183,14 +184,19 @@ func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 		return out, nil
 	}
 
-	// Wire format does not carry the size (zlib, gzip, brotli, bz2, raw LZ4):
-	// stream-decompress the whole buffer.
+	// Wire format does not carry the size (zlib, gzip, brotli, bz2, xz, raw
+	// LZ4): stream-decompress the whole buffer, bounded by the same cap as the
+	// one-shot path.
 	r, err := NewReader(bytes.NewReader(data), algo)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+	r.SetMaxOutput(uint64(C.cu_get_max_decompressed_size()))
+	if out, err = io.ReadAll(r); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // DecompressWithCapacity decompresses data into at most capacity bytes. The

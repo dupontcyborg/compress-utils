@@ -12,7 +12,9 @@
  *   6 -> raw LZO1X, 7 -> gzip, 8 -> raw DEFLATE, 9 -> snappy, 10 -> raw LZ4.
  * The second selects how the stream is driven: bit 0 single-stream mode
  * (CU_DSTREAM_SINGLE; codecs without it fall back to the default mode),
- * bits 1-2 the output buffer size, bits 3-4 the input chunk size.
+ * bits 1-2 the output buffer size, bits 3-4 the input chunk size, bit 5 a
+ * stream output limit (cu_decompress_stream_set_max_output) of 4-32 KiB
+ * chosen by bits 6-7.
  *
  * The harness must not crash, leak, or trigger ASan/UBSan on any input.
  * It is allowed to return any cu_status_t value, but it aborts if a decoder
@@ -20,7 +22,8 @@
  * producing output, the xz decompression-bomb class), and in single-stream
  * mode if the decoder breaks that mode's contract: eof while output is still
  * draining, unused bytes that aren't the tail of the input fed, or a write
- * after eof that isn't rejected.
+ * after eof that isn't rejected. With a stream output limit, it aborts if the
+ * stream delivers more than the limit.
  *
  * Build artifact: fuzz_decompress. Run with:
  *   ./fuzz_decompress -max_total_time=60 corpus/ seeds/
@@ -58,6 +61,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     int single = data[1] & 1;
     size_t out_cap_stream = OUT_CAPS[(data[1] >> 1) & 3];
     size_t chunk_max = CHUNKS[(data[1] >> 3) & 3];
+    size_t limit = (data[1] & 0x20) ? (size_t)4096 << ((data[1] >> 6) & 3) : 0;
     const uint8_t* payload = data + 2;
     size_t payload_len = size - 2;
 
@@ -88,6 +92,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         ds = NULL;
     }
     if (ds || cu_decompress_stream_create(algo, &ds) == CU_OK) {
+        REQUIRE(cu_decompress_stream_set_max_output(ds, limit) == CU_OK);
         uint8_t scratch[4096];
         size_t pos = 0, produced = 0;
         int eof = 0, stalls = 0;
@@ -144,6 +149,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             stalls = scratch_len ? 0 : stalls + 1;
             REQUIRE(stalls < MAX_STALLS);
         }
+        if (limit) REQUIRE(produced <= limit);
         cu_decompress_stream_destroy(ds);
     }
 

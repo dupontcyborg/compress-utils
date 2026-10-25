@@ -277,6 +277,13 @@ public:
         });
     }
 
+    /* Limits the total decompressed output to `bytes` (0 = no limit, the
+     * default). The write() or finish() that would go past it throws cu::Error
+     * with CU_ERR_SIZE_LIMIT, and the stream is dead after that. */
+    void set_max_output(std::size_t bytes) {
+        detail::check(cu_decompress_stream_set_max_output(stream_, bytes));
+    }
+
     /* StreamMode::Single: the end of the stream has been decoded and all of its
      * output returned. After that, write() with data throws cu::Error
      * (CU_ERR_STREAM_FINISHED) without consuming it; an empty write() and
@@ -337,8 +344,10 @@ inline std::vector<std::uint8_t> decompress(
     }
     if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
 
-    // Unknown size (zlib, gzip, brotli, bz2, raw LZ4): stream-decompress.
+    // Unknown size (zlib, gzip, brotli, bz2, xz, raw LZ4): stream-decompress,
+    // bounded by the same cap as the one-shot path.
     DecompressStream ds(a);
+    ds.set_max_output(cu_get_max_decompressed_size());
     auto first = ds.write(in);
     auto last  = ds.finish();
     first.insert(first.end(), last.begin(), last.end());
