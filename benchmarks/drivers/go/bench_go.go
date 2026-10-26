@@ -1,18 +1,25 @@
-// Go benchmark driver.
+// Go benchmark driver, for compress-utils and for the Go libraries it competes with.
 //
 // Speaks the shared benchmark driver protocol (see benchmarks/README.md): reads
 // "<algo> <level> [<mode>] <path>" job lines from stdin (mode: oneshot, stream or
-// msgset), emits one NDJSON result
-// (or skip/error marker) per line, honours BENCH_SAMPLES / BENCH_WARMUP /
-// BENCH_CHUNK, and answers `--info`.
+// msgset), emits one NDJSON result (or skip/error marker) per line, honours
+// BENCH_SAMPLES / BENCH_WARMUP / BENCH_CHUNK, and answers `--info`.
 //
-// Drives the compress-utils Go binding (bindings/go) the way a consumer would:
-// Compress/Decompress for one-shot, NewWriter/NewReader for streaming. A message
-// set (benchmarks/corpus/msgset.py) runs one Compress call per message and
-// decompresses each with DecompressWithCapacity, its fastest path when the size
-// is known. The
-// binding compiles the C core from source via cgo, so this is the same codec
-// code the other drivers measure — only the language wrapper differs.
+// `--impl` picks the implementation (default compress-utils); every one goes through
+// the same timing loop, as a consumer would call it (impls.go):
+//
+//	oneshot  compress, then decompress without being told the size
+//	msgset   one compress call per message, each decompressed with its known size
+//	         through the library's fastest path for that
+//	stream   the input fed in BENCH_CHUNK pieces through the library's streaming API;
+//	         skipped when it has none
+//
+// Competitors run at native levels (the runner translates through levels.json, or
+// sweeps the range each codec declares) and are set to compress-utils' wire format
+// where their API allows. Each competitor's output is also decoded by compress-utils
+// once per job, untimed, and the record carries the result as `interop`. compress-utils
+// compiles its C core from source via cgo, so it runs the same codec code as the other
+// drivers; only the language wrapper differs.
 package main
 
 import (
@@ -21,9 +28,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
-	"io"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +67,20 @@ var (
 	chunk   = envInt("BENCH_CHUNK", 64*1024)
 )
 
+func goVersion() string { return runtime.Version() }
+
+// modVersion is the version of a dependency, as linked into this binary.
+func modVersion(path string) string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, d := range bi.Deps {
+			if d.Path == path {
+				return d.Version
+			}
+		}
+	}
+	return "unknown"
+}
+
 type stats struct{ median, mad, min int64 }
 
 func computeStats(xs []int64) stats {
@@ -84,114 +107,93 @@ func computeStats(xs []int64) stats {
 	return stats{median: m, mad: med(dev), min: s[0]}
 }
 
-func compress(algo cu.Algorithm, data []byte, level int, isStream bool) ([]byte, error) {
-	if !isStream {
-		return cu.Compress(algo, data, level)
-	}
-	var buf bytes.Buffer
-	w, err := cu.NewWriter(&buf, algo, level)
-	if err != nil {
-		return nil, err
-	}
-	for off := 0; off < len(data); off += chunk {
-		end := off + chunk
-		if end > len(data) {
-			end = len(data)
+// timed runs fn warmup+samples times and returns the last result and the timed runs.
+func timed[T any](fn func() (T, error)) (T, []int64, error) {
+	var out T
+	var err error
+	times := make([]int64, 0, samples)
+	for r := 0; r < warmup+samples; r++ {
+		t0 := time.Now()
+		if out, err = fn(); err != nil {
+			return out, nil, err
 		}
-		if _, err := w.Write(data[off:end]); err != nil {
-			w.Close()
-			return nil, err
+		if r >= warmup {
+			times = append(times, time.Since(t0).Nanoseconds())
 		}
 	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return out, times, nil
 }
 
-func decompress(algo cu.Algorithm, comp []byte, isStream bool) ([]byte, error) {
-	if !isStream {
-		return cu.Decompress(algo, comp)
-	}
-	r, err := cu.NewReader(bytes.NewReader(comp), algo)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Close()
-	return io.ReadAll(r)
+type job struct {
+	implName string
+	algoName string
+	codec    Codec
+	level    int
 }
 
-func runJob(algoName string, level int, isStream bool, path string) (map[string]any, error) {
-	algo, ok := algos[algoName]
-	if !ok {
-		return nil, fmt.Errorf("unknown algo %q", algoName)
+func (j job) record(mode, path string, inBytes, outBytes int, cT, dT []int64, verified bool,
+	comp0, data0 []byte, extra map[string]any) map[string]any {
+	c, d := computeStats(cT), computeStats(dT)
+	chunkBytes := 0
+	if mode == "stream" {
+		chunkBytes = chunk
 	}
+	rec := map[string]any{
+		"lang": "go", "impl": j.implName, "algo": j.algoName, "level": j.level, "mode": mode,
+		"chunk_bytes": chunkBytes, "input": path, "input_bytes": inBytes, "output_bytes": outBytes,
+		"compress_ns_median": c.median, "compress_ns_mad": c.mad, "compress_ns_min": c.min,
+		"decompress_ns_median": d.median, "decompress_ns_mad": d.mad, "decompress_ns_min": d.min,
+		"samples": samples, "warmup": warmup, "verified": verified,
+	}
+	for k, v := range extra {
+		rec[k] = v
+	}
+	if j.implName != "compress-utils" && comp0 != nil {
+		out, err := cu.Decompress(algos[j.algoName], comp0)
+		rec["interop"] = err == nil && bytes.Equal(out, data0)
+	}
+	if j.codec.Compress == nil {
+		rec["decode_only"] = true
+	}
+	return rec
+}
+
+func (j job) run(mode, path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	stream := mode == "stream"
 
 	var comp []byte
-	for i := 0; i < warmup; i++ {
-		if comp, err = compress(algo, data, level, isStream); err != nil {
-			return nil, err
-		}
-	}
 	cT := make([]int64, samples)
-	for i := 0; i < samples; i++ {
-		t0 := time.Now()
-		if comp, err = compress(algo, data, level, isStream); err != nil {
+	if j.codec.Compress == nil {
+		// Decode-only library: its input comes from compress-utils, untimed.
+		if comp, err = cu.Compress(algos[j.algoName], data, 9); err != nil {
 			return nil, err
 		}
-		cT[i] = time.Since(t0).Nanoseconds()
-	}
-
-	var dec []byte
-	for i := 0; i < warmup; i++ {
-		if dec, err = decompress(algo, comp, isStream); err != nil {
+	} else {
+		enc := j.codec.Compress
+		if stream {
+			enc = j.codec.CStream
+		}
+		if comp, cT, err = timed(func() ([]byte, error) { return enc(data, j.level) }); err != nil {
 			return nil, err
 		}
 	}
-	dT := make([]int64, samples)
-	for i := 0; i < samples; i++ {
-		t0 := time.Now()
-		if dec, err = decompress(algo, comp, isStream); err != nil {
-			return nil, err
-		}
-		dT[i] = time.Since(t0).Nanoseconds()
+	dec := func() ([]byte, error) { return j.codec.Decompress(comp, -1) }
+	if stream {
+		dec = func() ([]byte, error) { return j.codec.DStream(comp) }
 	}
-
-	c, d := computeStats(cT), computeStats(dT)
-	mode := "oneshot"
-	chunkBytes := 0
-	if isStream {
-		mode = "stream"
-		chunkBytes = chunk
+	out, dT, err := timed(dec)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]any{
-		"lang":                 "go",
-		"impl":                 "compress-utils",
-		"algo":                 algoName,
-		"level":                level,
-		"mode":                 mode,
-		"chunk_bytes":          chunkBytes,
-		"input":                path,
-		"input_bytes":          len(data),
-		"output_bytes":         len(comp),
-		"compress_ns_median":   c.median,
-		"compress_ns_mad":      c.mad,
-		"compress_ns_min":      c.min,
-		"decompress_ns_median": d.median,
-		"decompress_ns_mad":    d.mad,
-		"decompress_ns_min":    d.min,
-		"samples":              samples,
-		"warmup":               warmup,
-		"verified":             bytes.Equal(dec, data),
-	}, nil
+	return j.record(mode, path, len(data), len(comp), cT, dT, bytes.Equal(out, data), comp, data, nil), nil
 }
 
-// readMsgset reads a message set: records of a u32 little-endian length
-// followed by that many bytes.
+// readMsgset reads a message set: records of a u32 little-endian length followed by
+// that many bytes.
 func readMsgset(path string) ([][]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -213,72 +215,60 @@ func readMsgset(path string) ([][]byte, error) {
 	return msgs, nil
 }
 
-func runMsgsetJob(algoName string, level int, path string) (map[string]any, error) {
-	algo := algos[algoName]
+func (j job) runMsgset(path string) (map[string]any, error) {
 	msgs, err := readMsgset(path)
 	if err != nil {
 		return nil, err
 	}
-
 	comp := make([][]byte, len(msgs))
-	cT := make([]int64, 0, samples)
-	for r := 0; r < warmup+samples; r++ {
-		t0 := time.Now()
+	cT := make([]int64, samples)
+	if j.codec.Compress == nil {
 		for i, m := range msgs {
-			if comp[i], err = cu.Compress(algo, m, level); err != nil {
+			if comp[i], err = cu.Compress(algos[j.algoName], m, 9); err != nil {
 				return nil, err
 			}
 		}
-		if r >= warmup {
-			cT = append(cT, time.Since(t0).Nanoseconds())
+	} else {
+		_, cT, err = timed(func() (struct{}, error) {
+			for i, m := range msgs {
+				c, err := j.codec.Compress(m, j.level)
+				if err != nil {
+					return struct{}{}, err
+				}
+				comp[i] = c
+			}
+			return struct{}{}, nil
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
-
-	dT := make([]int64, 0, samples)
-	for r := 0; r < warmup+samples; r++ {
-		t0 := time.Now()
+	_, dT, err := timed(func() (struct{}, error) {
 		for i, m := range msgs {
-			if _, err = cu.DecompressWithCapacity(algo, comp[i], len(m)); err != nil {
-				return nil, err
+			if _, err := j.codec.Decompress(comp[i], len(m)); err != nil {
+				return struct{}{}, err
 			}
 		}
-		if r >= warmup {
-			dT = append(dT, time.Since(t0).Nanoseconds())
-		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	verified := true
 	inBytes, outBytes := 0, 0
 	for i, m := range msgs {
-		dec, err := cu.DecompressWithCapacity(algo, comp[i], len(m))
+		dec, err := j.codec.Decompress(comp[i], len(m))
 		verified = verified && err == nil && bytes.Equal(dec, m)
 		inBytes += len(m)
 		outBytes += len(comp[i])
 	}
-
-	c, d := computeStats(cT), computeStats(dT)
-	return map[string]any{
-		"lang":                  "go",
-		"impl":                  "compress-utils",
-		"algo":                  algoName,
-		"level":                 level,
-		"mode":                  "msgset",
-		"chunk_bytes":           0,
-		"input":                 path,
-		"input_bytes":           inBytes,
-		"output_bytes":          outBytes,
-		"messages":              len(msgs),
-		"decompress_size_known": true,
-		"compress_ns_median":    c.median,
-		"compress_ns_mad":       c.mad,
-		"compress_ns_min":       c.min,
-		"decompress_ns_median":  d.median,
-		"decompress_ns_mad":     d.mad,
-		"decompress_ns_min":     d.min,
-		"samples":               samples,
-		"warmup":                warmup,
-		"verified":              verified,
-	}, nil
+	var c0, d0 []byte
+	if len(msgs) > 0 {
+		c0, d0 = comp[0], msgs[0]
+	}
+	return j.record("msgset", path, inBytes, outBytes, cT, dT, verified, c0, d0,
+		map[string]any{"messages": len(msgs), "decompress_size_known": true}), nil
 }
 
 func emit(obj map[string]any) {
@@ -287,8 +277,33 @@ func emit(obj map[string]any) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--info" {
-		emit(map[string]any{"lang": "go", "version": cu.Version(), "driver": "go"})
+	implName := flag.String("impl", "compress-utils", "implementation: "+strings.Join(implNames, ", "))
+	info := flag.Bool("info", false, "print driver info and exit")
+	flag.Parse()
+	im, ok := loadImpl(*implName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "bench-go: unknown impl %q\n", *implName)
+		os.Exit(2)
+	}
+
+	if *info {
+		levels := map[string][2]int{}
+		var levelless []string
+		for a, c := range im.codecs {
+			if c.Levels != nil {
+				levels[a] = *c.Levels
+			}
+			if c.Levelless {
+				levelless = append(levelless, a)
+			}
+		}
+		sort.Strings(levelless)
+		driver := "go"
+		if *implName != "compress-utils" {
+			driver = "go-" + *implName
+		}
+		emit(map[string]any{"lang": "go", "version": im.version, "driver": driver, "impl": *implName,
+			"levels": levels, "levelless": levelless})
 		return
 	}
 
@@ -315,7 +330,8 @@ func main() {
 		}
 		path := strings.TrimSpace(rest)
 
-		if _, ok := algos[algoName]; !ok {
+		codec, ok := im.codecs[algoName]
+		if !ok || (mode == "stream" && (codec.DStream == nil || (codec.CStream == nil && codec.Compress != nil))) {
 			emit(map[string]any{"skipped": true})
 			continue
 		}
@@ -324,14 +340,15 @@ func main() {
 			emit(map[string]any{"error": true})
 			continue
 		}
+		j := job{implName: *implName, algoName: algoName, codec: codec, level: level}
 		var rec map[string]any
 		if mode == "msgset" {
-			rec, err = runMsgsetJob(algoName, level, path)
+			rec, err = j.runMsgset(path)
 		} else {
-			rec, err = runJob(algoName, level, mode == "stream", path)
+			rec, err = j.run(mode, path)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "bench-go: %s L%d %s failed: %v\n", algoName, level, mode, err)
+			fmt.Fprintf(os.Stderr, "bench-go[%s]: %s L%d %s failed: %v\n", *implName, algoName, level, mode, err)
 			emit(map[string]any{"error": true})
 			continue
 		}

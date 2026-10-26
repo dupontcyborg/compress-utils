@@ -230,29 +230,38 @@ def build_python(impl: str = "compress-utils") -> list[str]:
     return [str(python_env()), str(PY_DIR / "bench_py.py"), "--impl", impl]
 
 
-def build_go() -> list[str]:
-    """The Go driver is `go build`-compiled from the binding, which compiles the
-    C core from source via cgo — so no prebuilt library is needed, only a C
-    toolchain and the Go tool. The compiled binary is cached and reused."""
-    src = bc.BENCH_ROOT / "drivers" / "go" / "bench_go.go"
-    out = bc.BENCH_ROOT / "drivers" / "go" / "bench_go"
-    if not (out.exists() and out.stat().st_mtime >= src.stat().st_mtime):
-        print(f"[runner] compiling {out.name} (cgo build of the Go binding; first run is slow)")
-        subprocess.run(["go", "build", "-o", str(out), str(src)],
-                       cwd=str(bc.REPO_ROOT), check=True)
-    return [str(out)]
+GO_DIR = bc.BENCH_ROOT / "drivers" / "go"
+GO_IMPLS = ["stdlib", "klauspost", "brotli", "lz4", "xz", "bzip2"]
 
 
-def build_rust() -> list[str]:
+def build_go(impl: str = "compress-utils") -> list[str]:
+    """The Go driver (drivers/go, its own module, so the competitors stay out of the
+    root go.mod) is `go build`-compiled; its replace directive builds the binding from
+    this checkout, C core included, via cgo. The binary is cached; `go build` does
+    its own staleness tracking, so this always shells out."""
+    out = GO_DIR / "bench_go"
+    print("[runner] go build in drivers/go (first run is slow: cgo compiles the C core)")
+    subprocess.run(["go", "build", "-o", str(out), "."], cwd=str(GO_DIR), check=True)
+    return [str(out), "--impl", impl]
+
+
+RUST_DIR = bc.BENCH_ROOT / "drivers" / "rust"
+RUST_IMPLS = ["flate2", "flate2-zlib-rs", "zstd", "brotli", "lz4_flex", "snap", "bzip2", "xz2"]
+
+
+def build_rust(impl: str = "compress-utils") -> list[str]:
     """The Rust driver is a sibling crate (benchmarks/drivers/rust) with a path
-    dependency on the binding, so it never touches the published manifest. Like
-    Go it compiles the C core from source — only cargo and a C toolchain are
-    needed. Cargo does its own staleness tracking, so this always shells out."""
-    crate = bc.BENCH_ROOT / "drivers" / "rust"
-    out = crate / "target" / "release" / "bench_rust"
-    print(f"[runner] cargo build --release in {crate.name} (first run is slow)")
-    subprocess.run(["cargo", "build", "--release"], cwd=str(crate), check=True)
-    return [str(out)]
+    dependency on the binding, so it never touches the published manifest, and the
+    competitor crates are its own dependencies. Like Go it compiles the C core from
+    source; only cargo and a C toolchain are needed. Cargo does its own staleness
+    tracking, so this always shells out."""
+    print(f"[runner] cargo build --release in {RUST_DIR.name} (first run is slow)")
+    # flate2's backend is a build-time choice, so zlib-rs is its own binary.
+    target, extra = ("target-zlib-rs", ["--features", "zlib-rs"]) if impl == "flate2-zlib-rs" \
+        else ("target", [])
+    subprocess.run(["cargo", "build", "--release", "--target-dir", target, *extra],
+                   cwd=str(RUST_DIR), check=True)
+    return [str(RUST_DIR / target / "release" / "bench_rust"), "--impl", impl]
 
 
 # The alternative C libraries, one driver each: "c-zlib-ng", "c-libdeflate", ...
@@ -261,6 +270,10 @@ ALT_DRIVERS = {f"c-{name}": (lambda name=name: build_c_alt(name))
 # Python competitors, one driver each: "python-cramjam", "python-stdlib", ...
 PY_DRIVERS = {f"python-{impl}": (lambda impl=impl: build_python(impl))
               for impl in ("cramjam", "stdlib", "zstandard", "brotli", "lz4")}
+
+# Go and Rust competitors: "go-klauspost", "rust-flate2", ...
+GO_DRIVERS = {f"go-{impl}": (lambda impl=impl: build_go(impl)) for impl in GO_IMPLS}
+RUST_DRIVERS = {f"rust-{impl}": (lambda impl=impl: build_rust(impl)) for impl in RUST_IMPLS}
 
 # JavaScript competitors: "js-fflate", "js-pako", ...
 JS_DRIVERS = {f"js-{impl}": (lambda impl=impl: build_js(impl)) for impl in JS_IMPLS}
@@ -274,7 +287,8 @@ ALT_DRIVERS["c-liblzma-fitdict"] = lambda: build_c_vendored_variant(
 
 # Drivers for native libraries take native levels: the runner translates each
 # job's compress-utils level through levels.json before sending it.
-NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS, *PY_DRIVERS, *JS_DRIVERS}
+NATIVE_LEVEL_DRIVERS = {"c-baseline", *ALT_DRIVERS, *PY_DRIVERS, *JS_DRIVERS, *GO_DRIVERS,
+                        *RUST_DRIVERS}
 
 DRIVERS = {
     "c": build_c,
@@ -286,6 +300,8 @@ DRIVERS = {
     **ALT_DRIVERS,
     **PY_DRIVERS,
     **JS_DRIVERS,
+    **GO_DRIVERS,
+    **RUST_DRIVERS,
 }
 
 
