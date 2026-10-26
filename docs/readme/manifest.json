@@ -44,7 +44,7 @@
       "spelling": {"c": "CU_ALGO_XZ (alias CU_ALGO_LZMA)", "cpp": "cu::Algorithm::Xz (alias Lzma)", "go": "cu.Xz (alias Lzma)", "python": "\"xz\" (also \"lzma\")", "rust": "Algorithm::Xz (alias Lzma)", "wasm": "compress-utils/xz"}
     },
     {
-      "id": "SNAPPY", "name": "Snappy", "url": "https://github.com/andikleen/snappy-c", "kind": "core",
+      "id": "SNAPPY", "name": "Snappy", "url": "https://github.com/google/snappy", "kind": "core",
       "strength": "Very high speed, low ratio",
       "wire": "Raw Snappy block (interoperable with reference snappy and python-snappy)",
       "spelling": {"c": "CU_ALGO_SNAPPY", "cpp": "cu::Algorithm::Snappy", "go": "cu.Snappy", "python": "\"snappy\"", "rust": "Algorithm::Snappy", "wasm": "compress-utils/snappy"}

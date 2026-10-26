@@ -11,7 +11,7 @@ package compressutils
 //
 // Runtime link flags only (kept here, not generated, because they are platform
 // runtime deps rather than manifest-derived). The library is pure C now — snappy
-// switched from google/snappy (C++) to the andikleen C port, so NO C++ standard
+// is our own C core (it once was google/snappy, C++), so NO C++ standard
 // library is needed. The only remaining dep is libm on glibc (brotli/xz/zlib
 // pull log2/pow/etc.); macOS bundles it in libSystem and Windows in the CRT.
 #cgo linux LDFLAGS: -lm

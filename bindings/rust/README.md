@@ -16,7 +16,7 @@ compress-utils = { git = "https://github.com/dupontcyborg/compress-utils" }
 
 The crate compiles the bundled C sources from source with the `cc` crate, with no prebuilt library and no network beyond the crate fetch, so it works offline and on docs.rs. You need only a **C/C++ compiler** (`gcc`, `clang` or MSVC). The first build compiles the codecs and is then cached by Cargo.
 
-The crate is pure C: every codec, including Snappy (the C `andikleen/snappy-c` port), compiles to C, so there is no `libc++` or `libstdc++` runtime dependency. Windows is supported by the C core, and the crate's source build works with MSVC.
+The crate is pure C: every codec, including Snappy (our own C implementation), compiles to C, so there is no `libc++` or `libstdc++` runtime dependency. Windows is supported by the C core, and the crate's source build works with MSVC.
 
 ## Quick start
 

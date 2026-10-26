@@ -105,13 +105,7 @@ ignore it.
 
 ### If the upstream is C++
 
-**Strongly prefer a pure-C implementation if a faithful one exists.** A single
-C++ codec forces a `libc++`/`libstdc++` runtime dependency onto *every* binding
-(native, Rust, Go, WASM) and breaks fully-static / musl / distroless builds —
-a disproportionate cost for one codec. Snappy is the precedent: it originally
-used google/snappy (C++) and was deliberately switched to the pure-C port
-`andikleen/snappy-c` (2026-07) to keep the whole library C. The C++ reference is
-kept only as a test oracle (`third_party/snappy-oracle`, `tests/test_snappy_oracle`).
+**Strongly prefer a pure-C implementation if a faithful one exists.** A single C++ codec forces a `libc++`/`libstdc++` runtime dependency onto *every* binding (native, Rust, Go, WASM) and breaks fully-static / musl / distroless builds — a disproportionate cost for one codec. Snappy is the precedent: it originally used google/snappy (C++), was deliberately switched to the pure-C port `andikleen/snappy-c` (2026-07) to keep the whole library C, and now runs our own first-party C implementation (`src/algorithms/snappy/core`) because the port was too slow. The C++ reference is kept only as a test oracle (`third_party/snappy-oracle`, `tests/test_snappy_oracle`, `tests/test_snappy_core_diff`).
 
 If you genuinely must ship a C++ upstream, the static archive references the C++
 runtime and our C driver won't pull it in automatically, so:
