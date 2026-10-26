@@ -339,11 +339,12 @@ static cu_status_t sn_scan(snappy_stream_state_t* st, size_t* end) {
     while (st->counted < st->declared && pos < n) {
         uint8_t tag = p[pos];
         uint64_t len, size;
+        /* A literal's length may sit in 1-4 bytes after the tag; wait for them. */
+        unsigned code = tag >> 2;
+        unsigned extra = (tag & 3) == 0 && code >= 60 ? code - 59 : 0;
+        if (n - pos - 1 < extra) break;
         switch (tag & 3) {
             case 0: {  /* literal: length in the tag, or in 1-4 following bytes */
-                unsigned code = tag >> 2;
-                unsigned extra = code < 60 ? 0 : code - 59;
-                if (n - pos - 1 < extra) goto more;
                 uint64_t l = code;
                 if (extra) {
                     l = 0;
@@ -365,7 +366,6 @@ static cu_status_t sn_scan(snappy_stream_state_t* st, size_t* end) {
         pos += (size_t)size;
         st->counted += len;
     }
-more:
     st->scan_pos = pos;
     if (st->counted == st->declared) *end = pos;
     return CU_OK;
