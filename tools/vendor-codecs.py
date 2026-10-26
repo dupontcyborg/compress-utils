@@ -38,6 +38,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -99,15 +100,21 @@ SPECS: dict[str, dict] = {
         "cxx": False,
     },
     "zlib": {
+        # zlib-ng, built in zlib-compat mode (ZLIB_COMPAT) so the deflate
+        # backend keeps calling the classic zlib API. Upstream needs CMake to
+        # generate its headers, pick per-arch sources, and pass per-file SIMD
+        # flags; zlib_ng_finish() replaces that (see its docstring). Every
+        # source the manifest lists is a generated wrapper under cu/.
         "root": "",
-        "source_dirs": ["."],
-        # zlib ships CLI/example sources under test/, never at the root, so the
-        # top-level *.c glob is exactly the library set.
-        "source_excludes": [],
-        "header_dirs": ["."],
+        "source_dirs": [".", "arch/generic", "arch/x86", "arch/arm"],
+        # gz* (file API) and infback are unused by compress-utils;
+        # slide_hash_armv6 is 32-bit ARM only (we enable SIMD on AArch64 only).
+        "source_excludes": ["gz*.c", "gz*.h", "infback.c", "slide_hash_armv6.c"],
+        "header_dirs": [".", "arch/generic", "arch/x86", "arch/arm"],
         "include_dirs": ["."],
         "defines": [],
         "cxx": False,
+        "zlib_ng": True,
     },
     "bz2": {
         "root": "",
@@ -197,7 +204,7 @@ SPECS: dict[str, dict] = {
 # Hand-authored, portable config headers committed by hand. Never fetched or
 # overwritten by this tool; they replace the upstream configure step.
 CONFIG_FILES = {
-    "zlib": ["zconf.h"],
+    "zlib": ["cu_zng_config.h"],
     # bz2 (1.0.8) needs no generated config — its version string is inline in
     # bzlib.c, so there is nothing to hand-author.
 }
@@ -268,7 +275,8 @@ def iter_curated(src_root: Path, spec: dict):
         base = root / d
         for pat in ("*.h", "*.inc"):
             for p in sorted(base.glob(pat)):
-                yield p, p.relative_to(root)
+                if not excluded(p.name):
+                    yield p, p.relative_to(root)
     # headers from directories, recursive (for public include trees whose every
     # child is wanted, e.g. brotli c/include, xz src/liblzma/api)
     for d in spec.get("header_dirs_rec", []):
@@ -293,6 +301,123 @@ def sha256_tree(dest: Path, files: list[Path]) -> str:
         h.update(str(rel).encode())
         h.update((dest / rel).read_bytes())
     return h.hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# zlib-ng: replaces upstream's CMake/configure step.
+#
+#   * zlib.h / zconf.h / zlib_name_mangling.h are upstream's templates with the
+#     (empty) symbol-prefix substituted — what CMake's configure_file() does for
+#     a ZLIB_COMPAT build with no ZLIB_SYMBOL_PREFIX — plus one portability
+#     patch in zconf.h (compile-time <unistd.h> detection, as before).
+#   * Every source is compiled through a generated wrapper cu/<flat>.c whose
+#     first line includes the hand-authored cu_zng_config.h (so upstream's
+#     zbuild.h sees its config macros) and, for x86 SIMD units, opens a
+#     compiler target pragma (upstream enables the ISA with per-file -m flags,
+#     which cgo / cc-rs / the manifest cannot express). The wrappers are
+#     arch-independent: on a target that lacks the ISA the upstream file is
+#     already #ifdef'd to nothing, so one source list serves every binding.
+# ---------------------------------------------------------------------------
+
+# x86 unit -> target string for the GCC/Clang pragma; None = baseline x86-64.
+# Mirrors the per-group flags in upstream's CMakeLists.txt / detect-intrinsics.
+_AVX512 = "avx512f,avx512dq,avx512bw,avx512vl,bmi2"
+ZNG_X86_TARGETS = {
+    "x86_features.c": "xsave",
+    "chunkset_sse2.c": None, "chorba_sse2.c": None,
+    "compare256_sse2.c": None, "slide_hash_sse2.c": None,
+    "adler32_ssse3.c": "ssse3", "chunkset_ssse3.c": "ssse3",
+    "chorba_sse41.c": "sse4.1",
+    "adler32_sse42.c": "sse4.2",
+    "crc32_pclmulqdq.c": "sse4.2,pclmul",
+    "slide_hash_avx2.c": "avx2,bmi2", "chunkset_avx2.c": "avx2,bmi2",
+    "compare256_avx2.c": "avx2,bmi2", "adler32_avx2.c": "avx2,bmi2",
+    "adler32_avx512.c": _AVX512, "chunkset_avx512.c": _AVX512,
+    "compare256_avx512.c": _AVX512,
+    "adler32_avx512_vnni.c": _AVX512 + ",avx512vnni",
+    "crc32_vpclmulqdq.c": "pclmul,vpclmulqdq," + _AVX512,
+}
+
+ZNG_UNISTD_PATCH = (
+    "#if defined(__has_include)\n"
+    "#  if __has_include(<unistd.h>)\n"
+    "#    define HAVE_UNISTD_H 1\n"
+    "#  endif\n"
+    "#elif !defined(_WIN32)\n"
+    "#  define HAVE_UNISTD_H 1\n"
+    "#endif\n"
+    "/* ^ compress-utils: compile-time <unistd.h> detection (replaces upstream's\n"
+    " * configure-time #define) so one header is correct on MSVC and POSIX. */\n"
+)
+
+
+def zng_wrapper(rel: Path) -> str:
+    """Wrapper TU for one upstream source (rel is relative to the codec root).
+    Arch units are included only when cu_zng_config.h enabled that arch: some
+    upstream files #include <immintrin.h> before their own #ifdef."""
+    head = ('/* Code generated by tools/vendor-codecs.py. DO NOT EDIT. */\n'
+            '#include "../cu_zng_config.h"\n')
+    inc = f'#include "../{rel.as_posix()}"\n'
+    if rel.parts[:2] == ("arch", "arm"):
+        return head + f"#if defined(ARM_FEATURES)\n{inc}#endif\n"
+    if rel.parts[:2] != ("arch", "x86"):
+        return head + inc
+    if rel.name not in ZNG_X86_TARGETS:
+        raise SystemExit(
+            f"zlib-ng: new x86 unit {rel} has no entry in ZNG_X86_TARGETS "
+            f"(tools/vendor-codecs.py); add its ISA target string")
+    target = ZNG_X86_TARGETS[rel.name]
+    if not target:
+        return head + f"#if defined(X86_FEATURES)\n{inc}#endif\n"
+    return (head
+            + "#if defined(X86_FEATURES)\n"
+            + "#  if defined(__clang__)\n"
+            + f'#    pragma clang attribute push (__attribute__((target("{target}"))), apply_to=function)\n'
+            + "#  elif defined(__GNUC__)\n"
+            + "#    pragma GCC push_options\n"
+            + f'#    pragma GCC target("{target}")\n'
+            + "#  endif\n"
+            + inc
+            + "#  if defined(__clang__)\n"
+            + "#    pragma clang attribute pop\n"
+            + "#  elif defined(__GNUC__)\n"
+            + "#    pragma GCC pop_options\n"
+            + "#  endif\n"
+            + "#endif\n")
+
+
+def zng_finish(src_root: Path, dest: Path, spec: dict,
+               curated: list[Path]) -> tuple[list[Path], list[str]]:
+    """Generate zlib-ng's configured headers and wrapper sources into dest.
+    Returns (generated files relative to dest, manifest source list)."""
+    root = src_root / spec.get("root", "")
+    out: list[Path] = []
+
+    def put(rel: str, text: str):
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dest / rel).write_text(text)
+        out.append(Path(rel))
+
+    zlib_h = (root / "zlib.h.in").read_text().replace("@ZLIB_SYMBOL_PREFIX@", "")
+    left = sorted(set(re.findall(r"@[A-Z][A-Z0-9_]*@", zlib_h)))
+    if left:
+        raise SystemExit(f"zlib-ng: unsubstituted tokens in zlib.h.in: {left}")
+    put("zlib.h", zlib_h)
+
+    zconf = (root / "zconf.h.in").read_text()
+    marker = "#ifdef HAVE_UNISTD_H"
+    if zconf.count(marker) != 1:
+        raise SystemExit("zlib-ng: zconf.h.in no longer has the expected "
+                         "HAVE_UNISTD_H block; update tools/vendor-codecs.py")
+    put("zconf.h", zconf.replace(marker, ZNG_UNISTD_PATCH + marker))
+    put("zlib_name_mangling.h", (root / "zlib_name_mangling.h.empty").read_text())
+
+    sources: list[str] = []
+    for rel in sorted((p for p in curated if is_source(p)), key=str):
+        flat = rel.as_posix().replace("/", "_")
+        put(f"cu/{flat}", zng_wrapper(rel))
+        sources.append(f"cu/{flat}")
+    return out, sources
 
 
 def vendor_codec(codec: str, meta: dict, spec: dict, src_root: Path) -> dict:
@@ -321,6 +446,10 @@ def vendor_codec(codec: str, meta: dict, spec: dict, src_root: Path) -> dict:
         copied.append(rel)
         if is_source(rel):
             sources.append(rel.as_posix())
+
+    if spec.get("zlib_ng"):
+        generated, sources = zng_finish(src_root, dest, spec, copied)
+        copied.extend(generated)
 
     # Config headers count toward the tree hash + are shipped.
     for c in sorted(config):

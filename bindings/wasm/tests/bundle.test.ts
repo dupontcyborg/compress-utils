@@ -120,13 +120,17 @@ describe("per-algo .wasm size budgets", () => {
     // decoding (CU_DSTREAM_SINGLE) added 1-3.6 KB to every decoder, which left
     // lz4, zlib, xz and gzip under 8% headroom: raised lz4 120 → 130, zlib
     // 88 → 96, xz 145 → 155, gzip 90 → 93.
+    //
+    // The deflate backend moved from madler zlib to zlib-ng (generic C paths on
+    // wasm32: no SIMD, no runtime CPU detection), which grew zlib 86.9 → 104.4
+    // and gzip 84.9 → 103.4 KB: raised zlib 96 → 115 and gzip 93 → 114.
     const BUDGET_KB: Record<string, number> = {
-        zlib: 96,
+        zlib: 115,
         bz2: 102,
         xz: 155,
         lz4: 130,
         snappy: 60,
-        gzip: 93,
+        gzip: 114,
         zstd: 440,
         brotli: 565,
     };
@@ -151,15 +155,18 @@ describe("direction-variant .wasm size budgets", () => {
     // 446, lz4 97, bz2 65, xz 105, zlib 62, snappy 25, gzip 61. Single-stream
     // decoding (CU_DSTREAM_SINGLE) added 1-3.6 KB to every decoder: raised the
     // decode caps for zstd 100 → 103, lz4 45 → 52, xz 92 → 94, zlib 58 → 60.
+    // zlib-ng backend (see the budget note above): zlib decode 54.5 → 67.8 and
+    // encode 62 → 80, gzip decode 53.1 → 67.0 and encode 61 → 79.7 KB; raised
+    // zlib 60/68 → 75/88 and gzip 60/70 → 74/88.
     const VARIANT_KB: Record<string, { decompress: number; compress: number }> = {
         zstd: { decompress: 103, compress: 380 },
         brotli: { decompress: 205, compress: 515 },
-        zlib: { decompress: 60, compress: 68 },
+        zlib: { decompress: 75, compress: 88 },
         bz2: { decompress: 62, compress: 75 },
         lz4: { decompress: 52, compress: 108 },
         xz: { decompress: 94, compress: 112 },
         snappy: { decompress: 52, compress: 48 },
-        gzip: { decompress: 60, compress: 70 },
+        gzip: { decompress: 74, compress: 88 },
     };
 
     for (const algo of ALL_ALGOS) {

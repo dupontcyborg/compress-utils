@@ -8,11 +8,11 @@ This project would not be possible without the remarkable work of other engineer
 - **License**: MIT License
 - **Authors**: Google and contributors
 
-## zlib
+## zlib-ng (zlib, gzip and raw DEFLATE)
 
-- **Repository**: https://github.com/madler/zlib
+- **Repository**: https://github.com/zlib-ng/zlib-ng
 - **License**: zlib License
-- **Authors**: Jean-loup Gailly, Mark Adler and contributors
+- **Authors**: zlib-ng contributors, building on zlib by Jean-loup Gailly and Mark Adler
 
 ## bzip2
 
