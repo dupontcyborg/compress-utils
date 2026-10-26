@@ -15,8 +15,21 @@ publish = false
 name = "bench_rust"
 path = "src/main.rs"
 
+[features]
+# flate2 picks one backend per build, so zlib-rs is a second binary built with this
+# feature (the runner's `rust-flate2-zlib-rs` driver); without it flate2 uses its
+# default, miniz_oxide.
+zlib-rs = ["flate2/zlib-rs"]
+
 [dependencies]
+brotli = "9.1.0"
+bzip2 = "0.6.1"
 compress-utils = { path = "../../.." }
+flate2 = "1.1.10"
+lz4_flex = "0.14.0"
+snap = "1.1.2"
+xz2 = "0.1.7"
+zstd = "0.14.3"
 
 # The driver measures release-mode throughput; make a bare `cargo build` wrong
 # to use rather than silently slow.

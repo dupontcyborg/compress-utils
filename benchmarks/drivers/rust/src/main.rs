@@ -1,41 +1,34 @@
-//! Rust benchmark driver.
+//! Rust benchmark driver, for compress-utils and for the Rust libraries it competes with.
 //!
 //! Speaks the shared benchmark driver protocol (see benchmarks/README.md): reads
 //! "<algo> <level> [<mode>] <path>" job lines from stdin (mode: oneshot, stream or
-//! msgset), emits one NDJSON result
-//! (or skip/error marker) per line, honours BENCH_SAMPLES / BENCH_WARMUP /
-//! BENCH_CHUNK, and answers `--info`.
+//! msgset), emits one NDJSON result (or skip/error marker) per line, honours
+//! BENCH_SAMPLES / BENCH_WARMUP / BENCH_CHUNK, and answers `--info`.
 //!
-//! Drives the compress-utils Rust binding the way a consumer would:
-//! `compress`/`decompress` for one-shot, `Compressor`/`Decompressor` for
-//! streaming. A message set (benchmarks/corpus/msgset.py) runs one `compress`
-//! call per message and decompresses each with `decompress_with_capacity`, its
-//! fastest path when the size is known. The crate compiles the C core from source via its build script, so
-//! this is the same codec code the other drivers measure — only the language
-//! wrapper differs.
+//! `--impl` picks the implementation (default compress-utils); every one goes through
+//! the same timing loop, as a consumer would call it (src/impls.rs):
+//!
+//!   oneshot  compress, then decompress without being told the size
+//!   msgset   one compress call per message, each decompressed with its known size
+//!            through the library's fastest path for that
+//!   stream   the input fed in BENCH_CHUNK pieces through the library's streaming
+//!            API; skipped when it has none
+//!
+//! Competitors run at native levels (the runner translates through levels.json, or
+//! sweeps the range each codec declares) and are set to compress-utils' wire format
+//! where their API allows. Each competitor's output is also decoded by compress-utils
+//! once per job, untimed, and the record carries the result as `interop`.
+//! compress-utils compiles its C core from source via its build script, so it runs the
+//! same codec code as the other drivers; only the language wrapper differs.
+
+mod impls;
 
 use std::env;
 use std::fmt::Write as _;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
-use compress_utils::{
-    compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor,
-};
-
-fn algo_from_name(name: &str) -> Option<Algorithm> {
-    Some(match name {
-        "zstd" => Algorithm::Zstd,
-        "brotli" => Algorithm::Brotli,
-        "zlib" => Algorithm::Zlib,
-        "bz2" => Algorithm::Bz2,
-        "lz4" => Algorithm::Lz4,
-        "xz" => Algorithm::Xz,
-        "snappy" => Algorithm::Snappy,
-        "gzip" => Algorithm::Gzip,
-        _ => return None,
-    })
-}
+use impls::{Codec, ALGOS};
 
 fn env_usize(name: &str, fallback: usize) -> usize {
     env::var(name)
@@ -69,107 +62,169 @@ fn stats(samples: &[u128]) -> Stats {
     Stats { median: m, mad: median(&dev), min: s[0] }
 }
 
-fn do_compress(
-    algo: Algorithm,
-    data: &[u8],
-    level: i32,
-    is_stream: bool,
-    chunk: usize,
-) -> io::Result<Vec<u8>> {
-    if !is_stream {
-        return compress(algo, data, level).map_err(io::Error::from);
+/// Runs `f` warmup + samples times; returns the last result and the timed runs.
+fn timed<T>(
+    samples: usize,
+    warmup: usize,
+    mut f: impl FnMut() -> io::Result<T>,
+) -> io::Result<(T, Vec<u128>)> {
+    let mut times = Vec::with_capacity(samples);
+    let mut out = None;
+    for r in 0..warmup + samples {
+        let t0 = Instant::now();
+        out = Some(f()?);
+        if r >= warmup {
+            times.push(t0.elapsed().as_nanos());
+        }
     }
-    let mut enc = Compressor::new(Vec::new(), algo, level).map_err(io::Error::from)?;
-    for piece in data.chunks(chunk) {
-        enc.write_all(piece)?;
-    }
-    enc.finish()
+    Ok((out.expect("samples > 0"), times))
 }
 
-fn do_decompress(algo: Algorithm, comp: &[u8], is_stream: bool) -> io::Result<Vec<u8>> {
-    if !is_stream {
-        return decompress(algo, comp).map_err(io::Error::from);
-    }
-    let mut dec = Decompressor::new(comp, algo).map_err(io::Error::from)?;
-    let mut out = Vec::new();
-    dec.read_to_end(&mut out)?;
-    Ok(out)
-}
-
-fn run_job(
-    algo_name: &str,
-    algo: Algorithm,
+struct Job<'a> {
+    impl_name: &'a str,
+    algo: &'a str,
+    codec: &'a Codec,
     level: i32,
-    is_stream: bool,
-    path: &str,
     samples: usize,
     warmup: usize,
     chunk: usize,
-) -> io::Result<String> {
-    let data = std::fs::read(path)?;
-
-    let mut comp = Vec::new();
-    for _ in 0..warmup {
-        comp = do_compress(algo, &data, level, is_stream, chunk)?;
-    }
-    let mut c_t = Vec::with_capacity(samples);
-    for _ in 0..samples {
-        let t0 = Instant::now();
-        comp = do_compress(algo, &data, level, is_stream, chunk)?;
-        c_t.push(t0.elapsed().as_nanos());
-    }
-
-    let mut dec = Vec::new();
-    for _ in 0..warmup {
-        dec = do_decompress(algo, &comp, is_stream)?;
-    }
-    let mut d_t = Vec::with_capacity(samples);
-    for _ in 0..samples {
-        let t0 = Instant::now();
-        dec = do_decompress(algo, &comp, is_stream)?;
-        d_t.push(t0.elapsed().as_nanos());
-    }
-
-    let (c, d) = (stats(&c_t), stats(&d_t));
-    let mode = if is_stream { "stream" } else { "oneshot" };
-    let chunk_bytes = if is_stream { chunk } else { 0 };
-
-    // Hand-rolled JSON: the payload is a flat object of numbers plus two paths,
-    // not worth a serde dependency in a driver whose whole job is to not
-    // perturb the measurement.
-    let mut s = String::new();
-    write!(
-        s,
-        concat!(
-            r#"{{"lang":"rust","impl":"compress-utils","algo":{},"level":{},"#,
-            r#""mode":"{}","chunk_bytes":{},"input":{},"input_bytes":{},"output_bytes":{},"#,
-            r#""compress_ns_median":{},"compress_ns_mad":{},"compress_ns_min":{},"#,
-            r#""decompress_ns_median":{},"decompress_ns_mad":{},"decompress_ns_min":{},"#,
-            r#""samples":{},"warmup":{},"verified":{}}}"#,
-        ),
-        json_string(algo_name),
-        level,
-        mode,
-        chunk_bytes,
-        json_string(path),
-        data.len(),
-        comp.len(),
-        c.median,
-        c.mad,
-        c.min,
-        d.median,
-        d.mad,
-        d.min,
-        samples,
-        warmup,
-        dec == data,
-    )
-    .expect("writing to a String cannot fail");
-    Ok(s)
 }
 
-/// Reads a message set: records of a u32 little-endian length followed by that
-/// many bytes.
+impl Job<'_> {
+    /// compress-utils' own one-shot compress, for decode-only inputs and interop checks.
+    fn cu_algo(&self) -> compress_utils::Algorithm {
+        ALGOS.iter().find(|(n, _)| *n == self.algo).expect("known algo").1
+    }
+
+    /// Can compress-utils decode this library's output? None for compress-utils itself.
+    fn interop(&self, comp: &[u8], data: &[u8]) -> Option<bool> {
+        (self.impl_name != "compress-utils").then(|| {
+            compress_utils::decompress(self.cu_algo(), comp).is_ok_and(|d| d == data)
+        })
+    }
+
+    fn record(
+        &self,
+        mode: &str,
+        path: &str,
+        in_bytes: usize,
+        out_bytes: usize,
+        c_t: &[u128],
+        d_t: &[u128],
+        verified: bool,
+        interop: Option<bool>,
+        messages: Option<usize>,
+    ) -> String {
+        let (c, d) = (stats(c_t), stats(d_t));
+        let chunk_bytes = if mode == "stream" { self.chunk } else { 0 };
+        // Hand-rolled JSON: a flat object of numbers plus a few strings, not worth a
+        // serde dependency in a driver whose whole job is to not perturb the measurement.
+        let mut s = String::new();
+        write!(
+            s,
+            concat!(
+                r#"{{"lang":"rust","impl":{},"algo":{},"level":{},"mode":"{}","chunk_bytes":{},"#,
+                r#""input":{},"input_bytes":{},"output_bytes":{},"#,
+                r#""compress_ns_median":{},"compress_ns_mad":{},"compress_ns_min":{},"#,
+                r#""decompress_ns_median":{},"decompress_ns_mad":{},"decompress_ns_min":{},"#,
+                r#""samples":{},"warmup":{},"verified":{}"#,
+            ),
+            json_string(self.impl_name),
+            json_string(self.algo),
+            self.level,
+            mode,
+            chunk_bytes,
+            json_string(path),
+            in_bytes,
+            out_bytes,
+            c.median,
+            c.mad,
+            c.min,
+            d.median,
+            d.mad,
+            d.min,
+            self.samples,
+            self.warmup,
+            verified,
+        )
+        .expect("writing to a String cannot fail");
+        if let Some(n) = messages {
+            write!(s, r#","messages":{n},"decompress_size_known":true"#).unwrap();
+        }
+        if let Some(ok) = interop {
+            write!(s, r#","interop":{ok}"#).unwrap();
+        }
+        if self.codec.compress.is_none() {
+            s.push_str(r#","decode_only":true"#);
+        }
+        s.push('}');
+        s
+    }
+
+    fn run(&self, mode: &str, path: &str) -> io::Result<String> {
+        let data = std::fs::read(path)?;
+        let stream = mode == "stream";
+        let (comp, c_t) = match &self.codec.compress {
+            // Decode-only library: its input comes from compress-utils, untimed.
+            None => (
+                compress_utils::compress(self.cu_algo(), &data, 9).map_err(io::Error::from)?,
+                vec![0; self.samples],
+            ),
+            Some(enc) => {
+                let enc = if stream { self.codec.cstream.as_ref().unwrap() } else { enc };
+                timed(self.samples, self.warmup, || enc(&data, self.level))?
+            }
+        };
+        let (dec, d_t) = timed(self.samples, self.warmup, || {
+            if stream {
+                (self.codec.dstream.as_ref().unwrap())(&comp)
+            } else {
+                (self.codec.decompress)(&comp, None)
+            }
+        })?;
+        Ok(self.record(mode, path, data.len(), comp.len(), &c_t, &d_t, dec == data,
+                       self.interop(&comp, &data), None))
+    }
+
+    fn run_msgset(&self, path: &str) -> io::Result<String> {
+        let msgs = read_msgset(path)?;
+        let (comp, c_t): (Vec<Vec<u8>>, Vec<u128>) = match &self.codec.compress {
+            None => (
+                msgs.iter()
+                    .map(|m| compress_utils::compress(self.cu_algo(), m, 9))
+                    .collect::<Result<_, _>>()
+                    .map_err(io::Error::from)?,
+                vec![0; self.samples],
+            ),
+            Some(enc) => timed(self.samples, self.warmup, || {
+                msgs.iter().map(|m| enc(m, self.level)).collect::<io::Result<Vec<_>>>()
+            })?,
+        };
+        let ((), d_t) = timed(self.samples, self.warmup, || {
+            for (c, m) in comp.iter().zip(&msgs) {
+                (self.codec.decompress)(c, Some(m.len()))?;
+            }
+            Ok(())
+        })?;
+        let verified = comp.iter().zip(&msgs).all(|(c, m)| {
+            (self.codec.decompress)(c, Some(m.len())).is_ok_and(|d| d == *m)
+        });
+        let interop = msgs.first().and_then(|m| self.interop(&comp[0], m));
+        Ok(self.record(
+            "msgset",
+            path,
+            msgs.iter().map(Vec::len).sum(),
+            comp.iter().map(Vec::len).sum(),
+            &c_t,
+            &d_t,
+            verified,
+            interop,
+            Some(msgs.len()),
+        ))
+    }
+}
+
+/// Reads a message set: records of a u32 little-endian length followed by that many bytes.
 fn read_msgset(path: &str) -> io::Result<Vec<Vec<u8>>> {
     let data = std::fs::read(path)?;
     let bad = || io::Error::new(io::ErrorKind::InvalidData, "truncated message set");
@@ -185,82 +240,8 @@ fn read_msgset(path: &str) -> io::Result<Vec<Vec<u8>>> {
     Ok(msgs)
 }
 
-fn run_msgset_job(
-    algo_name: &str,
-    algo: Algorithm,
-    level: i32,
-    path: &str,
-    samples: usize,
-    warmup: usize,
-) -> io::Result<String> {
-    let msgs = read_msgset(path)?;
-
-    let mut comp: Vec<Vec<u8>> = Vec::new();
-    let mut c_t = Vec::with_capacity(samples);
-    for r in 0..warmup + samples {
-        let t0 = Instant::now();
-        comp = msgs
-            .iter()
-            .map(|m| compress(algo, m, level))
-            .collect::<Result<_, _>>()
-            .map_err(io::Error::from)?;
-        if r >= warmup {
-            c_t.push(t0.elapsed().as_nanos());
-        }
-    }
-
-    let mut d_t = Vec::with_capacity(samples);
-    for r in 0..warmup + samples {
-        let t0 = Instant::now();
-        for (c, m) in comp.iter().zip(&msgs) {
-            decompress_with_capacity(algo, c, m.len()).map_err(io::Error::from)?;
-        }
-        if r >= warmup {
-            d_t.push(t0.elapsed().as_nanos());
-        }
-    }
-
-    let verified = comp
-        .iter()
-        .zip(&msgs)
-        .all(|(c, m)| decompress_with_capacity(algo, c, m.len()).is_ok_and(|d| d == *m));
-    let in_bytes: usize = msgs.iter().map(Vec::len).sum();
-    let out_bytes: usize = comp.iter().map(Vec::len).sum();
-    let (c, d) = (stats(&c_t), stats(&d_t));
-
-    let mut s = String::new();
-    write!(
-        s,
-        concat!(
-            r#"{{"lang":"rust","impl":"compress-utils","algo":{},"level":{},"#,
-            r#""mode":"msgset","chunk_bytes":0,"input":{},"input_bytes":{},"output_bytes":{},"#,
-            r#""messages":{},"decompress_size_known":true,"#,
-            r#""compress_ns_median":{},"compress_ns_mad":{},"compress_ns_min":{},"#,
-            r#""decompress_ns_median":{},"decompress_ns_mad":{},"decompress_ns_min":{},"#,
-            r#""samples":{},"warmup":{},"verified":{}}}"#,
-        ),
-        json_string(algo_name),
-        level,
-        json_string(path),
-        in_bytes,
-        out_bytes,
-        msgs.len(),
-        c.median,
-        c.mad,
-        c.min,
-        d.median,
-        d.mad,
-        d.min,
-        samples,
-        warmup,
-        verified,
-    )
-    .expect("writing to a String cannot fail");
-    Ok(s)
-}
-
-/// Minimal JSON string escaping — corpus paths are plain filesystem paths, but
-/// a stray backslash or quote must not produce a line the runner can't parse.
+/// Minimal JSON string escaping — corpus paths are plain filesystem paths, but a stray
+/// backslash or quote must not produce a line the runner can't parse.
 fn json_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -287,25 +268,48 @@ fn emit(line: &str) {
     let _ = stdout.flush();
 }
 
+fn info(impl_name: &str, im: &impls::Impl) -> String {
+    let levels: Vec<String> = im
+        .codecs
+        .iter()
+        .filter_map(|(a, c)| c.levels.map(|(lo, hi)| format!("{}:[{lo},{hi}]", json_string(a))))
+        .collect();
+    let levelless: Vec<String> =
+        im.codecs.iter().filter(|(_, c)| c.levelless).map(|(a, _)| json_string(a)).collect();
+    let driver = if impl_name == "compress-utils" { "rust".to_string() } else { format!("rust-{impl_name}") };
+    format!(
+        r#"{{"lang":"rust","version":{},"driver":{},"impl":{},"levels":{{{}}},"levelless":[{}]}}"#,
+        json_string(&im.version),
+        json_string(&driver),
+        json_string(impl_name),
+        levels.join(","),
+        levelless.join(",")
+    )
+}
+
 fn main() {
-    if env::args().nth(1).as_deref() == Some("--info") {
-        emit(&format!(
-            r#"{{"lang":"rust","version":{},"driver":"rust"}}"#,
-            json_string(compress_utils::version())
-        ));
+    let args: Vec<String> = env::args().skip(1).collect();
+    let impl_name = args
+        .iter()
+        .position(|a| a == "--impl")
+        .and_then(|i| args.get(i + 1))
+        .map_or("compress-utils", String::as_str);
+    let Some(im) = impls::load(impl_name) else {
+        eprintln!("bench-rust: unknown impl {impl_name:?} (known: {})", impls::NAMES.join(", "));
+        std::process::exit(2);
+    };
+    if args.iter().any(|a| a == "--info") {
+        emit(&info(impl_name, &im));
         return;
     }
 
     let samples = env_usize("BENCH_SAMPLES", 5);
     let warmup = env_usize("BENCH_WARMUP", 1);
     let chunk = env_usize("BENCH_CHUNK", 64 * 1024);
+    impls::CHUNK.set(chunk).unwrap();
 
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
+    for line in io::stdin().lock().lines() {
+        let Ok(line) = line else { break };
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -313,57 +317,40 @@ fn main() {
 
         // "<algo> <level> [<mode>] <path>"; path may contain spaces.
         let mut parts = line.splitn(3, ' ');
-        let (algo_name, level_s, rest) = match (parts.next(), parts.next(), parts.next()) {
+        let (algo, level_s, rest) = match (parts.next(), parts.next(), parts.next()) {
             (Some(a), Some(l), Some(r)) => (a, l, r),
             _ => {
                 emit(r#"{"error":true}"#);
                 continue;
             }
         };
-
         let (mode, rest) = ["stream", "msgset", "oneshot"]
             .iter()
-            .find_map(|m| {
-                rest.strip_prefix(m)
-                    .and_then(|r| r.strip_prefix(' '))
-                    .map(|r| (*m, r))
-            })
+            .find_map(|m| rest.strip_prefix(m).and_then(|r| r.strip_prefix(' ')).map(|r| (*m, r)))
             .unwrap_or(("oneshot", rest));
         let path = rest.trim();
 
-        let algo = match algo_from_name(algo_name) {
-            Some(a) => a,
-            None => {
-                emit(r#"{"skipped":true}"#);
-                continue;
-            }
+        let Some(codec) = im.codecs.get(algo) else {
+            emit(r#"{"skipped":true}"#);
+            continue;
         };
-        let level: i32 = match level_s.parse() {
-            Ok(l) => l,
-            Err(_) => {
-                emit(r#"{"error":true}"#);
-                continue;
-            }
+        if mode == "stream"
+            && (codec.dstream.is_none() || (codec.cstream.is_none() && codec.compress.is_some()))
+        {
+            emit(r#"{"skipped":true}"#);
+            continue;
+        }
+        let Ok(level) = level_s.parse::<i32>() else {
+            emit(r#"{"error":true}"#);
+            continue;
         };
 
-        let result = if mode == "msgset" {
-            run_msgset_job(algo_name, algo, level, path, samples, warmup)
-        } else {
-            run_job(
-                algo_name,
-                algo,
-                level,
-                mode == "stream",
-                path,
-                samples,
-                warmup,
-                chunk,
-            )
-        };
+        let job = Job { impl_name, algo, codec, level, samples, warmup, chunk };
+        let result = if mode == "msgset" { job.run_msgset(path) } else { job.run(mode, path) };
         match result {
             Ok(rec) => emit(&rec),
             Err(e) => {
-                eprintln!("bench-rust: {algo_name} L{level} {mode} failed: {e}");
+                eprintln!("bench-rust[{impl_name}]: {algo} L{level} {mode} failed: {e}");
                 emit(r#"{"error":true}"#);
             }
         }

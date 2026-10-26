@@ -61,3 +61,4 @@ coverage/
 *.profraw
 *.profdata
 go-coverage.*
+!benchmarks/drivers/rust/Cargo.lock
