@@ -14,7 +14,7 @@
       "spelling": {"c": "CU_ALGO_BROTLI", "cpp": "cu::Algorithm::Brotli", "go": "cu.Brotli", "python": "\"brotli\"", "rust": "Algorithm::Brotli", "wasm": "compress-utils/brotli"}
     },
     {
-      "id": "ZLIB", "name": "zlib", "url": "https://github.com/madler/zlib", "kind": "core",
+      "id": "ZLIB", "name": "zlib", "url": "https://github.com/zlib-ng/zlib-ng", "kind": "core",
       "strength": "Ubiquitous",
       "wire": "zlib wrapper (RFC 1950)",
       "spelling": {"c": "CU_ALGO_ZLIB", "cpp": "cu::Algorithm::Zlib", "go": "cu.Zlib", "python": "\"zlib\"", "rust": "Algorithm::Zlib", "wasm": "compress-utils/zlib"}

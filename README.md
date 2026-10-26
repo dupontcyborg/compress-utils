@@ -80,7 +80,7 @@ cu::compress(cu::Algorithm::Zstd, data, 5);
 |----------------------------------------------------|----------------------------|--------------------------------------------------------------------------|
 | [Zstandard](https://github.com/facebook/zstd)      | High speed, high ratio     | ZSTD frame with content size                                             |
 | [Brotli](https://github.com/google/brotli)         | Web-optimized              | Raw Brotli stream                                                        |
-| [zlib](https://github.com/madler/zlib)             | Ubiquitous                 | zlib wrapper (RFC 1950)                                                  |
+| [zlib](https://github.com/zlib-ng/zlib-ng)         | Ubiquitous                 | zlib wrapper (RFC 1950)                                                  |
 | [gzip](https://www.gnu.org/software/gzip/)         | Ubiquitous (.gz files)     | gzip stream (RFC 1952)                                                   |
 | [bzip2](https://sourceware.org/bzip2)              | High ratio                 | bzip2 stream                                                             |
 | [LZ4](https://github.com/lz4/lz4)                  | Highest speed              | LZ4 frame (interoperable with the `lz4` CLI and `.lz4` files)            |

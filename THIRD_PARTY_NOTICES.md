@@ -70,15 +70,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## zlib
+## zlib-ng
 
-- **Source**: https://github.com/madler/zlib at `v1.3.2` (`third_party/zlib/`)
-- **License**: Zlib
+- **Source**: https://github.com/zlib-ng/zlib-ng at `2.3.3` (`third_party/zlib/`), built in zlib-compatible mode. Provides zlib, gzip and raw DEFLATE.
+- **License**: Zlib. Contributors named in individual file headers (Intel, Cloudflare and others) license their changes under the same terms.
 
 ```text
 Copyright notice:
 
- (C) 1995-2026 Jean-loup Gailly and Mark Adler
+ (C) 1995-2024 Jean-loup Gailly and Mark Adler
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
