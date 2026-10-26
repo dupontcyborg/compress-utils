@@ -9,7 +9,7 @@ and algorithm. Three jobs:
 2. **Per-language** — compare the same algorithm across C / Python / JS / Rust …
    on one corpus with one metric definition.
 3. **Vs. ecosystem** — compare against each language's native alternatives
-   (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
+   (Python `zstandard`, Go `klauspost/compress`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
 Status: **C, C-native baseline, WASM (Node), Python, Go, and Rust drivers
@@ -267,7 +267,7 @@ stream mode gets a full cu-vs-native overlay.
 ## Comparing against ecosystem baselines (goal 3)
 
 A "baseline" is the language's native alternative for an algorithm — Python
-`zstandard`, `node:zlib`, the Rust `zstd` crate, raw `libzstd` in C. These are
+`zstandard`, Go `klauspost/compress`, the Rust `zstd` crate, raw `libzstd` in C. These are
 **in-process library calls in a sibling driver**, _not_ CLI subprocesses:
 
 - **CLI is for interop/correctness**, which `tests/interop/cli_crosscheck.py`
@@ -282,7 +282,7 @@ A "baseline" is the language's native alternative for an algorithm — Python
 
 Each record carries an `impl` field distinguishing our binding from the
 baseline for the same `(lang, algo)`; it defaults to `"compress-utils"` and a
-baseline driver sets e.g. `"zstandard"` or `"node:zlib"`. `report.py` overlays
+baseline driver sets e.g. `"zstandard"` or `"cramjam"`. `report.py` overlays
 implementations on the Pareto plot (color = algorithm, line style = impl) and
 keys regressions on it. For C specifically, the baseline is raw upstream
 `libzstd`/`libbrotli`/… — it measures the binding's **wrapper overhead** and
@@ -331,12 +331,11 @@ Competitors get native levels and are set to compress-utils' wire format where t
 
 ### JavaScript: competitors
 
-`drivers/wasm/bench_wasm.mjs` benchmarks compress-utils' WASM package and the portable JavaScript/WASM libraries it competes with, on Node and on Bun (`--js-runtime node|bun`), so the same code is measured on V8 and on JavaScriptCore. Competitors are limited to what also runs in browsers, edge runtimes and Deno: pure JavaScript and WASM libraries, plus the two built-ins every server has (`node:zlib`, labelled Node-only because it is native code, and `CompressionStream`, the browser standard). Native Node addons are out. They install from `drivers/wasm/package.json` (pinned, `npm ci`) on first use. The runner uses the first `node` and `bun` on `PATH`; set `BENCH_NODE` / `BENCH_BUN` to pick a binary (the version is recorded in every result, and e.g. brotli in `CompressionStream` needs Node 24.7 or newer).
+`drivers/wasm/bench_wasm.mjs` benchmarks compress-utils' WASM package and the portable JavaScript/WASM libraries it competes with, on Node and on Bun (`--js-runtime node|bun`), so the same code is measured on V8 and on JavaScriptCore. This is a portable benchmark: competitors are limited to what also runs in browsers, edge runtimes and Deno, which is pure JavaScript and WASM libraries plus `CompressionStream`, the browser standard. Native code (`node:zlib`, Node addons) is out, since it is not comparable to a WASM build and not available where the package is meant to run. Competitors install from `drivers/wasm/package.json` (pinned, `npm ci`) on first use. The runner uses the first `node` and `bun` on `PATH`; set `BENCH_NODE` / `BENCH_BUN` to pick a binary (the version is recorded in every result, and e.g. brotli in `CompressionStream` needs Node 24.7 or newer).
 
 | Driver | Library | Formats |
 |--------|---------|---------|
 | `wasm` | compress-utils (WASM) | all |
-| `js-node-zlib` | `node:zlib` (native, Node-only) | zlib, gzip, deflate, brotli, zstd |
 | `js-compression-stream` | `CompressionStream` (stream-only, no levels) | zlib, gzip, deflate (brotli where supported) |
 | `js-fflate` | fflate 0.8.3 | zlib, gzip, deflate |
 | `js-pako` | pako 3.0.2 | zlib, gzip, deflate |

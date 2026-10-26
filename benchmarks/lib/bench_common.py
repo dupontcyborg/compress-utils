@@ -136,7 +136,7 @@ def enrich(rec: dict) -> dict:
     its own. Anything comparing compress speed or ratio must skip those records.
 
     `impl` distinguishes our binding from an ecosystem baseline for the same
-    (lang, algo) — e.g. "compress-utils" vs "node:zlib" vs "zstandard". A
+    (lang, algo) — e.g. "compress-utils" vs "klauspost" vs "zstandard". A
     driver that benchmarks a native alternative sets it; ours defaults here so
     existing drivers need no change."""
     r = dict(rec)

@@ -76,7 +76,7 @@ python-snappy is skipped because it now wraps cramjam.
 
 | Library | Formats | Notes |
 |---------|---------|-------|
-| `node:zlib` | gzip, deflate, zlib, brotli, zstd | Built in. zstd since v23.8.0 / v22.15.0, still marked experimental. Use the `*Sync` one-shot functions for the one-shot comparison. |
+| `node:zlib` | gzip, deflate, zlib, brotli, zstd | Dropped (2026-10-25): native code and Node-only, so not comparable to a portable WASM build. |
 | fflate | gzip, deflate, zlib | Pure JS, the most popular small-bundle choice. |
 | pako | gzip, deflate, zlib | Pure JS, the long-standing default. |
 | fzstd | zstd (decompress only) | Pure JS. |
@@ -127,7 +127,7 @@ Covered by the `c-baseline` driver (raw upstream libraries). It had been broken 
 
 ## Fairness rules
 
-1. **Compare curves, not single levels.** Each library sweeps its own level range and the report plots ratio against throughput. Our level 5 and someone else's level 5 are different settings. Where a competitor wraps the same C library (zstandard, the `zstd` crate, `node:zlib`'s zlib), also run it at the exact native level ours maps to, so the overhead comparison is like for like.
+1. **Compare curves, not single levels.** Each library sweeps its own level range and the report plots ratio against throughput. Our level 5 and someone else's level 5 are different settings. Where a competitor wraps the same C library (zstandard, the `zstd` crate, Python's stdlib `zlib`), also run it at the exact native level ours maps to, so the overhead comparison is like for like.
 2. **Same wire format.** zstd frames carry the content size; lz4 uses the frame format with the content size; xz uses CRC64; gzip has a standard header; Snappy is a raw block. Checksums match ours, or the difference is recorded. Each driver states its settings in its source.
 3. **Cross-decode once.** On the first job, our decoder decodes each competitor's output and vice versa. That proves the formats really match. A failure is a harness bug, not a result.
 4. **Single-threaded everywhere.** Disable worker threads in zstd and xz encoders that offer them.
@@ -210,7 +210,7 @@ Hardware: the maintainer's Apple Silicon MacBook for now (decided 2026-10-22). P
 
 ## JavaScript (2026-10-24)
 
-**Scope (decided 2026-10-24).** Our JS package is WASM and runs everywhere (browsers, edge runtimes, Deno, Bun, Node), so competitors are the libraries that do too: pure JavaScript and WASM only, plus `node:zlib` (one reference row, labelled Node-only and native) and `CompressionStream`. Native Node addons (`@mongodb-js/zstd`, `zstd-napi`) are out. Run on Node and on Bun (V8 and JavaScriptCore). **No Playwright:** the browser-specific pieces it would add (SpiderMonkey, browser `CompressionStream`) aren't worth the machinery; Node implements `CompressionStream` too. Competitors and drivers are in `benchmarks/README.md` ("JavaScript: competitors").
+**Scope (decided 2026-10-24).** Our JS package is WASM and runs everywhere (browsers, edge runtimes, Deno, Bun, Node), so competitors are the libraries that do too: pure JavaScript and WASM only, plus `CompressionStream`, the browser standard. This is a portable benchmark: native code is out, both Node addons (`@mongodb-js/zstd`, `zstd-napi`) and `node:zlib`, which an earlier version of this plan kept as a labelled reference row and was dropped on 2026-10-25 as apples to oranges. Run on Node and on Bun (V8 and JavaScriptCore). **No Playwright:** the browser-specific pieces it would add (SpiderMonkey, browser `CompressionStream`) aren't worth the machinery; Node implements `CompressionStream` too. Competitors and drivers are in `benchmarks/README.md` ("JavaScript: competitors").
 
 **Bundle size and cold start** (`size/js_size.py`; minified browser bundle; KiB):
 
@@ -239,7 +239,7 @@ Hardware: the maintainer's Apple Silicon MacBook for now (decided 2026-10-22). P
 
 Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 5 KiB, snappyjs 5 KiB against 97, 131 and 46 KiB), which is what WASM costs; 40% bigger than zstd-wasm, 2× smaller than brotli-wasm (which ships a 1 MiB binary), and decode-only builds are 2-4× smaller than full ones. Cold start (import plus one 1 KB round trip, minus an empty process) is 4-26 ms for compress-utils on Node and 7-16 ms on Bun, against 0-10 ms for the others; it is a few milliseconds and noisy, so read it as an order of magnitude.
 
-**Performance run (2026-10-24).** M-series MacBook, Node 24.12 and Bun 1.3.10. Node: levels 1, 4, 6, 10, one-shot, streaming and message sets, silesia-mini at 1 sample and everything else at 3 (5,571 records). Bun: level 6 only, silesia-mini and 4 KB blocks (459 records). All records round-trip; compress-utils decodes every competitor's output except lz4js on 3 inputs (below). Took about 2 h 20 min, against an estimate of 75 min; the slowest libraries (brotli at top quality in three implementations) dominate. Each cell is **compress / decompress in MB/s** (uncompressed bytes per second), at level 6 for compress-utils and at the native level that maps to for the others (zlib 6, xz 5, zstd 13, brotli 6, ...), summed over the files of a tier. `ratio` is the compression ratio on silesia-mini, so you can see the libraries are doing comparable work. Libraries with no levels (lz4js, `CompressionStream`) are compared with compress-utils at the matching level, shown as an extra row. Decode-only libraries (fzstd, xz-decompress) show decompression only.
+**Performance run (2026-10-24).** M-series MacBook, Node 24.12 and Bun 1.3.10. Node: levels 1, 4, 6, 10, one-shot, streaming and message sets, silesia-mini at 1 sample and everything else at 3 (5,571 records). Bun: level 6 only, silesia-mini and 4 KB blocks (459 records). All records round-trip; compress-utils decodes every competitor's output except lz4js on 3 inputs (below). The record counts and the time include a `node:zlib` reference that has since been dropped from the benchmark and the tables (see Scope). Took about 2 h 20 min, against an estimate of 75 min; the slowest libraries (brotli at top quality in three implementations) dominate. Each cell is **compress / decompress in MB/s** (uncompressed bytes per second), at level 6 for compress-utils and at the native level that maps to for the others (zlib 6, xz 5, zstd 13, brotli 6, ...), summed over the files of a tier. `ratio` is the compression ratio on silesia-mini, so you can see the libraries are doing comparable work. Libraries with no levels (lz4js, `CompressionStream`) are compared with compress-utils at the matching level, shown as an extra row. Decode-only libraries (fzstd, xz-decompress) show decompression only.
 
 **Node (V8)**
 
@@ -248,7 +248,6 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 | Implementation | ratio | large files | large, streaming | 4 KB messages | 1 KB messages |
 |---|---|---|---|---|---|
 | compress-utils | 2.51 | 36.5 / 325 | 37.4 / 341 | 53.2 / 228 | 34.3 / 148 |
-| node:zlib | 2.49 | 64.2 / 560 | 47.7 / 171 | 76.0 / 330 | 38.5 / 161 |
 | fflate | 2.48 | 53.9 / 225 | - | 45.9 / 133 | 25.7 / 86.8 |
 | pako | 2.49 | 33.4 / 171 | 33.4 / 165 | 31.5 / 87.9 | 14.4 / 58.2 |
 | CompressionStream (no levels) | 2.49 | - | 49.4 / 162 | - | - |
@@ -259,7 +258,6 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 |---|---|---|---|---|---|
 | compress-utils | 2.92 | 13.7 / 785 | 12.2 / 890 | 20.0 / 549 | 19.9 / 272 |
 | zstd-wasm | 2.92 | 12.4 / 1,085 | - | 15.6 / 474 | 12.6 / 252 |
-| node:zlib | 2.92 | 17.2 / 1,203 | 17.3 / 266 | 26.9 / 572 | 22.9 / 257 |
 | fzstd | - | - / 253 | - / 193 | - / 60.9 | - / 47.6 |
 
 **brotli**
@@ -269,7 +267,6 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 | compress-utils | 2.86 | 38.4 / 402 | 37.2 / 386 | 42.4 / 207 | 29.2 / 121 |
 | compress-utils (level 10) | 3.28 | 0.8 / 322 | 0.8 / 317 | 1.0 / 165 | 0.7 / 106 |
 | brotli-wasm | 2.67 | 16.6 / 236 | 16.5 / 238 | 12.4 / 108 | 5.1 / 65.8 |
-| node:zlib | 2.86 | 43.3 / 466 | 37.6 / 200 | 52.3 / 229 | 28.1 / 148 |
 | CompressionStream (no levels) | 3.28 | - | 0.9 / 175 | - | - |
 
 **lz4**
@@ -301,7 +298,6 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 | Implementation | ratio | large files | large, streaming | 4 KB messages |
 |---|---|---|---|---|
 | compress-utils | 2.51 | 39.4 / 352 | 38.5 / 325 | 55.8 / 224 |
-| node:zlib | 2.49 | 83.2 / 574 | 50.2 / 179 | 84.4 / 312 |
 | fflate | 2.48 | 50.7 / 66.8 | - | 41.9 / 52.7 |
 | pako | 2.49 | 46.9 / 286 | 46.0 / 335 | 45.5 / 193 |
 | CompressionStream (no levels) | 2.49 | - | 51.6 / 179 | - |
@@ -312,7 +308,6 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 |---|---|---|---|---|
 | compress-utils | 2.92 | 17.1 / 911 | 16.3 / 924 | 23.6 / 471 |
 | zstd-wasm | 2.92 | 16.2 / 781 | - | 16.8 / 395 |
-| node:zlib | 2.92 | 19.9 / 1,308 | 16.5 / 304 | 28.4 / 498 |
 | fzstd | - | - / 348 | - / 266 | - / 30.4 |
 
 **brotli**
@@ -321,17 +316,16 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 |---|---|---|---|---|
 | compress-utils | 2.86 | 22.1 / 415 | 21.5 / 439 | 32.9 / 184 |
 | brotli-wasm | 2.67 | 19.4 / 276 | 19.2 / 272 | 13.8 / 112 |
-| node:zlib | 2.86 | 48.2 / 542 | 36.4 / 200 | 57.0 / 235 |
 | CompressionStream (no levels) | 3.28 | - | 0.9 / 165 | - |
 
-- **Native code beats WASM, as expected.** `node:zlib` does 64 / 560 MB/s on zlib against our 37 / 325 (and 83 / 574 on Bun), and 17 / 1,203 on zstd against 14 / 785. The WASM package's advantage is that it runs identically everywhere, not that it out-runs native code.
+- **Portable libraries only.** Native code (`node:zlib`, Node addons) is not compared: it is Node-only, and the WASM package's reason to exist is that it runs identically in browsers, edge runtimes, Deno, Bun and Node.
 - **Against the portable libraries we win nearly everywhere.**
   - *deflate family:* pako does 33 / 171 and fflate 54 / 225 against our 37 / 325 on large files. fflate compresses faster than we do on large files and slower on small messages (26 vs 34 MB/s at 1 KB); pako is 2× slower at 1 KB (14 vs 34). Both decompress at roughly half to 70% of our speed.
   - *brotli:* brotli-wasm does 17 / 236 against our 38 / 402, at a 7% worse ratio (2.67 vs 2.86).
   - *snappy:* snappyjs does 269 / 558 against our 656 / 1,554.
   - *lz4:* lz4js does 160 / 581 at ratio 1.86 against our fast mode's 541 / 2,135 at 1.77. Against our level 6 (lz4's high-compression mode, ratio 2.22) it compresses faster (160 vs 51) at a worse ratio.
   - *zstd:* zstd-wasm is the closest competitor: 12 / 1,085 against our 14 / 785 on large files (it decompresses 38% faster, we compress 10% faster), and we are ahead on small messages (4 KB: 20 / 549 vs 16 / 474). fzstd, decode only, decompresses at 253 MB/s against our 785 (60 against 549 at 4 KB).
-- **Streaming:** compress-utils decompresses streams at 341 MB/s against `node:zlib`'s 171 and `CompressionStream`'s 162, and compresses at 37 against 48 and 49.
+- **Streaming:** compress-utils decompresses streams at 341 MB/s against `CompressionStream`'s 162, and compresses at 37 against its 49.
 - **`CompressionStream` brotli** is fixed at brotli's top quality: 0.9 MB/s at a ratio of 3.28, exactly what compress-utils does at its top level (0.8 MB/s, 3.28). It is not slow, it just can't be told to be fast.
 - **Pure-JS performance depends on the engine; WASM barely moves.** fflate decompresses at 225 MB/s on V8 but 67 on JavaScriptCore (against our 325 and 352); pako is steadier (171 and 286).
 - **xz in WASM is slow on small inputs:** compress-utils compresses 4 KB messages at 0.8 MB/s and 1 KB messages at 0.2 MB/s, against 10.9 / 5.2 in C and 11.1 / 7.0 in Python. The dictionary-sizing cost (`TODO.md`, xz item) is far worse under WASM, probably from allocating and clearing the preset's full dictionary on every call.

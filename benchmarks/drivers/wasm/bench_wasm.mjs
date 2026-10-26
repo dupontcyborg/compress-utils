@@ -19,9 +19,9 @@
  *            streaming API; skipped for libraries without one
  *
  * Competitors are limited to what runs in browsers, edge runtimes and Deno as
- * well as Node and Bun: pure JavaScript and WASM libraries, plus the two built-ins
- * every server has (node:zlib, labelled Node-only because it is native code, and
- * CompressionStream, the browser standard). Native Node addons are out.
+ * well as Node and Bun: pure JavaScript and WASM libraries, plus CompressionStream,
+ * the browser standard. This is a portable benchmark: native code (node:zlib, Node
+ * addons) is out.
  *
  * Libraries that only decompress (fzstd, xz-decompress) get their input from
  * another library, untimed, and the record carries decode_only: true with
@@ -35,7 +35,6 @@
 import { readFileSync, readSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -179,55 +178,6 @@ async function implCompressUtils() {
         };
     }
     return { version: `${pkg.version} (${RUNTIME} ${process.versions.bun || process.versions.node})`, codecs };
-}
-
-async function implNodeZlib() {
-    const z = await import("node:zlib");
-    const c = z.constants;
-
-    /* The streaming API: chunks written to a Transform, output collected. */
-    const through = async (make, data) => {
-        const t = make();
-        const out = [];
-        t.on("data", (x) => out.push(x));
-        const done = new Promise((res, rej) => {
-            t.on("end", res);
-            t.on("error", rej);
-        });
-        for (const ch of chunksOf(data)) if (!t.write(ch)) await once(t, "drain");
-        t.end();
-        await done;
-        return concat(out);
-    };
-    const deflateFamily = (compressSync, decompressSync, createC, createD) => ({
-        compress: (d, level) => compressSync(d, { level }),
-        decompress: (x) => decompressSync(x),
-        cstream: (d, level) => through(() => createC({ level }), d),
-        dstream: (x) => through(() => createD(), x),
-        levels: [1, 9],
-    });
-    const codecs = {
-        zlib: deflateFamily(z.deflateSync, z.inflateSync, z.createDeflate, z.createInflate),
-        gzip: deflateFamily(z.gzipSync, z.gunzipSync, z.createGzip, z.createGunzip),
-        deflate: deflateFamily(z.deflateRawSync, z.inflateRawSync, z.createDeflateRaw, z.createInflateRaw),
-        brotli: {
-            compress: (d, level) => z.brotliCompressSync(d, { params: { [c.BROTLI_PARAM_QUALITY]: level } }),
-            decompress: (x) => z.brotliDecompressSync(x),
-            cstream: (d, level) => through(() => z.createBrotliCompress({ params: { [c.BROTLI_PARAM_QUALITY]: level } }), d),
-            dstream: (x) => through(() => z.createBrotliDecompress(), x),
-            levels: [0, 11],
-        },
-    };
-    if (typeof z.zstdCompressSync === "function") {
-        codecs.zstd = {
-            compress: (d, level) => z.zstdCompressSync(d, { params: { [c.ZSTD_c_compressionLevel]: level } }),
-            decompress: (x) => z.zstdDecompressSync(x),
-            cstream: (d, level) => through(() => z.createZstdCompress({ params: { [c.ZSTD_c_compressionLevel]: level } }), d),
-            dstream: (x) => through(() => z.createZstdDecompress(), x),
-            levels: [1, 22],
-        };
-    }
-    return { version: `${RUNTIME} ${process.versions.bun || process.versions.node} (native code, Node-only)`, codecs };
 }
 
 async function implCompressionStream() {
@@ -422,7 +372,6 @@ async function implSnappyjs() {
 
 const IMPLS = {
     "compress-utils": implCompressUtils,
-    "node-zlib": implNodeZlib,
     "compression-stream": implCompressionStream,
     fflate: implFflate,
     pako: implPako,
@@ -433,7 +382,7 @@ const IMPLS = {
     lz4js: implLz4js,
     snappyjs: implSnappyjs,
 };
-const IMPL_NAMES = { "node-zlib": "node:zlib", "compression-stream": "CompressionStream" };
+const IMPL_NAMES = { "compression-stream": "CompressionStream" };
 
 /* ---- timing ---------------------------------------------------------------------- */
 

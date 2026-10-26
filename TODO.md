@@ -6,7 +6,7 @@ Direction: stop adding breadth and find out where the library wins. Likely posit
 
 - [x] **Fix the decompressed-size cap bypass** (see Bugs; fixed 2026-10-22).
 - [x] **README: untrusted-input section** (2026-10-22): root README "Untrusted input" section (output cap for every format, stream limits, bounded decoder memory, final errors, `.xz`-only decoding, fuzzing in CI with a regression corpus, pinned offline builds), linked from each binding's "Errors and limits".
-- [ ] **Ecosystem benchmark baselines** — plan in [docs/ecosystem-benchmarks.md](docs/ecosystem-benchmarks.md). The harness supports them (`impl` field, baseline overlays) but no driver exists. Python: cramjam, zstandard, stdlib zlib/bz2/lzma/`compression.zstd` (3.14). JS: `node:zlib`, fflate, pako, a zstd WASM package. Rust: the native crates. Until this lands, "high-performance" in the README is a claim, not a result.
+- [ ] **Ecosystem benchmark baselines** — plan in [docs/ecosystem-benchmarks.md](docs/ecosystem-benchmarks.md). The harness supports them (`impl` field, baseline overlays) but no driver exists. Python: cramjam, zstandard, stdlib zlib/bz2/lzma/`compression.zstd` (3.14). JS: fflate, pako, a zstd WASM package. Rust: the native crates. Until this lands, "high-performance" in the README is a claim, not a result.
 - [ ] **Path to 1.0:** settle the ABI questions that are expensive to change later, then freeze the C ABI.
   - [ ] An escape hatch past the 1–10 level (parameters struct: window size, zstd long mode, ...).
   - [ ] zstd dictionaries: decide the API shape, even if it ships after 1.0.

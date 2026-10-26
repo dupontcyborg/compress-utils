@@ -162,7 +162,7 @@ def build_c_vendored_variant(codec: str, variant: str, extra: list[str] = ()) ->
 
 JS_DIR = bc.BENCH_ROOT / "drivers" / "wasm"
 # The portable JavaScript/WASM competitors (see bench_wasm.mjs), one driver each.
-JS_IMPLS = ["node-zlib", "compression-stream", "fflate", "pako", "brotli-wasm", "zstd-wasm",
+JS_IMPLS = ["compression-stream", "fflate", "pako", "brotli-wasm", "zstd-wasm",
             "fzstd", "xz-decompress", "lz4js", "snappyjs"]
 
 
