@@ -300,11 +300,21 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
                 return dfl_map_error(z_ret, CU_ERR_COMPRESSION);
             }
             if (st->strm.avail_out == 0) {
-                /* Out of room and more to write. */
-                *out_len = written;
-                return CU_ERR_BUF_TOO_SMALL;
+                /* Out of room: more to write, unless a flush just filled the
+                 * buffer exactly. Asking again would append a second flush
+                 * marker, and with a buffer under 7 bytes the flush would
+                 * never end (see deflate() in zlib.h), so ask what is left. */
+                unsigned pending = 0;
+                int bits = 0;
+                if (flush_flag == Z_FINISH || z_ret != Z_OK ||
+                    deflatePending(&st->strm, &pending, &bits) != Z_OK ||
+                    pending > 0 || bits > 0) {
+                    *out_len = written;
+                    return CU_ERR_BUF_TOO_SMALL;
+                }
             }
-            /* Z_OK / Z_BUF_ERROR with room remaining means deflate is done
+            /* Z_OK / Z_BUF_ERROR with room remaining (or a flush that ended
+             * exactly at the end of the buffer) means deflate is done
              * producing for this flush_flag. */
             break;
         }
