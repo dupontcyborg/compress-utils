@@ -45,7 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Brotli
 
-- **Source**: https://github.com/google/brotli at `v1.2.0` (`third_party/brotli/`)
+- **Source**: https://github.com/google/brotli at `v1.2.1` (`third_party/brotli/`)
 - **License**: MIT
 
 ```text

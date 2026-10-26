@@ -44,8 +44,8 @@
         "c/enc/static_init.c",
         "c/enc/utf8_util.c"
       ],
-      "tag": "v1.2.0",
-      "tree_sha256": "64aa3d2b08c2ee2d1f40df1c488f8814ccea6b17c87b54075f35ebdb63efe019",
+      "tag": "v1.2.1",
+      "tree_sha256": "4c1894e27434ae5c67d76685684a5de5f45a5abb8f9dd37fcc20d08336340055",
       "url": "https://github.com/google/brotli.git"
     },
     "bz2": {

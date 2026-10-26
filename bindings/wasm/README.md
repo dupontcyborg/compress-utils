@@ -148,7 +148,7 @@ try {
 }
 ```
 
-`await version()` returns the library version (for example `"0.11.1"`), and `await setMaxDecompressedSize(bytes)` caps `decompress` for every algorithm (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression. Streams have no limit unless you pass one: `createDecompressStream({ maxOutput })` and `decompressionStream({ maxOutput })` throw a `CompressError` with code `SizeLimit` once the output passes it.
+`await version()` returns the library version (for example `"0.11.2"`), and `await setMaxDecompressedSize(bytes)` caps `decompress` for every algorithm (default 1 GiB; `0` = unbounded). Both are exported from every subpath that includes decompression. Streams have no limit unless you pass one: `createDecompressStream({ maxOutput })` and `decompressionStream({ maxOutput })` throw a `CompressError` with code `SizeLimit` once the output passes it.
 
 ## Preloading and synchronous calls
 

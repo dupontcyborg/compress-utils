@@ -116,7 +116,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
 
 ```rust
-compress_utils::version();                            // e.g. "0.11.1"
+compress_utils::version();                            // e.g. "0.11.2"
 compress_utils::set_max_decompressed_size(256 << 20); // cap decompress for every algorithm (default 1 GiB; 0 = unbounded)
 decompressor.set_max_output(256 << 20);               // a Decompressor has no limit unless set
 

@@ -23,5 +23,9 @@ export const version = bindings.version;
 export const setMaxDecompressedSize = bindings.setMaxDecompressedSize;
 
 export { CompressError } from "../../../core/types.js";
-export type { DecompressOptions, DecompressStreamOptions, AlgorithmName } from "../../../core/types.js";
+export type {
+    DecompressOptions,
+    DecompressStreamOptions,
+    AlgorithmName,
+} from "../../../core/types.js";
 export type { DecompressStream } from "../../../core/dispatch.js";

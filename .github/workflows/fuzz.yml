@@ -2,14 +2,17 @@ name: Fuzz
 
 # Coverage-guided fuzzing of the decoders (tests/fuzz/). PRs get a short run
 # starting from the corpus the nightly run has grown; the nightly run fuzzes
-# longer, minimizes the grown corpus and saves it back to the cache. PRs only
-# read the cache, so they never overwrite main's corpus.
+# longer (30 min, or 3 h on Sundays), minimizes the grown corpus and saves it
+# back to the cache. PRs only read the cache, so they never overwrite main's
+# corpus. The Sunday run shares the nightly's concurrency group, so a manual
+# dispatch on main while it runs would cancel it.
 
 on:
   pull_request:
     branches: ["main"]
   schedule:
-    - cron: "0 7 * * *"
+    - cron: "0 7 * * 1-6"
+    - cron: "0 7 * * 0"
   workflow_dispatch:
 
 # Least-privilege default for all jobs; jobs needing more override below.
@@ -23,9 +26,14 @@ concurrency:
 jobs:
   fuzz:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Sunday's 3 h decoder run, the encoder run (a sixth of it, 30 min) and
+    # ~5 min of build, merge and coverage: 215 min, with margin.
+    timeout-minutes: ${{ github.event.schedule == '0 7 * * 0' && 240 || 60 }}
     env:
-      FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '180' || '1800' }}
+      FUZZ_SECONDS: >-
+        ${{ github.event_name == 'pull_request' && '180'
+        || github.event.schedule == '0 7 * * 0' && '10800'
+        || '1800' }}
 
     steps:
       - name: Checkout Code
@@ -53,7 +61,7 @@ jobs:
       - name: Replay regression inputs
         # Only the fuzz replay: the rest of the suite expects checksum errors,
         # which FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION turns off.
-        run: ctest --test-dir build-fuzz --output-on-failure -R fuzz_regressions
+        run: ctest --test-dir build-fuzz --output-on-failure -R "fuzz_(roundtrip_)?regressions"
 
       - name: Restore fuzz corpus
         uses: actions/cache/restore@v4
@@ -74,6 +82,20 @@ jobs:
           ./build-fuzz/tests/fuzz/fuzz_decompress fuzz-corpus build-fuzz/tests/fuzz/seeds \
             -fork=$(nproc) -ignore_timeouts=0 -ignore_ooms=0 \
             -max_total_time=$FUZZ_SECONDS -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=fuzz-artifacts/ -print_final_stats=1
+
+      - name: Fuzz round trip (encoders)
+        # Random bytes must compress and decompress back, one-shot and
+        # streaming. A sixth of the decoder budget, no cached corpus: the
+        # decoder seeds are enough data to start from.
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/fuzz/lsan.supp
+        run: |
+          mkdir -p fuzz-corpus-rt fuzz-artifacts
+          ./build-fuzz/tests/fuzz/fuzz_roundtrip fuzz-corpus-rt build-fuzz/tests/fuzz/seeds \
+            tests/fuzz/regressions-roundtrip \
+            -fork=$(nproc) -ignore_timeouts=0 -ignore_ooms=0 \
+            -max_total_time=$((FUZZ_SECONDS / 6)) -max_len=65536 -timeout=10 -rss_limit_mb=2048 \
             -artifact_prefix=fuzz-artifacts/ -print_final_stats=1
 
       - name: Upload crash inputs
