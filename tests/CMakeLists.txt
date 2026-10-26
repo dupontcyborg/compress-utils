@@ -68,6 +68,23 @@ if(ENABLE_TESTS)
     add_test(NAME test_error_paths COMMAND test_error_paths)
 endif()
 
+# The advertised cu_compress_bound is a true upper bound for the DEFLATE family
+# at every level and block type (stored, fixed, dynamic); exact-size output
+# buffers must be enough. Skips any codec that isn't compiled in.
+add_executable(test_deflate_bound test_deflate_bound.c)
+target_link_libraries(test_deflate_bound PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_deflate_bound COMMAND test_deflate_bound)
+endif()
+
+# The 1..10 level scale of the DEFLATE family: level 1 is clearly the largest,
+# level 7 beats level 2, and levels 8-10 are one setting (deflate_backend.h).
+add_executable(test_deflate_levels test_deflate_levels.c)
+target_link_libraries(test_deflate_levels PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_deflate_levels COMMAND test_deflate_levels)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses the pure-C andikleen port. This is a C++ target on

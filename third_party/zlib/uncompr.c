@@ -1,12 +1,10 @@
 /* uncompr.c -- decompress a memory buffer
- * Copyright (C) 1995-2026 Jean-loup Gailly, Mark Adler
+ * Copyright (C) 1995-2003, 2010, 2014, 2016 Jean-loup Gailly, Mark Adler.
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
-/* @(#) $Id$ */
-
-#define ZLIB_INTERNAL
-#include "zlib.h"
+#include "zbuild.h"
+#include "zutil.h"
 
 /* ===========================================================================
      Decompresses the source buffer into the destination buffer.  *sourceLen is
@@ -23,32 +21,30 @@
    memory, Z_BUF_ERROR if there was not enough room in the output buffer, or
    Z_DATA_ERROR if the input data was corrupted, including if the input data is
    an incomplete zlib stream.
-
-     The _z versions of the functions take size_t length arguments.
 */
-int ZEXPORT uncompress2_z(Bytef *dest, z_size_t *destLen, const Bytef *source,
-                          z_size_t *sourceLen) {
-    z_stream stream;
+z_int32_t Z_EXPORT PREFIX(uncompress2)(unsigned char *dest, z_uintmax_t *destLen, const unsigned char *source, z_uintmax_t *sourceLen) {
+    PREFIX3(stream) stream;
     int err;
-    const uInt max = (uInt)-1;
-    z_size_t len, left;
-
-    if (sourceLen == NULL || (*sourceLen > 0 && source == NULL) ||
-        destLen == NULL || (*destLen > 0 && dest == NULL))
-        return Z_STREAM_ERROR;
+    const unsigned int max = (unsigned int)-1;
+    z_uintmax_t len, left;
+    unsigned char buf[1];    /* for detection of incomplete stream when *destLen == 0 */
 
     len = *sourceLen;
-    left = *destLen;
-    if (left == 0 && dest == Z_NULL)
-        dest = (Bytef *)&stream.reserved;       /* next_out cannot be NULL */
+    if (*destLen) {
+        left = *destLen;
+        *destLen = 0;
+    } else {
+        left = 1;
+        dest = buf;
+    }
 
-    stream.next_in = (z_const Bytef *)source;
+    stream.next_in = (z_const unsigned char *)source;
     stream.avail_in = 0;
-    stream.zalloc = (alloc_func)0;
-    stream.zfree = (free_func)0;
-    stream.opaque = (voidpf)0;
+    stream.zalloc = NULL;
+    stream.zfree = NULL;
+    stream.opaque = NULL;
 
-    err = inflateInit(&stream);
+    err = PREFIX(inflateInit)(&stream);
     if (err != Z_OK) return err;
 
     stream.next_out = dest;
@@ -56,46 +52,29 @@ int ZEXPORT uncompress2_z(Bytef *dest, z_size_t *destLen, const Bytef *source,
 
     do {
         if (stream.avail_out == 0) {
-            stream.avail_out = left > (z_size_t)max ? max : (uInt)left;
+            stream.avail_out = left > (unsigned long)max ? max : (unsigned int)left;
             left -= stream.avail_out;
         }
         if (stream.avail_in == 0) {
-            stream.avail_in = len > (z_size_t)max ? max : (uInt)len;
+            stream.avail_in = len > (unsigned long)max ? max : (unsigned int)len;
             len -= stream.avail_in;
         }
-        err = inflate(&stream, Z_NO_FLUSH);
+        err = PREFIX(inflate)(&stream, Z_NO_FLUSH);
     } while (err == Z_OK);
 
-    /* Set len and left to the unused input data and unused output space. Set
-       *sourceLen to the amount of input consumed. Set *destLen to the amount
-       of data produced. */
-    len += stream.avail_in;
-    left += stream.avail_out;
-    *sourceLen -= len;
-    *destLen -= left;
+    *sourceLen -= len + stream.avail_in;
+    if (dest != buf)
+        *destLen = (z_size_t)stream.total_out;
+    else if (stream.total_out && err == Z_BUF_ERROR)
+        left = 1;
 
-    inflateEnd(&stream);
+    PREFIX(inflateEnd)(&stream);
     return err == Z_STREAM_END ? Z_OK :
            err == Z_NEED_DICT ? Z_DATA_ERROR  :
-           err == Z_BUF_ERROR && len == 0 ? Z_DATA_ERROR :
+           err == Z_BUF_ERROR && left + stream.avail_out ? Z_DATA_ERROR :
            err;
 }
-int ZEXPORT uncompress2(Bytef *dest, uLongf *destLen, const Bytef *source,
-                        uLong *sourceLen) {
-    int ret;
-    z_size_t got = *destLen, used = *sourceLen;
-    ret = uncompress2_z(dest, &got, source, &used);
-    *sourceLen = (uLong)used;
-    *destLen = (uLong)got;
-    return ret;
-}
-int ZEXPORT uncompress_z(Bytef *dest, z_size_t *destLen, const Bytef *source,
-                         z_size_t sourceLen) {
-    z_size_t used = sourceLen;
-    return uncompress2_z(dest, destLen, source, &used);
-}
-int ZEXPORT uncompress(Bytef *dest, uLongf *destLen, const Bytef *source,
-                       uLong sourceLen) {
-    uLong used = sourceLen;
-    return uncompress2(dest, destLen, source, &used);
+
+z_int32_t Z_EXPORT PREFIX(uncompress)(unsigned char *dest, z_uintmax_t *destLen, const unsigned char *source, z_uintmax_t sourceLen) {
+    return PREFIX(uncompress2)(dest, destLen, source, &sourceLen);
 }
