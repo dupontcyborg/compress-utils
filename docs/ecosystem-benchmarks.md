@@ -282,7 +282,7 @@ Per format we are 7-20× bigger than the pure-JS libraries (fflate 9 KiB, lz4js 
 | Implementation | ratio | large files | large, streaming | 4 KB messages | 1 KB messages |
 |---|---|---|---|---|---|
 | compress-utils | 1.77 | 656 / 1,554 | 439 / 1,039 | 773 / 1,623 | 571 / 921 |
-| snappyjs (no levels) | 1.77 | 269 / 558 | - | 213 / 573 | 246 / 571 |
+| snappyjs | 1.77 | 269 / 558 | - | 213 / 573 | 246 / 571 |
 
 **xz**
 
@@ -425,7 +425,7 @@ python3 benchmarks/runner.py --drivers $D --algos $A --levels 1,4,6,10 --modes o
     --corpus canterbury,github-users,silesia-blocks --samples 3
 ```
 
-**Results** (M-series MacBook). Each cell is **compress / decompress in MB/s** (uncompressed bytes per second), at level 6 for compress-utils and at the native level that maps to for the others (zlib 6, zstd 13, brotli 6, bz2 6, lz4 6), summed over the files of a tier. `ratio` is the compression ratio on silesia-mini, so you can see how comparable the work is: klauspost's levels are its own match finders, not zlib's or zstd's, so its ratios are 3% lower at the "same" level. Libraries with no levels (ulikunitz/xz, klauspost's snappy) are compared at compress-utils' level 6 and are not like for like on ratio. lz4 also has a row for compress-utils at level 1, the fast mode. Go's stdlib bzip2 only decompresses, so its compress cell is empty and its input comes from compress-utils, untimed.
+**Results** (M-series MacBook). Each cell is **compress / decompress in MB/s** (uncompressed bytes per second), at level 6 for compress-utils and at the native level that maps to for the others (zlib 6, zstd 13, brotli 6, bz2 6, lz4 6), summed over the files of a tier. `ratio` is the compression ratio on silesia-mini, so you can see how comparable the work is: klauspost's levels are its own match finders, not zlib's or zstd's, so its ratios are 3% lower at the "same" level. Libraries with no levels (ulikunitz/xz) are compared at compress-utils' level 6 and are not like for like on ratio. Snappy has no levels in any implementation, ours included, so its tables have no level caveat; klauspost's snappy ratio is higher (2.04) because its encoder is a different one. lz4 also has a row for compress-utils at level 1, the fast mode. Go's stdlib bzip2 only decompresses, so its compress cell is empty and its input comes from compress-utils, untimed.
 
 **zlib**
 
@@ -477,7 +477,7 @@ python3 benchmarks/runner.py --drivers $D --algos $A --levels 1,4,6,10 --modes o
 | Implementation | ratio | large files | large, streaming | 4 KB messages | 1 KB messages |
 |---|---|---|---|---|---|
 | compress-utils | 1.77 | 637 / 2,153 | 613 / 1,617 | 814 / 2,516 | 863 / 2,817 |
-| klauspost/compress (no levels) | 2.04 | 456 / 2,435 | - | 598 / 3,099 | 764 / 4,796 |
+| klauspost/compress | 2.04 | 456 / 2,435 | - | 598 / 3,099 | 764 / 4,796 |
 
 - **We win decompression of the C codecs and brotli, bzip2 and xz outright.** zlib decompress is 439 MB/s against klauspost's 373 and the stdlib's 262 (large files), 193 against 145 and 87 at 1 KB; zstd 2,131 against 1,895 (large) and 516 against 365 (1 KB). brotli is 2.1× faster both ways (81 / 575 MB/s against 38 / 279) at the same ratio. bzip2: we compress 1.4× faster than dsnet (25 against 17 MB/s) at a higher ratio (3.17 against 2.86) and decompress at the same speed; the stdlib decoder is 1.6× slower on large files and 5× slower on 1 KB messages (7 against 35 MB/s).
 - **klauspost/compress compresses 2-3× faster than us at zlib and zstd, at a ratio about 3% lower:** zlib 151 against 53 MB/s on large files (102 against 70 at 4 KB; level with us at 1 KB, 45 against 46), zstd 46.5 against 20.8 (47 against 30 at 4 KB, 31 against 28 at 1 KB). This is pure Go beating the C library on compression speed by trading a little ratio; it is the thing a Go user would notice.
@@ -505,7 +505,7 @@ python3 benchmarks/runner.py --drivers $D --algos zlib,gzip --levels 1,4,6,10 --
     --corpus canterbury,github-users,silesia-blocks --samples 3
 ```
 
-**Results** (M-series MacBook). Same cell format as the Go and Python runs: **compress / decompress in MB/s** at level 6 for compress-utils and at the native level that maps to for the others, summed over a tier's files, with the ratio on silesia-mini. lz4_flex and snap have no levels and are compared with compress-utils at the matching level, shown as an extra row for lz4 (level 1, the fast mode).
+**Results** (M-series MacBook). Same cell format as the Go and Python runs: **compress / decompress in MB/s** at level 6 for compress-utils and at the native level that maps to for the others, summed over a tier's files, with the ratio on silesia-mini. lz4_flex has no levels and is compared with compress-utils at the matching level, shown as an extra row for lz4 (level 1, the fast mode). Snappy has no levels in any implementation, so there is no caveat in its table.
 
 **zlib**
 
@@ -556,7 +556,7 @@ python3 benchmarks/runner.py --drivers $D --algos zlib,gzip --levels 1,4,6,10 --
 | Implementation | ratio | large files | large, streaming | 4 KB messages | 1 KB messages |
 |---|---|---|---|---|---|
 | compress-utils | 1.77 | 627 / 2,157 | 588 / 1,588 | 887 / 2,843 | 1,032 / 3,343 |
-| snap crate (no levels) | 1.75 | 970 / 2,250 | - | 1,207 / 3,270 | 1,538 / 4,101 |
+| snap crate | 1.75 | 970 / 2,250 | - | 1,207 / 3,270 | 1,538 / 4,101 |
 
 - **zstd, bzip2 and xz are parity:** the crates are bindings to (or ports of) the same codecs. zstd 21 / 2,157 for us against 22 / 1,779 for the crate (ours decompresses large files 21% faster, small messages are equal), xz 5.4 / 108 against 5.6 / 107, bzip2 25.0 / 63 against 25.3 / 61, with our decompression 18% faster on 4 KB messages and 42% on 1 KB (37 against 26 MB/s), probably per-call setup in the pure-Rust port.
 - **Deflate: we lose to both flate2 backends on compression and to zlib-rs on decompression.** miniz_oxide compresses at 61 MB/s against our 52 (65 against 46 at 1 KB) and decompresses at 502 against 447, at the same ratio. zlib-rs is 2.1× faster than us to compress (112 against 52) and 1.7× to decompress (757 against 447) on large files, at a ratio 2% lower; on 1 KB messages it compresses slower than miniz_oxide (52 against 65) and its decompression lead over us is 9% (224 against 205). This is the Rust counterpart of the C finding (zlib-ng, zlib-rs and libdeflate are all faster than the zlib we ship) and the same switch fixes it.
@@ -603,8 +603,8 @@ Run on the maintainer's M-series MacBook, single-threaded, every library a relea
 | Implementation | ratio | large files | 4 KB messages | 1 KB messages |
 |---|---|---|---|---|
 | compress-utils | 1.77 | 811 / 2,106 | 1,160 / 2,824 | 1,349 / 3,451 |
-| snappy-c (no levels) | 1.77 | 827 / 2,036 | 1,121 / 2,672 | 1,345 / 3,280 |
-| google-snappy (no levels) | 1.76 | 1,163 / 4,258 | 1,541 / 5,274 | 1,855 / 5,274 |
+| snappy-c | 1.77 | 827 / 2,036 | 1,121 / 2,672 | 1,345 / 3,280 |
+| google-snappy | 1.76 | 1,163 / 4,258 | 1,541 / 5,274 | 1,855 / 5,274 |
 
 - **zlib / gzip / deflate: we ship the slowest.** On large files madler zlib does 50 MB/s compress and 470 decompress; libdeflate does 131 / 1,164 (one-shot only), zlib-ng 120 / 778 and zlib-rs 108 / 817, all at the same ratio. At 1 KB messages libdeflate does 82 / 318 against our 45 / 186. ISA-L reaches 213 / 514 at its top level, at a lower ratio. miniz is level with us on compress and 17% faster at decompress.
 - **snappy:** Google's C++ snappy does 1,163 / 4,258 on large files against our C port's 811 / 2,106, and 1,855 / 5,274 against 1,349 / 3,451 on 1 KB messages, at a ratio 0.6% lower.
