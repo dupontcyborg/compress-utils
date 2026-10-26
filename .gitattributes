@@ -40,8 +40,9 @@ bindings/wasm/src/**/index.ts linguist-vendored
 bindings/wasm/src/core/resolve-*.ts linguist-vendored
 
 # Generated cgo codec sources
-bindings/go/*_cgen.c linguist-vendored
-bindings/go/*_cgen.h linguist-vendored
+bindings/go/*_cgen.c linguist-generated=true
+bindings/go/*_cgen.h linguist-generated=true
+bindings/go/cgo_generated.go linguist-generated=true
 
 # Third-party vendored libraries
 third_party/** linguist-vendored
