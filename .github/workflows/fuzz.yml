@@ -53,7 +53,7 @@ jobs:
       - name: Replay regression inputs
         # Only the fuzz replay: the rest of the suite expects checksum errors,
         # which FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION turns off.
-        run: ctest --test-dir build-fuzz --output-on-failure -R fuzz_regressions
+        run: ctest --test-dir build-fuzz --output-on-failure -R "fuzz_(roundtrip_)?regressions"
 
       - name: Restore fuzz corpus
         uses: actions/cache/restore@v4
@@ -74,6 +74,20 @@ jobs:
           ./build-fuzz/tests/fuzz/fuzz_decompress fuzz-corpus build-fuzz/tests/fuzz/seeds \
             -fork=$(nproc) -ignore_timeouts=0 -ignore_ooms=0 \
             -max_total_time=$FUZZ_SECONDS -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=fuzz-artifacts/ -print_final_stats=1
+
+      - name: Fuzz round trip (encoders)
+        # Random bytes must compress and decompress back, one-shot and
+        # streaming. A sixth of the decoder budget, no cached corpus: the
+        # decoder seeds are enough data to start from.
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/fuzz/lsan.supp
+        run: |
+          mkdir -p fuzz-corpus-rt fuzz-artifacts
+          ./build-fuzz/tests/fuzz/fuzz_roundtrip fuzz-corpus-rt build-fuzz/tests/fuzz/seeds \
+            tests/fuzz/regressions-roundtrip \
+            -fork=$(nproc) -ignore_timeouts=0 -ignore_ooms=0 \
+            -max_total_time=$((FUZZ_SECONDS / 6)) -max_len=65536 -timeout=10 -rss_limit_mb=2048 \
             -artifact_prefix=fuzz-artifacts/ -print_final_stats=1
 
       - name: Upload crash inputs
