@@ -26,8 +26,9 @@ concurrency:
 jobs:
   fuzz:
     runs-on: ubuntu-latest
-    # Sunday's 3 h run plus ~5 min of build, merge and coverage.
-    timeout-minutes: ${{ github.event.schedule == '0 7 * * 0' && 210 || 60 }}
+    # Sunday's 3 h decoder run, the encoder run (a sixth of it, 30 min) and
+    # ~5 min of build, merge and coverage: 215 min, with margin.
+    timeout-minutes: ${{ github.event.schedule == '0 7 * * 0' && 240 || 60 }}
     env:
       FUZZ_SECONDS: >-
         ${{ github.event_name == 'pull_request' && '180'
