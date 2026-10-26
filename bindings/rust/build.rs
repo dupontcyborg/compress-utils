@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 /// Manifest codecs to compile (each becomes its own static archive). `gzip`
 /// is not here — it reuses the zlib sources; only its vtable is added below.
-const CODECS: &[&str] = &["zstd", "brotli", "zlib", "bz2", "lz4", "xz", "snappy"];
+const CODECS: &[&str] = &["zstd", "brotli", "zlib", "bz2", "lz4", "xz"];
 
 /// Our C core: the ABI dispatcher + registry.
 const CORE_SOURCES: &[&str] = &["src/compress_utils.c", "src/registry.c"];
@@ -35,9 +35,13 @@ const VTABLES: &[(&str, &str)] = &[
     ("INCLUDE_LZO", "src/algorithms/lzo/lzo.c"),
 ];
 
-/// Hand-ported codecs outside the manifest (see third_party/VENDOR.md). They
-/// need no private defines, so they compile in the core Build.
-const HAND_PORTED: &[(&str, &str)] = &[("third_party/lzokay", "lzokay.c")];
+/// Hand-ported and first-party codecs outside the manifest (see
+/// third_party/VENDOR.md). They need no private defines, so they compile in the
+/// core Build.
+const HAND_PORTED: &[(&str, &str)] = &[
+    ("third_party/lzokay", "lzokay.c"),
+    ("src/algorithms/snappy/core", "snappy_core.c"),
+];
 
 fn main() {
     // CARGO_MANIFEST_DIR is the repo root — the manifest lives there so
@@ -48,6 +52,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=third_party/manifest.json");
     println!("cargo:rerun-if-changed=third_party/lzokay");
+    println!("cargo:rerun-if-changed=src/algorithms/snappy/core");
     println!("cargo:rerun-if-changed=bindings/rust/build.rs");
 
     let manifest: serde_json::Value = {
@@ -58,7 +63,7 @@ fn main() {
     let codecs = &manifest["codecs"];
 
     // Collect codec public include dirs so the core build (which compiles the
-    // vtables that #include <zstd.h>, snappy-c.h, ...) can find them.
+    // vtables that #include <zstd.h>, ...) can find them.
     let mut core_includes: Vec<PathBuf> = vec![root.join("include"), root.join("src")];
 
     for &name in CODECS {
@@ -114,8 +119,8 @@ fn main() {
     core.define("CU_BUILD_VERSION", Some(format!("\"{version}\"").as_str()));
     core.compile("compress_utils_core");
 
-    // Runtime libs the archives reference. cc emits the C++ stdlib link for the
-    // snappy (cpp) Build automatically; libm (glibc) is on us.
+    // Runtime libs the archives reference. Every codec is C, so no C++ stdlib
+    // link is emitted; libm (glibc) is on us.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "linux" || target_os == "android" {
         println!("cargo:rustc-link-lib=m");

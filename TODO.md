@@ -153,8 +153,7 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
   verified). Wire format identical (byte-for-byte + both-direction interop).
   google/snappy is kept at `third_party/snappy-oracle` as the C++ differential
   test oracle only (`tests/test_snappy_oracle`), never shipped.
-  `third_party/snappy/compat.h` is a hand-authored portable shim (C11 `_Generic`
-  + MSVC/wasm fallbacks) replacing upstream's GCC-only kernel compat.h.
+- [X] `snappy` — **replaced the andikleen/snappy-c port with our own first-party C implementation (2026-10)**, `src/algorithms/snappy/core` (a self-contained compressor and decompressor with its own `LICENSE` and `PROVENANCE.md`; no vendored upstream, so `snappy` left `codec-versions.json`, `manifest.json` and `tools/vendor-codecs.py`). The snappy-c decoder was ~2x and its encoder ~1.4x slower than Google's C++; the new core is within ~10% of it (decode and encode, large files and 1-4 KB messages) at the same ratio. Still pure C (NEON/SSE2 intrinsics and hardware CRC32C behind compile-time detection, portable scalar paths). Output bytes differ from snappy-c's (and can differ between builds: the match hash is CRC32C where the target has the instruction) but are valid Snappy. Verified against the oracle in both directions plus differential accept/reject over corrupted inputs (`tests/test_snappy_core_diff`), the fuzz harness under ASan/UBSan, and every binding's tests.
 - [X] `xz/lzma`
 - [X] `zlib`
 - [X] `zstd`

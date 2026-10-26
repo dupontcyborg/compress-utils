@@ -21,7 +21,7 @@ What it does, per codec:
 
 Hand-authored config headers (see CONFIG_FILES) are portable, target-agnostic,
 and committed by hand — this tool never fetches or overwrites them. They are
-what replaces the upstream configure step for zlib/snappy.
+what replaces the upstream configure step for zlib.
 
 Usage:
   tools/vendor-codecs.py                 # re-vendor all codecs (download tags)
@@ -192,27 +192,12 @@ SPECS: dict[str, dict] = {
         ],
         "cxx": False,
     },
-    "snappy": {
-        "root": "",
-        "source_files": [
-            "snappy.cc", "snappy-c.cc", "snappy-sinksource.cc",
-            "snappy-stubs-internal.cc",
-        ],
-        "header_files": [
-            "snappy.h", "snappy-c.h", "snappy-internal.h",
-            "snappy-sinksource.h", "snappy-stubs-internal.h",
-        ],
-        "include_dirs": ["."],
-        "defines": ["HAVE_CONFIG_H"],
-        "cxx": True,
-    },
 }
 
 # Hand-authored, portable config headers committed by hand. Never fetched or
 # overwritten by this tool; they replace the upstream configure step.
 CONFIG_FILES = {
     "zlib": ["zconf.h"],
-    "snappy": ["config.h", "snappy-stubs-public.h"],
     # bz2 (1.0.8) needs no generated config — its version string is inline in
     # bzlib.c, so there is nothing to hand-author.
 }

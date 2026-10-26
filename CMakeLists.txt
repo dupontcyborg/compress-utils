@@ -225,10 +225,9 @@ if(INCLUDE_SNAPPY)
     list(APPEND CU_CORE_SOURCES ${CMAKE_SOURCE_DIR}/src/algorithms/snappy/snappy.c)
     list(APPEND CU_TARGET_LIBS snappy_library)
     list(APPEND CU_TARGET_DEFINITIONS INCLUDE_SNAPPY)
-    # Snappy is now the pure-C port (andikleen/snappy-c, third_party/snappy) — no
-    # C++ runtime dependency. The old c++/stdc++ link for google/snappy is gone;
-    # the whole release library is pure C. google/snappy (C++) lives only in the
-    # differential test (see tests/).
+    # Snappy is our own pure-C core (src/algorithms/snappy/core) — no C++
+    # runtime dependency. The whole release library is pure C. google/snappy
+    # (C++) lives only in the differential tests (see tests/).
 endif()
 
 if(INCLUDE_LZO)

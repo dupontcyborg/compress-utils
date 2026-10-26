@@ -70,7 +70,7 @@ endif()
 
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
-# release library, which uses the pure-C andikleen port. This is a C++ target on
+# release library, which uses our own pure-C core. This is a C++ target on
 # purpose; the whole point of the swap is that C++ stays confined to tests.
 if(ENABLE_TESTS AND INCLUDE_SNAPPY)
     set(_CU_SNAPPY_ORACLE ${CMAKE_SOURCE_DIR}/third_party/snappy-oracle)
@@ -91,6 +91,33 @@ if(ENABLE_TESTS AND INCLUDE_SNAPPY)
         target_compile_options(test_snappy_oracle PRIVATE -w)
     endif()
     add_test(NAME test_snappy_oracle COMMAND test_snappy_oracle)
+
+    # Differential test of the first-party Snappy core (src/algorithms/snappy/
+    # core) against the same oracle: both directions on many inputs, and
+    # accept/reject + byte-for-byte agreement on corrupted and generated ones,
+    # with guard pages around every buffer. Links the core directly (not
+    # compress_utils_obj), so the oracle's C++ symbols and ours never meet.
+    set(_CU_SNAPPY_CORE ${CMAKE_SOURCE_DIR}/src/algorithms/snappy/core)
+    add_executable(test_snappy_core_diff
+        interop/snappy_core_diff_test.cc
+        ${_CU_SNAPPY_CORE}/snappy_core.c
+        ${_CU_SNAPPY_ORACLE}/snappy.cc
+        ${_CU_SNAPPY_ORACLE}/snappy-sinksource.cc
+        ${_CU_SNAPPY_ORACLE}/snappy-stubs-internal.cc)
+    set_target_properties(test_snappy_core_diff PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+    target_compile_definitions(test_snappy_core_diff PRIVATE HAVE_CONFIG_H)
+    target_include_directories(test_snappy_core_diff PRIVATE ${_CU_SNAPPY_ORACLE} ${_CU_SNAPPY_CORE})
+    if(MSVC)
+        set_source_files_properties(
+            ${_CU_SNAPPY_ORACLE}/snappy.cc ${_CU_SNAPPY_ORACLE}/snappy-sinksource.cc
+            ${_CU_SNAPPY_ORACLE}/snappy-stubs-internal.cc PROPERTIES COMPILE_OPTIONS /w)
+    else()
+        set_source_files_properties(
+            ${_CU_SNAPPY_ORACLE}/snappy.cc ${_CU_SNAPPY_ORACLE}/snappy-sinksource.cc
+            ${_CU_SNAPPY_ORACLE}/snappy-stubs-internal.cc PROPERTIES COMPILE_OPTIONS -w)
+    endif()
+    add_test(NAME test_snappy_core_diff COMMAND test_snappy_core_diff)
+    set_tests_properties(test_snappy_core_diff PROPERTIES TIMEOUT 600)
 endif()
 
 add_subdirectory(fuzz)
