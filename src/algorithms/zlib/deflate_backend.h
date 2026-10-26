@@ -6,6 +6,11 @@
  *   - zlib wrapper (RFC 1950): windowBits 15
  *   - gzip wrapper (RFC 1952): windowBits 15 + 16 = 31
  *
+ * The library behind this is zlib-ng in its zlib-compatible mode, so the calls
+ * below are the classic zlib API. Its output differs from madler zlib at every
+ * level (other match finders) but is the same on every CPU and SIMD path, and
+ * every standard decoder reads it.
+ *
  * Neither wire format carries the decompressed size (gzip's ISIZE trailer is
  * mod 2^32 and needs the whole stream), so decompress_size_hint always returns
  * CU_ERR_SIZE_UNKNOWN and the bindings fall back to streaming.
@@ -53,9 +58,19 @@ static int dfl_next_gzip_member(z_stream* strm) {
     return strm->avail_in > 0;
 }
 
-/* zlib/gzip: user 1..10 → zlib native 1..9 (clamp). */
+/* zlib/gzip/deflate: user 1..10 → native 1..7, 9, 9, 9.
+ *
+ * zlib-ng's levels are different algorithms from zlib's: 1 is the "quick"
+ * strategy (fixed Huffman codes: about twice as fast, roughly 20% larger
+ * output), 2 is "fast", 3-6 "medium", 7-9 "slow" (lazy matching). Native 8 is
+ * skipped: it produces the same output as 7 within 0.1% and is slower. So user
+ * levels 8-10 all run native 9, the highest effort, which is the same
+ * algorithm and ratio as madler zlib's level 9. On text, native 9 comes out
+ * about 0.5% larger than 7 (an upstream quirk); on binary data it is about 2%
+ * smaller. */
 static int dfl_native_level(int user_level) {
-    return cu_clamp_level(user_level, 1, 9);
+    int level = cu_clamp_level(user_level, 1, 10);
+    return level <= 7 ? level : 9;
 }
 
 static cu_status_t dfl_map_error(int code, cu_status_t fallback) {
@@ -300,11 +315,21 @@ static cu_status_t dfl_cstream_pump(dfl_stream_state_t* st, int flush_flag,
                 return dfl_map_error(z_ret, CU_ERR_COMPRESSION);
             }
             if (st->strm.avail_out == 0) {
-                /* Out of room and more to write. */
-                *out_len = written;
-                return CU_ERR_BUF_TOO_SMALL;
+                /* Out of room: more to write, unless a flush just filled the
+                 * buffer exactly. Asking again would append a second flush
+                 * marker, and with a buffer under 7 bytes the flush would
+                 * never end (see deflate() in zlib.h), so ask what is left. */
+                unsigned pending = 0;
+                int bits = 0;
+                if (flush_flag == Z_FINISH || z_ret != Z_OK ||
+                    deflatePending(&st->strm, &pending, &bits) != Z_OK ||
+                    pending > 0 || bits > 0) {
+                    *out_len = written;
+                    return CU_ERR_BUF_TOO_SMALL;
+                }
             }
-            /* Z_OK / Z_BUF_ERROR with room remaining means deflate is done
+            /* Z_OK / Z_BUF_ERROR with room remaining (or a flush that ended
+             * exactly at the end of the buffer) means deflate is done
              * producing for this flush_flag. */
             break;
         }
