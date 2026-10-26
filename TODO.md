@@ -101,7 +101,15 @@ Measured on branch `ecosystem-benchmarks` (M-series MacBook, single-threaded, re
 - [X] Rename `compress-utils` to `compress-utils`
 - [x] Ship a bundled self-contained static `.a`
 - [x] Disable `ZSTD-LEGACY` & `ZSTD-MULTITHREADED` to slim the shared library — done via the vendored zstd defines (`ZSTD_LEGACY_SUPPORT=0`, `ZSTD_MULTITHREAD` dropped, `ZSTD_DISABLE_ASM`); also removes the pthread dependency so one build serves native + wasm.
-- [ ] Add CMake package config for `find_package(compress_utils)` support
+- [ ] **Make the CMake build consumable** (`FetchContent` / `add_subdirectory` / `find_package`). This is the prerequisite for the Conan, vcpkg and Homebrew entries under Package Managers: each recipe is essentially `cmake --install` plus a Config file, so do this first.
+  - [ ] Install to `GNUInstallDirs` (`CMAKE_INSTALL_LIBDIR` etc.) instead of the hardcoded `${CMAKE_SOURCE_DIR}/dist/c`, so a package manager's prefix / `DESTDIR` is honored. Keep `dist/c` as an opt-in layout for the release workflows that rely on it.
+  - [ ] `install(EXPORT)` plus a `compress_utilsConfig.cmake` / `ConfigVersion.cmake` (`CMakePackageConfigHelpers`) for `find_package(compress_utils)`, and a pkg-config file.
+  - [ ] Namespaced alias targets (`compress_utils::compress_utils` for shared, `compress_utils::static`) with the include directory on the interface.
+  - [ ] Gate developer-only defaults on `PROJECT_IS_TOP_LEVEL`: tests, benchmarks, C++/Python/WASM bindings, the forced Debug build type and global `-flto` should not apply when consumed via `FetchContent`.
+  - [ ] Make the static archive an easy path: today `compress_utils_static` only exists with `BUILD_STATIC_LIB`, and most C/C++ consumers want static.
+  - [ ] Version without a `.git` directory: `FetchContent` and release tarballs fall back to the hardcoded `DEFAULT_VERSION` (0.11.1), which drifts. Add a `CU_VERSION` override or a version file written at release time.
+  - [ ] Option to link system codecs (`find_package` for zlib, zstd, ...) instead of the vendored `third_party/` copies, so Conan/vcpkg recipes don't duplicate libraries consumers already have. Needed for distros too; same duplicate-symbol concern as the Rust static-lib limitation.
+  - [ ] Document `FetchContent` and `find_package` usage in the root README.
 
 ## Optimizations
 
@@ -148,9 +156,20 @@ Measured on branch `ecosystem-benchmarks` (M-series MacBook, single-threaded, re
 - [X] `js/ts` (WebAssembly via Emscripten)
 - [X] `python` (3.11 - 3.15)
 - [X] `rust`
-- [ ] `java` — deferred until someone asks for it; each new binding multiplies the maintenance matrix.
-- [ ] `swift` — deferred, same reason.
 - [ ] `cli` (standalone command-line tool) — deferred; if one new surface is added, this is the cheapest and most visible, but it comes after the "Next up" items.
+
+Planned language bindings, in priority order (each new binding multiplies the maintenance matrix, so keep each one's tests and benchmark minimal, and check what the ecosystem already offers before starting). All consume the C ABI in `include/compress_utils.h` (30 `CU_API` symbols):
+
+- [ ] `java` / `kotlin` — largest audience and a real gap (JVM compression libraries are mostly single-codec JNI wrappers). Use the Panama FFM API (Java 22+) with `jextract` over the header rather than JNI. The real work is Maven Central packaging with per-platform native libs in the jar. Kotlin consumes the Java artifact.
+- [ ] `csharp` / `.NET` — P/Invoke over the C ABI; NuGet `runtimes/<rid>/native/` layout. Best reach for the effort after Java.
+- [ ] `swift` — SwiftPM can consume a C target directly over the vendored sources (`module.modulemap` plus an idiomatic wrapper). Aimed at iOS/macOS users who want Brotli/zstd/lz4 in one package.
+- [ ] `zig` — cheapest to add: `@cImport` plus `build.zig.zon` over the vendored sources, and the zig toolchain is already a WASM build dependency. Small audience; check what `std` already covers first.
+- [ ] `ruby` — FFI gem over the shared library, or a native extension over the vendored sources (decide).
+- [ ] `php` — FFI (`ext-ffi`) versus a C extension distributed via PECL/PIE (decide; FFI is often disabled on shared hosts).
+- [ ] `lua` — C module over the vendored sources, packaged on LuaRocks (LuaJIT FFI as an alternative).
+- [ ] `r` — `.Call` package over the vendored sources. Check CRAN's size and bundled-source policy before committing.
+
+Not planned: Node.js native addon (N-API). The WASM binding covers Node and the browser, and Node's built-in zlib/brotli/zstd cover the common cases.
 
 ## Algorithms
 
@@ -176,8 +195,14 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
 
 ## Package Managers
 
-- [ ] `c` -> `conan` (low priority — publish the C library to Conan Center for C consumers; requires writing a `conanfile.py` recipe + registering with conan-center-index)
-- [ ] `c++` -> `conan` (low priority — same as above for the C++ header-only binding; shares most of the recipe with the C package, just adds the `compress_utils_cpp` INTERFACE target export)
+C/C++ package managers all depend on "Make the CMake build consumable" under Build System Fixes. Suggested order: vcpkg, Conan, Homebrew.
+
+- [ ] `c` -> `vcpkg` — portfile plus the CMake Config file; the registry PR process is lighter than Conan Center's, so likely first.
+- [ ] `c++` -> `vcpkg` — same package; adds the `compress_utils_cpp` INTERFACE target export.
+- [ ] `c` -> `conan` — write a `conanfile.py` recipe in this repo first, then upstream it to conan-center-index (review takes weeks). Expose an option to use system codecs instead of the vendored ones.
+- [ ] `c++` -> `conan` — same recipe as the C package, plus the `compress_utils_cpp` INTERFACE target export.
+- [ ] `c` / `c++` -> `homebrew` — formula or own tap over a tagged release tarball; a tap avoids review.
+- [ ] `c` / `c++` -> Linux distros (`apt`/`rpm`) — deferred until someone asks. Debian and Fedora policy forbids bundled zlib/zstd/etc., so this needs the system-codecs option and likely unbundling of the patched Snappy C port and the LZO decompressor.
 - [X] `go` -> `pkg.go`
 - [X] `js/ts` -> `npm`
 - [X] `python` -> `pypi`
@@ -186,8 +211,14 @@ end-to-end checklist (C core → build → bindings → tests → benchmarks →
   Python pattern; verifies Cargo.toml == tag first) plus a `cargo publish
   --dry-run` package gate on every run. Packaged crate is 7.1 MiB / 1.7 MiB
   compressed (well under the 10 MiB limit). Published since 2026-07 (0.11.1 is live on crates.io).
-- [ ] `java` -> `maven`
-- [ ] `swift` -> ?
+- [ ] `java` / `kotlin` -> `maven` (Maven Central)
+- [ ] `csharp` -> `nuget`
+- [ ] `swift` -> SwiftPM
+- [ ] `zig` -> `build.zig.zon` package
+- [ ] `ruby` -> `rubygems`
+- [ ] `php` -> `packagist` (FFI) or `pecl`/PIE (extension)
+- [ ] `lua` -> `luarocks`
+- [ ] `r` -> `cran`
 - [ ] `cli-macos` -> `homebrew`
 - [ ] `cli-linux` -> `apt`/`rpm`
 

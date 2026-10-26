@@ -126,9 +126,12 @@ benchmarks/
     c/bench_zapi.h      zlib/gzip/deflate codecs over any zlib-API library
     wasm/bench_wasm.mjs   compress-utils WASM package via Node (records module size)
     python/bench_py.py    compress-utils Python binding
-    go/bench_go.go        compress-utils Go binding (cgo; `go build`)
-    rust/                 compress-utils Rust binding — a sibling crate with a
-                          path dependency, so the published manifest stays clean
+    go/                   compress-utils Go binding and the Go competitors — its own
+                          module (cgo; `go build`), so the competitors stay out of the
+                          root go.mod
+    rust/                 compress-utils Rust binding and the Rust competitors — a
+                          sibling crate with a path dependency, so the published
+                          manifest stays clean
   lib/
     bench_common.py  run metadata, result schema, throughput math
   deps/deps.py       fetch + build the alternative C libraries (benchmark-only)
@@ -353,6 +356,42 @@ Two Bun quirks the driver works around, both of which end a process silently wit
 ```sh
 python3 benchmarks/size/js_size.py
 ```
+
+### Go: competitors
+
+`drivers/go` is its own module (`bench-go`) that replaces `github.com/dupontcyborg/compress-utils` with this checkout, so the competitors never touch the root `go.mod` that consumers get, and the binding still compiles its C core through cgo. One binary, `--impl` selects the implementation; the runner's keys are:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `go` | compress-utils | all |
+| `go-stdlib` | `compress/zlib`, `compress/gzip`, `compress/bzip2` (decode only) | zlib, gzip, bz2 |
+| `go-klauspost` | klauspost/compress 1.20 (`zstd`, `zlib`, `gzip`, `snappy`) | zstd, zlib, gzip, snappy (raw blocks, no levels, no streaming) |
+| `go-brotli` | andybalholm/brotli 1.2 | brotli |
+| `go-lz4` | pierrec/lz4 4.1 (levels 0-9) | lz4 |
+| `go-xz` | ulikunitz/xz 0.5 (pure Go, no levels) | xz |
+| `go-bzip2` | dsnet/compress 0.0.1 (archived, but the only pure-Go bzip2 encoder) | bz2 |
+
+klauspost's zstd runs its single-threaded encoder and decoder with a context per level, reused (its documented usage), and its levels are the `EncoderLevelFromZstd` mapping of zstd's. Go's standard-library codecs have only streaming APIs, so one-shot there writes the input in a single call and streaming writes it in chunks. The Go and Rust bindings have no `deflate` format.
+
+### Rust: competitors
+
+`drivers/rust` is a sibling crate (`bench-rust`, path dependency on the binding; its `Cargo.lock` pins the competitors). One binary, `--impl` selects the implementation:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `rust` | compress-utils | all |
+| `rust-flate2` | flate2 1.1, default `miniz_oxide` backend | zlib, gzip |
+| `rust-flate2-zlib-rs` | flate2 1.1 with its `zlib-rs` backend (a second binary, built with `--features zlib-rs`) | zlib, gzip |
+| `rust-zstd` | zstd 0.14 (libzstd 1.5.7) | zstd |
+| `rust-brotli` | brotli 9 (the Rust port) | brotli |
+| `rust-lz4_flex` | lz4_flex 0.14, frame format (no levels) | lz4 |
+| `rust-snap` | snap 1.1, raw blocks (no levels, no streaming) | snappy |
+| `rust-bzip2` | bzip2 0.6 (libbz2-rs-sys, pure Rust) | bz2 |
+| `rust-xz2` | xz2 0.1 (liblzma) | xz |
+
+flate2 chooses its backend at build time, so the two it is usually run with are two binaries: the default `miniz_oxide` (what most `Cargo.lock` files have) and `zlib-rs`, the fast one. (zlib-ng is benchmarked as a C library above.) zstd's one-shot path is `zstd::bulk`, as its docs recommend; with a known size, decompression passes it.
+
+Both Go and Rust competitors get native levels and are set to compress-utils' wire format where their API allows (zstd and LZ4 content size, LZ4 checksum, xz CRC64); compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. Decode-only libraries get their input from compress-utils, untimed, and records carry `decode_only: true`.
 
 ### Binary size
 
