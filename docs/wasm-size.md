@@ -123,3 +123,18 @@ measure the *code* that's reachable only through dead exports, not the export
 list. (2) The biggest single win (#6) wasn't in the original plan; it surfaced
 only from a per-module section breakdown (`wasm-objdump -h`). Lead with that
 breakdown on the next codec bump rather than reasoning from the export table.
+
+## zlib-ng backend (2026-10-25)
+
+The deflate codecs (zlib, gzip, raw deflate share one module per wrapper) moved from madler zlib to zlib-ng 2.3.3. On wasm32 zlib-ng runs its generic C paths: no SIMD and no runtime CPU detection (the dispatch table is still there, with one entry per function). Sizes, post `wasm-strip` + `wasm-opt -O3`, before and after:
+
+| Module | madler zlib | zlib-ng | Δ |
+|--------|------------:|--------:|--:|
+| zlib (both directions) | 86.9 KB | 104.4 KB | +17.5 KB |
+| zlib decompress-only | 54.5 KB | 67.8 KB | +13.3 KB |
+| zlib compress-only | 62 KB | 80 KB | +18 KB |
+| gzip (both directions) | 84.9 KB | 103.4 KB | +18.5 KB |
+| gzip decompress-only | 53.1 KB | 67.0 KB | +13.9 KB |
+| gzip compress-only | 61 KB | 79.7 KB | +18.7 KB |
+
+Direction-only builds still drop the other direction's code, even though zlib-ng's dispatch table (`functable`) names functions from both sides. The budgets in `bindings/wasm/tests/bundle.test.ts` were raised to match (zlib 96 → 115 KB, gzip 93 → 114 KB, and the four direction caps).

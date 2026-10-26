@@ -19,8 +19,8 @@
 # built for wasm32-wasi alongside ours, once, and shared by all variants.
 
 cmake_minimum_required(VERSION 3.17)
-# Every codec is C now (snappy switched from google/snappy to the andikleen C
-# port), so this is a C-only project — no libc++ pulled into any .wasm.
+# Every codec is C now (snappy is our own C core, no longer google/snappy), so
+# this is a C-only project — no libc++ pulled into any .wasm.
 project(compress_utils_wasm C)
 
 if(NOT CU_WASM_TOOLCHAIN)
@@ -202,7 +202,7 @@ function(cu_add_wasm_variant DIR)
     target_link_libraries(${_tgt} PRIVATE ${CU_WASM_ALGO}_library)
 
     # (Snappy used to need LINKER_LANGUAGE CXX + a wasm libc++ because it was
-    # google/snappy. It's the pure-C andikleen port now — no C++ carve-out, no
+    # google/snappy. It's our own pure-C core now — no C++ carve-out, no
     # libc++ in the .wasm.)
 
     # Strip the .wasm suffix that CMake/WASI sets by default, then re-add it

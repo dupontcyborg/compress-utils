@@ -8,11 +8,11 @@ This project would not be possible without the remarkable work of other engineer
 - **License**: MIT License
 - **Authors**: Google and contributors
 
-## zlib
+## zlib-ng (zlib, gzip and raw DEFLATE)
 
-- **Repository**: https://github.com/madler/zlib
+- **Repository**: https://github.com/zlib-ng/zlib-ng
 - **License**: zlib License
-- **Authors**: Jean-loup Gailly, Mark Adler and contributors
+- **Authors**: zlib-ng contributors, building on zlib by Jean-loup Gailly and Mark Adler
 
 ## bzip2
 
@@ -40,12 +40,11 @@ This project would not be possible without the remarkable work of other engineer
 
 ## Snappy
 
-The shipped codec is the pure-C port (keeps the library free of a C++ runtime dependency). The reference C++ implementation is used only as the differential test oracle (`third_party/snappy-oracle`) and is never distributed.
+The shipped codec is our own pure-C implementation of the Snappy raw block format (`src/algorithms/snappy/core`; it keeps the library free of a C++ runtime dependency). Its design follows Google's snappy and Andi Kleen's C port of it, whose BSD 3-Clause notices it retains. The reference C++ implementation is also used as the differential test oracle (`third_party/snappy-oracle`) and is never distributed.
 
-- **Repository**: https://github.com/andikleen/snappy-c (shipped, pure C)
-- **License**: BSD 3-Clause License
-- **Authors**: Andi Kleen and contributors
-- **Reference / test oracle**: https://github.com/google/snappy — BSD 3-Clause License, Google and contributors
+- **Format and design**: https://github.com/google/snappy — BSD 3-Clause License, Google and contributors
+- **Earlier C port (replaced by the first-party core)**: https://github.com/andikleen/snappy-c — BSD 3-Clause License, Andi Kleen and contributors
+- **Provenance**: see `src/algorithms/snappy/core/PROVENANCE.md` and `LICENSE`
 
 ## lzokay (LZO1X decoder)
 

@@ -52,6 +52,8 @@ Each binding has its own test suite, all wired through ctest:
 | `test_compress_utils` (C) | One-shot, streaming with tight buffers, cross-API round-trip, error codes, edge cases |
 | `test_compress_utils_cpp` (C++) | `cu::` namespace surface, RAII semantics, exception translation |
 | `test_compress_utils_py` (Python) | Same surface via pybind11, plus 1MB random/repetitive cases, string-vs-enum spellings |
+| `test_snappy_oracle` (C++) | The `cu_*` API's Snappy output and input against the reference google/snappy (`third_party/snappy-oracle`, test-only) |
+| `test_snappy_core_diff` (C++) | Our Snappy core (`src/algorithms/snappy/core`) linked directly against the same oracle: both directions on many inputs, and on corrupted, truncated and generated inputs the same accept/reject and the same bytes. Buffers sit against guard pages so any out-of-bounds access faults without a sanitizer. `SNAPPY_DIFF_ITERS=2000000` runs it harder |
 
 Plus a libFuzzer harness at `tests/fuzz/fuzz_decompress.c` (see [Fuzzing](#fuzzing)); every build also runs its saved regression inputs as the `fuzz_regressions` ctest.
 

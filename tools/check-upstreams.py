@@ -77,11 +77,15 @@ def fetch_tags(url: str, token: str | None) -> list[str]:
     raise ValueError(f"unknown forge: {url}")
 
 
-def latest_stable(tags: list[str]):
+def latest_stable(tags: list[str], tag_regex: str | None = None):
     best_ver = None
     best_tag = None
     for t in tags:
         if _PRERELEASE_RE.search(t):
+            continue
+        # Optional per-codec filter (codec-versions.json "tag_regex"): zlib-ng's
+        # repo also carries a fork's v1.2.11.1_jtkv6.x tags that parse as 6.x.
+        if tag_regex and not re.fullmatch(tag_regex, t):
             continue
         v = parse_ver(t)
         if v and (best_ver is None or v > best_ver):
@@ -99,7 +103,8 @@ def main() -> int:
     for name, meta in codecs.items():
         cur = meta["tag"]
         try:
-            _, latest_tag = latest_stable(fetch_tags(meta["url"], token))
+            _, latest_tag = latest_stable(
+                fetch_tags(meta["url"], token), meta.get("tag_regex"))
         except (urllib.error.URLError, ValueError, KeyError) as e:
             rows.append((name, cur, "?", f"⚠️ check failed ({e})"))
             continue

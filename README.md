@@ -80,12 +80,12 @@ cu::compress(cu::Algorithm::Zstd, data, 5);
 |----------------------------------------------------|----------------------------|--------------------------------------------------------------------------|
 | [Zstandard](https://github.com/facebook/zstd)      | High speed, high ratio     | ZSTD frame with content size                                             |
 | [Brotli](https://github.com/google/brotli)         | Web-optimized              | Raw Brotli stream                                                        |
-| [zlib](https://github.com/madler/zlib)             | Ubiquitous                 | zlib wrapper (RFC 1950)                                                  |
+| [zlib](https://github.com/zlib-ng/zlib-ng)         | Ubiquitous                 | zlib wrapper (RFC 1950)                                                  |
 | [gzip](https://www.gnu.org/software/gzip/)         | Ubiquitous (.gz files)     | gzip stream (RFC 1952)                                                   |
 | [bzip2](https://sourceware.org/bzip2)              | High ratio                 | bzip2 stream                                                             |
 | [LZ4](https://github.com/lz4/lz4)                  | Highest speed              | LZ4 frame (interoperable with the `lz4` CLI and `.lz4` files)            |
 | [XZ / LZMA](https://github.com/tukaani-project/xz) | Highest ratio              | XZ stream with CRC64                                                     |
-| [Snappy](https://github.com/andikleen/snappy-c)    | Very high speed, low ratio | Raw Snappy block (interoperable with reference snappy and python-snappy) |
+| [Snappy](https://github.com/google/snappy)         | Very high speed, low ratio | Raw Snappy block (interoperable with reference snappy and python-snappy) |
 
 Raw block formats, for reading data from other tools:
 
@@ -144,7 +144,7 @@ Bugs and typos are most likely my own.
 
 ## Acknowledgments
 
-This project wraps seven battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+This project wraps six battle-tested upstream compression libraries. See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
 ## License
 

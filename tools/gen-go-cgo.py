@@ -49,10 +49,14 @@ GEN_GO = "cgo_generated.go"
 # codec sources of its own (it links zlib's).
 ALGOS = ["zstd", "brotli", "zlib", "gzip", "bz2", "lz4", "xz", "snappy", "deflate", "lz4_raw", "lzo"]
 
-# Hand-ported codecs that live in third_party/ but outside manifest.json (see
-# third_party/VENDOR.md), described in the same shape as a manifest entry.
+# Hand-ported and first-party codecs outside manifest.json (see
+# third_party/VENDOR.md), described in the same shape as a manifest entry. An
+# optional "dir" (relative to the repo root) overrides the default
+# third_party/<name> for code that is not vendored.
 HAND_PORTED = {
     "lzokay": {"sources": ["lzokay.c"], "include_dirs": ["."], "defines": [], "cxx": False},
+    "snappy_core": {"dir": "src/algorithms/snappy/core", "sources": ["snappy_core.c"],
+                    "include_dirs": ["."], "defines": [], "cxx": False},
 }
 
 # Our own translation units (not upstream): the ABI dispatcher, the registry,
@@ -89,15 +93,21 @@ def banner() -> str:
             "third_party/manifest.json. DO NOT EDIT. */\n")
 
 
+def codec_dir(codec: str, entry: dict) -> str:
+    """Repo-relative directory holding a codec's sources."""
+    return entry.get("dir", f"third_party/{codec}")
+
+
 def codec_shims(codec: str, entry: dict) -> dict[str, str]:
     """Return {filename: content} for one codec's shim(s)."""
     ext = ".cc" if entry["cxx"] else ".c"
+    cdir = codec_dir(codec, entry)
     defines = "".join(define_line(d) + "\n" for d in entry["defines"])
     out: dict[str, str] = {}
 
     if UNITY.get(codec, True):
         includes = "".join(
-            f'#include "../../third_party/{codec}/{s}"\n' for s in entry["sources"])
+            f'#include "../../{cdir}/{s}"\n' for s in entry["sources"])
         out[f"{GEN_PREFIX}codec_{codec}{GEN_SUFFIX}{ext}"] = (
             banner()
             + f"/* {codec}: unity translation unit ({len(entry['sources'])} "
@@ -108,7 +118,7 @@ def codec_shims(codec: str, entry: dict) -> dict[str, str]:
             flat = s.replace("/", "_").rsplit(".", 1)[0]
             out[f"{GEN_PREFIX}codec_{codec}__{flat}{GEN_SUFFIX}{ext}"] = (
                 banner() + defines + "\n"
-                + f'#include "../../third_party/{codec}/{s}"\n')
+                + f'#include "../../{cdir}/{s}"\n')
     return out
 
 
@@ -136,7 +146,7 @@ def cgo_generated_go(codecs: dict) -> dict[str, str]:
     for codec, entry in sorted(codecs.items()):
         for d in entry["include_dirs"]:
             sub = f"/{d}" if d not in (".", "") else ""
-            incs.append(f"${{SRCDIR}}/../../third_party/{codec}{sub}")
+            incs.append(f"${{SRCDIR}}/../../{codec_dir(codec, entry)}{sub}")
     inc_lines = "".join(f"// #cgo CPPFLAGS: -I{p}\n" for p in incs)
     defs = " ".join(f"-DINCLUDE_{a.upper()}" for a in ALGOS)
     # NOTE: the comment group immediately above `import "C"` is the cgo preamble,

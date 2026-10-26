@@ -14,7 +14,7 @@ package compressutils
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/bz2
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/lz4/lib
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/lzokay
-// #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/snappy
+// #cgo CPPFLAGS: -I${SRCDIR}/../../src/algorithms/snappy/core
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/liblzma/api
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/liblzma/common
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/xz/src/liblzma/check
