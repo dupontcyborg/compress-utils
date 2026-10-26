@@ -59,7 +59,9 @@ Plus a libFuzzer harness at `tests/fuzz/fuzz_decompress.c` (see [Fuzzing](#fuzzi
 
 `tests/fuzz/fuzz_decompress.c` feeds mutated input to every decoder: the one-shot path, the size hint, and the streaming decoder with varied chunk and buffer sizes, in default and single-stream mode. It fails on crashes, leaks, ASan/UBSan reports, decoders that stall in a drain loop, and single-stream contract violations. The first input byte picks the codec (an index into `tests/fuzz/fuzz_algos.h`, append only) and the second picks the streaming mode.
 
-CI (`.github/workflows/fuzz.yml`) fuzzes for 3 minutes on every PR and 30 minutes nightly on Linux, keeping the corpus the nightly run grows in the Actions cache. Crash inputs are uploaded as the `fuzz-artifacts` artifact.
+A second harness, `tests/fuzz/fuzz_roundtrip.c`, fuzzes the encoders: the input bytes are the data, which must compress (one-shot into exactly `cu_compress_bound` bytes, and through the streaming encoder with small buffers and flushes) and decompress back to themselves. Saved inputs for it live in `tests/fuzz/regressions-roundtrip/`, replayed by the `fuzz_roundtrip_regressions` ctest.
+
+CI (`.github/workflows/fuzz.yml`) fuzzes the decoders for 3 minutes on every PR and 30 minutes nightly on Linux, keeping the corpus the nightly run grows in the Actions cache. Crash inputs are uploaded as the `fuzz-artifacts` artifact.
 
 To fuzz locally you need a clang that ships libFuzzer. Apple's clang doesn't, so on macOS use Homebrew's `llvm`. `-DENABLE_FUZZ=ON` instruments every target, including the vendored codecs, for coverage and ASan/UBSan:
 
