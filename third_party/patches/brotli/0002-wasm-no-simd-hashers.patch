@@ -1,0 +1,24 @@
+compress-utils: keep the scalar H5/H6 hashers on wasm in brotli.
+
+Applied to third_party/brotli (v1.2.1) by the WASM build only, never to the vendored tree itself (see third_party/VENDOR.md).
+
+BROTLI_MAX_SIMD_QUALITY is defined whenever BROTLI_TZCNT64 is, and BROTLI_TZCNT64 is defined once BROTLI_BUILD_64_BIT turns on BROTLI_64_BITS. enc/quality.h then selects the "SIMD" hashers H58 and H68 for qualities up to that limit. On wasm there is no real SIMD there: they run the scalar SWAR tag matcher on size_t (4-byte) chunks (enc/matching_tag_mask.h), a configuration upstream CI does not build. Measured against the scalar hashers they gain up to 2x on binary-like inputs (osdb, sao) at qualities 5 and 6 but lose 10% to 31% on text (dickens) and on 1 KB and 4 KB messages at those qualities. This patch leaves BROTLI_MAX_SIMD_QUALITY undefined on __wasm__, so quality 5 and 6 keep H5 and H6 and the rest of the 64-bit changes (match length, bit reader) are kept.
+
+Compressed output is byte-identical with and without the patch.
+
+diff --git a/c/common/platform.h b/c/common/platform.h
+index 8a94427..ddd0c7d 100644
+--- a/c/common/platform.h
++++ b/c/common/platform.h
+@@ -646,7 +646,10 @@ BROTLI_UNUSED_FUNCTION void BrotliSuppressUnusedFunctions(void) {
+ #endif
+ 
+ /* The SIMD matchers are only faster at certain quality levels. */
+-#if defined(_M_X64) && defined(BROTLI_TZCNT64)
++#if defined(__wasm__)
++/* No real SIMD matcher on wasm: the "SIMD" hashers (H58/H68) would run the
++   scalar SWAR tag matcher, so keep the scalar H5/H6 hashers. */
++#elif defined(_M_X64) && defined(BROTLI_TZCNT64)
+ #define BROTLI_MAX_SIMD_QUALITY 7
+ #elif defined(BROTLI_TZCNT64)
+ #define BROTLI_MAX_SIMD_QUALITY 6

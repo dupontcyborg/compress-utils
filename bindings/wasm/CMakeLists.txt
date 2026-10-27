@@ -107,6 +107,18 @@ if(CU_WASM_ALGO STREQUAL "zstd")
     target_compile_definitions(zstd_objs PRIVATE ZSTD_WASM_WIDE_REGS=1)
 endif()
 
+# brotli: use 64-bit registers (brotli_reg_t = uint64_t) for the bit reader and
+# the match-length routine. wasm32 has native i64 but 32-bit pointers, and brotli
+# keys its register width on the target architecture, so without this define it
+# takes the 32-bit paths. BROTLI_BUILD_64_BIT is upstream's own override. Two
+# patches (third_party/patches/brotli) go with it: the first lets the decoder use
+# its unaligned-load refill on wasm, the second keeps the scalar H5/H6 hashers
+# that this define would otherwise swap for the "SIMD" ones. Applies to every
+# direction variant, since they share one codec lib.
+if(CU_WASM_ALGO STREQUAL "brotli")
+    target_compile_definitions(brotli_objs PRIVATE BROTLI_BUILD_64_BIT=1)
+endif()
+
 # --- Export allow-list groups -----------------------------------------------
 # The toolchain dropped `-Wl,--export-dynamic`, so by default nothing but the
 # reactor `_initialize` + `memory` is exported and wasm-ld GCs everything the
