@@ -29,6 +29,12 @@ cmake/Vendor.cmake applies them to a build-directory copy. This tool only
 verifies that they still apply cleanly (re-vendoring and --check), and a patch
 that no longer applies is an error that needs a manual fix.
 
+Source patches for the WASM build live in third_party/patches/<codec>/*.patch.
+They are never applied to third_party/<codec>/ (which stays verbatim upstream);
+cmake/Vendor.cmake applies them to a build-directory copy. This tool only
+verifies that they still apply cleanly (re-vendoring and --check), and a patch
+that no longer applies is an error that needs a manual fix.
+
 Usage:
   tools/vendor-codecs.py                 # re-vendor all codecs (download tags)
   tools/vendor-codecs.py --from-checkout # bootstrap from algorithms/*/build

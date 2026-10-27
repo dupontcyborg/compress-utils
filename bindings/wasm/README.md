@@ -222,7 +222,7 @@ const compressed: Uint8Array = await compress(input, opts);
 
 ## Performance
 
-Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. lz4 is compiled with 64-bit registers on wasm32, which made its fast compressor (level 1) 20–44% faster on two large files and 0–14% faster on a third in Node and Bun on Graviton4 and Xeon; decompression is unchanged. Compression ratio is byte-identical to every other binding, except at lz4's fast levels (1 and 2), where the output now follows native 64-bit lz4 and differed by about a byte on the raw blocks we compared. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
+Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
 ## License
 
