@@ -220,3 +220,22 @@ def resolve_silesia_blocks(label: str) -> list[dict]:
         out.append(_locked(dataset_id, out_path, f"silesia-blocks-{label}",
                            f"Silesia {src['id']} in {block}-byte blocks"))
     return out
+
+
+def resolve_ecosystem_large() -> list[dict]:
+    """The one large file of the ecosystem comparison: Silesia's dickens (10 MB of text)."""
+    return [_ensure("dickens", f"{SILESIA_BASE}/dickens.zip", "ecosystem-large",
+                    "Silesia: dickens (ecosystem comparison, large)")]
+
+
+def resolve_ecosystem_small() -> list[dict]:
+    """The small-message side of the ecosystem comparison: dickens in 4 KB blocks."""
+    src = resolve_ecosystem_large()[0]
+    dataset_id = "dickens.4k"
+    out_path = DATA_DIR / f"{dataset_id}{msgset.SUFFIX}"
+    if not out_path.exists():
+        data = Path(src["path"]).read_bytes()
+        msgset.write(out_path, msgset.blocks(data, BLOCK_SIZES["4k"], BLOCK_BUDGET))
+    return [_locked(dataset_id, out_path, "ecosystem-small",
+                    "Silesia dickens in 4096-byte blocks (ecosystem comparison, small)")]
+

@@ -81,9 +81,12 @@ DEPS: dict[str, dict] = {
         "url": gh("trifectatechfoundation/zlib-rs", "v0.6.8"), "version": "0.6.8",
         "formats": "zlib, gzip, deflate (Rust, zlib C ABI)",
         "recipe": "cargo", "crate": "libz-rs-sys-cdylib", "staticlib": "libz_rs.a",
-        # It implements zlib's ABI and ships no header: use the zlib 1.3.2 one we vendor.
+        # It implements zlib's ABI and ships no header: use the zlib-compatible one we
+        # vendor (zlib-ng's). Its zconf.h includes a name-mangling header that zlib-ng's
+        # own build generates; zlib-rs exports the plain zlib names, so an empty one is right.
         "headers": {"zlib.h": "{repo}/third_party/zlib/zlib.h",
                     "zconf.h": "{repo}/third_party/zlib/zconf.h"},
+        "empty_headers": ["zlib_name_mangling.h"],
         "libs": ["libz_rs.a"],
     },
     "libbz2-rs": {
@@ -213,6 +216,8 @@ def build(name: str) -> Path:
 
     for dst, rel in dep.get("headers", {}).items():
         shutil.copy(src / rel.format(repo=REPO), out / "include" / dst)
+    for dst in dep.get("empty_headers", []):
+        (out / "include" / dst).write_text("")
     missing = [lib for lib in dep["libs"] if not (out / "lib" / lib).exists()]
     if missing:
         raise SystemExit(f"[deps] {name}: build finished but {missing} not found in {out}/lib")

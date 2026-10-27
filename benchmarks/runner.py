@@ -95,7 +95,7 @@ def _compile(src: Path, out: Path, cflags: list[str], ldflags: list[str]) -> Pat
     deps = [src, DRIVER_DIR / "bench_harness.h", DRIVER_DIR / "bench_zapi.h"]
     if out.exists() and all(out.stat().st_mtime >= d.stat().st_mtime for d in deps):
         return out
-    cmd = ["cc", "-O2", "-std=c11", f"-I{DRIVER_DIR}", *cflags, str(src), "-o", str(out), *ldflags]
+    cmd = ["cc", "-O2", "-std=c11", "-D_POSIX_C_SOURCE=200809L", f"-I{DRIVER_DIR}", *cflags, str(src), "-o", str(out), *ldflags, "-lm"]
     print(f"[runner] compiling {out.name}: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
     return out
