@@ -74,6 +74,9 @@ fn main() {
         let mut b = cc::Build::new();
         b.cpp(cxx);
         b.warnings(false);
+        // cc doesn't define NDEBUG (CMake's Release does); without it the codecs'
+        // assert()s stay live (measurable on xz).
+        b.define("NDEBUG", None);
 
         for s in c["sources"].as_array().expect("sources array") {
             b.file(dir.join(s.as_str().unwrap()));
@@ -97,6 +100,7 @@ fn main() {
     // Core dispatcher + registry + every vtable, in one Build.
     let mut core = cc::Build::new();
     core.warnings(false);
+    core.define("NDEBUG", None);
     for inc in &core_includes {
         core.include(inc);
     }

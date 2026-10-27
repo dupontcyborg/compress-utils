@@ -15,6 +15,10 @@ package compressutils
 // library is needed. The only remaining dep is libm on glibc (brotli/xz/zlib
 // pull log2/pow/etc.); macOS bundles it in libSystem and Windows in the CRT.
 #cgo linux LDFLAGS: -lm
+//
+// Match the CMake Release build: cgo defaults to -O2 and leaves assert() live
+// (no NDEBUG), which costs xz ~5-10%. A package-level -O3 overrides cgo's -O2.
+#cgo CFLAGS: -O3 -DNDEBUG
 
 #include <stdlib.h>
 #include "compress_utils.h"
