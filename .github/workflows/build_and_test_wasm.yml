@@ -166,6 +166,14 @@ jobs:
     name: Playwright (${{ matrix.browser }})
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Official Playwright image: all three browsers + system deps are baked
+    # in, so there is no `playwright install` / apt step to stall on. The tag
+    # MUST match the @playwright/test version in package-lock.json — the
+    # "Check Playwright version" step below fails fast if they drift.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -184,10 +192,19 @@ jobs:
         with: { node-version: "22" }
 
       - run: npm install
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Check Playwright version matches the container image
+        run: |
+          installed=$(node -p "require('@playwright/test/package.json').version")
+          if [ "$installed" != "1.64.1" ]; then
+            echo "::error::@playwright/test is $installed but the container image is v1.64.1 — bump the image tag in this job to match."
+            exit 1
+          fi
       - name: Run browser smoke test
         run: npx playwright test --project=${{ matrix.browser }}
+        env:
+          # Firefox refuses to start in a GitHub Actions container when
+          # HOME isn't owned by the running user.
+          HOME: /root
 
       - uses: actions/upload-artifact@v4
         if: failure()
