@@ -162,3 +162,15 @@ The WASM build compiles zstd with 64-bit registers for its bit containers, reloa
 | zstd compress-only | 347,704 B | 343,954 B | −3,750 B (−1.1%) | 103,162 B | 102,576 B |
 
 The module does not grow, so the budgets in `bindings/wasm/tests/bundle.test.ts` are unchanged. An earlier version of the change that also enabled zstd's fast 4-stream Huffman loop and widened `ZSTD_count` grew the full module by 3.2% (414,254 to 427,694 B) and the decompress-only module by 6.5%; the ablation showed neither part pays for itself (the fast loop is a gain on JavaScriptCore/Graviton, a loss on V8/Graviton, and an upstream-unsupported configuration with 32-bit pointers; `ZSTD_count` made no measurable difference), so they are not part of the patch.
+
+## brotli 64-bit registers (2026-10)
+
+The WASM build compiles brotli with `BROTLI_BUILD_64_BIT` plus two source patches (`third_party/patches/brotli`, see `third_party/VENDOR.md`). Sizes, post `wasm-strip` + `wasm-opt -Oz`, from the same pipeline built before and after (gzip is `gzip -9`):
+
+| Module | Before | After | Δ | gzip before | gzip after |
+|--------|-------:|------:|--:|------------:|-----------:|
+| brotli (both directions) | 503,756 B | 507,004 B | +3,248 B (+0.6%) | 175,227 B | 172,193 B |
+| brotli decompress-only | 192,278 B | 191,097 B | −1,181 B (−0.6%) | 87,083 B | 86,486 B |
+| brotli compress-only | 457,453 B | 461,882 B | +4,429 B (+1.0%) | 157,712 B | 155,762 B |
+
+The budgets in `bindings/wasm/tests/bundle.test.ts` are unchanged. The flag alone, without the second patch, enables upstream's "SIMD" hashers (H58/H68) for qualities up to 6 and adds 26.5 to 30 KB to the compressor (full module 533,458 B); the second patch keeps the scalar hashers, which is what recovers the size.

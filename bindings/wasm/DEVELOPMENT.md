@@ -121,6 +121,7 @@ again.
 - **brotli** — `BUILD_COMMAND` overridden to skip the `brotli` CLI
   target (uses `chown` / `setresuid`, not in WASI). Builds only
   `brotlienc` / `brotlidec` / `brotlicommon`.
+- **brotli (wide registers)** — the WASM build compiles a patched copy of `third_party/brotli` (patches in `third_party/patches/brotli`, applied at configure time by `cmake/Vendor.cmake` because `bindings/wasm/CMakeLists.txt` sets `CU_VENDOR_APPLY_PATCHES`) and defines upstream's `BROTLI_BUILD_64_BIT` on the brotli objects, so brotli uses 64-bit registers on wasm32. Every direction variant gets it. See `third_party/VENDOR.md`, "Patches for the WASM build", for how to re-apply the patches on a brotli bump.
 - **xz** — `ENABLE_THREADS=OFF` so liblzma doesn't try to compile its
   pthread / signal-mask threaded encoder.
 - **zlib** — wasm cross-compile produces `libzlibstatic.a` rather than
