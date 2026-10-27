@@ -551,7 +551,9 @@ export interface AlgorithmBindings {
     setMaxDecompressedSize(bytes: number): Promise<void>;
 }
 
-export type WasmResolver = (url: URL) => Promise<BufferSource | Response | PromiseLike<Response>>;
+export type WasmResolver = (
+    url: URL,
+) => Promise<BufferSource | Response | PromiseLike<Response> | WebAssembly.Module>;
 
 /** Shared WASM initialization for wire variants using the same codec asset. */
 const wasmModulePromises = new WeakMap<WasmResolver, Map<string, Promise<WasmExports>>>();

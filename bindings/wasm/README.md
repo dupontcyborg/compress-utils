@@ -231,3 +231,17 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Part of [compress-utils](https://github.com/dupontcyborg/compress-utils). Built by [Nico Dupont](https://nico.codes).
+
+### Opt in to Node.js WASM source imports
+
+Node.js 24.5 and later can load the packaged `.wasm` files through its experimental
+source-phase module loader. To opt in, start Node with:
+
+```sh
+node --conditions=compress-utils-wasm-source app.mjs
+```
+
+This compiles the WASM through Node's ESM loader and still instantiates it with the
+library's WASI imports. The default Node resolver continues to read WASM bytes from
+disk. Source-phase imports are experimental in Node.js and this condition should
+only be enabled on runtimes that support them.
