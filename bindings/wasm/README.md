@@ -224,6 +224,16 @@ const compressed: Uint8Array = await compress(input, opts);
 
 Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
+### Opt in to Node.js WASM source imports
+
+Node.js 24.5 and later can load the packaged `.wasm` files through its experimental source-phase module loader. To opt in, start Node with:
+
+```sh
+node --conditions=compress-utils-wasm-source app.mjs
+```
+
+This compiles the WASM through Node's ESM loader and still instantiates it with the library's WASI imports. The default Node resolver continues to read WASM bytes from disk. Source-phase imports are experimental in Node.js and this condition should only be enabled on runtimes that support them.
+
 ## License
 
 MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICENSE).
@@ -231,17 +241,3 @@ MIT. See [LICENSE](https://github.com/dupontcyborg/compress-utils/blob/main/LICE
 ---
 
 Part of [compress-utils](https://github.com/dupontcyborg/compress-utils). Built by [Nico Dupont](https://nico.codes).
-
-### Opt in to Node.js WASM source imports
-
-Node.js 24.5 and later can load the packaged `.wasm` files through its experimental
-source-phase module loader. To opt in, start Node with:
-
-```sh
-node --conditions=compress-utils-wasm-source app.mjs
-```
-
-This compiles the WASM through Node's ESM loader and still instantiates it with the
-library's WASI imports. The default Node resolver continues to read WASM bytes from
-disk. Source-phase imports are experimental in Node.js and this condition should
-only be enabled on runtimes that support them.
