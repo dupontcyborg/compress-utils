@@ -131,6 +131,7 @@ again.
   during `_initialize`.
 - **zstd** — install step copies `zstd_errors.h` alongside `zstd.h`
   (v1.5.7 needs it).
+- **lz4 (wide registers)** — the WASM build compiles a patched copy of `third_party/lz4` (the patch is `third_party/patches/lz4/0001-wasm-wide-registers.patch`, applied at configure time by `cmake/Vendor.cmake` because `bindings/wasm/CMakeLists.txt` sets `CU_VENDOR_APPLY_PATCHES`), so lz4's `reg_t` is 64 bits on wasm32 as it is on native 64-bit builds. Every direction variant gets it. See `third_party/VENDOR.md`, "Patches for the WASM build", for how to re-apply it on an lz4 bump.
 - **snappy** — our own first-party C core (`src/algorithms/snappy/core`; NOT google/snappy), so it's a plain C codec like the others — no `CXX`, no `libc++` in the `.wasm`. (google/snappy, C++, is kept only as the differential test oracle and never built for wasm.) The raw Snappy block format isn't incrementally codable, so the streaming API buffers the whole input and runs the one-shot codec on `finish()` — memory scales with input size, unlike the natively-streaming codecs.
 - **gzip** — same libz as the `zlib` codec; the only difference is
   `windowBits 31` to select the gzip (RFC 1952) wrapper instead of the

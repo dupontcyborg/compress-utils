@@ -62,6 +62,11 @@ set(CU_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # per-target configure. Vendor.cmake reads third_party/ relative to
 # CU_REPO_ROOT (set above), since this child project's CMAKE_SOURCE_DIR is the
 # wasm dir, not the repo root.
+#
+# Only this build applies third_party/patches/<codec>/*.patch (wasm32-specific
+# source changes), to a build-directory copy of the codec; third_party/ itself
+# stays verbatim upstream and every other binding compiles it unpatched.
+set(CU_VENDOR_APPLY_PATCHES ON)
 include(${CU_REPO_ROOT}/cmake/Vendor.cmake)
 
 # Match the root build's optimization shape.

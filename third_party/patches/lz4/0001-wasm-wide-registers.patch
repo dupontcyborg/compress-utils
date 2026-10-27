@@ -1,0 +1,25 @@
+compress-utils: 64-bit registers for lz4 on wasm32.
+
+Applied to third_party/lz4 (see codec-versions.json for the pinned tag) by the WASM build only, never to the vendored tree itself (see third_party/VENDOR.md).
+
+wasm32 has 32-bit pointers but native 64-bit integer registers. lz4 keys reg_t on the target (U64 only under __x86_64__, otherwise size_t), so on wasm32 it was 32 bits wide. That makes LZ4_count compare 4 bytes per step and, more importantly, makes the fast compressor (our levels 1 and 2) hash with LZ4_hash4 instead of the LZ4_hash5 that every native 64-bit build (x86-64, arm64) already uses. The one-line change below gives wasm32 the same register width and so the same hash as native 64-bit builds.
+
+Effect: the fast compressor (our levels 1 and 2; level 1 measured) compresses about 20% to 44% faster on dickens and sao and 0% to 14% faster on osdb (Graviton4 and Xeon 6975P, Node and Bun), and its output changes (it becomes what native 64-bit builds produce, within a byte or so); levels 3-10 (HC) and inputs under 64 KB are unchanged, and the decoder never uses reg_t, so decompression is unchanged. Output stays valid LZ4 and decodes with every lz4 implementation.
+
+The replaced lines keep the line count, and the patch only matters on __wasm32__, so every other target preprocesses to exactly the same code. The table-type choice (byPtr/byU32, keyed on sizeof(void*)) is deliberately untouched.
+
+diff --git a/lib/lz4.c b/lib/lz4.c
+index a2f7abe..80f2ff9 100644
+--- a/lib/lz4.c
++++ b/lib/lz4.c
+@@ -319,8 +319,8 @@ static int LZ4_isAligned(const void* ptr, size_t alignment)
+   typedef size_t              uptrval;   /* generally true, except OpenVMS-64 */
+ #endif
+ 
+-#if defined(__x86_64__)
+-  typedef U64    reg_t;   /* 64-bits in x32 mode */
++#if defined(__x86_64__) || defined(__wasm32__)
++  typedef U64    reg_t;   /* 64-bits in x32 mode; wasm32 has native 64-bit ints */
+ #else
+   typedef size_t reg_t;   /* 32-bits in x32 mode */
+ #endif

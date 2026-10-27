@@ -138,3 +138,15 @@ The deflate codecs (zlib, gzip, raw deflate share one module per wrapper) moved 
 | gzip compress-only | 61 KB | 79.7 KB | +18.7 KB |
 
 Direction-only builds still drop the other direction's code, even though zlib-ng's dispatch table (`functable`) names functions from both sides. The budgets in `bindings/wasm/tests/bundle.test.ts` were raised to match (zlib 96 → 115 KB, gzip 93 → 114 KB, and the four direction caps).
+
+## lz4 64-bit registers (2026-10)
+
+The WASM build compiles lz4 with a 64-bit `reg_t` (`third_party/patches/lz4`, see `third_party/VENDOR.md`), the register width native x86-64 and arm64 builds already use. Sizes, post `wasm-strip` + `wasm-opt -Oz`, from the same pipeline built before and after (gzip is `gzip -9`):
+
+| Module | Before | After | Δ | gzip before | gzip after |
+|--------|-------:|------:|--:|------------:|-----------:|
+| lz4 (both directions) | 123,853 B | 126,963 B | +3,110 B (+2.5%) | 44,168 B | 43,870 B |
+| lz4 decompress-only | 48,626 B | 48,626 B | 0 | 20,226 B | 20,226 B |
+| lz4 compress-only | 99,073 B | 102,183 B | +3,110 B (+3.1%) | 35,338 B | 35,066 B |
+
+The decoder never uses `reg_t`, so the decompress-only module is byte-identical to the one before. The full and compress-only modules stay inside the budgets in `bindings/wasm/tests/bundle.test.ts`, which are unchanged. An earlier variant that also turned on lz4's fast decode loop (`-DLZ4_FAST_DEC_LOOP=1`) grew the decompress-only module by 11.5% (48,626 to 54,230 B, past its 52 KB cap) and decoded slower on large files under Bun on x86-64, so it is not part of the change.

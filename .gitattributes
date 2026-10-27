@@ -46,3 +46,6 @@ bindings/go/cgo_generated.go linguist-generated=true
 
 # Third-party vendored libraries
 third_party/** linguist-vendored
+
+# Patches applied with `git apply`
+third_party/patches/**/*.patch -text
