@@ -1,0 +1,20 @@
+compress-utils: treat wasm as an unaligned-read-fast target in brotli.
+
+Applied to third_party/brotli (v1.2.1) by the WASM build only, never to the vendored tree itself (see third_party/VENDOR.md). The WASM build also defines BROTLI_BUILD_64_BIT on the brotli objects, which is upstream's own override for 64-bit registers (brotli_reg_t is uint64_t) and needs no source change.
+
+BROTLI_UNALIGNED_READ_FAST is 1 only for an allow-list of architectures that does not include wasm, and there is no -D to force it on. Without it the decoder's bit reader (dec/bit_reader.h) falls back from the constant-width 64-bit refill to the byte-at-a-time refill even with BROTLI_BUILD_64_BIT. wasm loads and stores unaligned addresses natively, so this patch adds __wasm__ to that list. It affects the decoder only; compressed output is byte-identical.
+
+diff --git a/c/common/platform.h b/c/common/platform.h
+index b59f9b8..8a94427 100644
+--- a/c/common/platform.h
++++ b/c/common/platform.h
+@@ -267,7 +267,8 @@ OR:
+ #define BROTLI_UNALIGNED_READ_FAST (!!0)
+ #elif defined(BROTLI_TARGET_X86) || defined(BROTLI_TARGET_X64) ||       \
+     defined(BROTLI_TARGET_ARMV7) || defined(BROTLI_TARGET_ARMV8_ANY) || \
+-    defined(BROTLI_TARGET_RISCV64) || defined(BROTLI_TARGET_LOONGARCH64)
++    defined(BROTLI_TARGET_RISCV64) || defined(BROTLI_TARGET_LOONGARCH64) || \
++    defined(__wasm__)
+ /* These targets are known to generate efficient code for unaligned reads
+  * (e.g. a single instruction, not multiple 1-byte loads, shifted and or'd
+  * together). */

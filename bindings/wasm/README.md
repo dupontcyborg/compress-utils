@@ -222,7 +222,7 @@ const compressed: Uint8Array = await compress(input, opts);
 
 ## Performance
 
-Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
+Overhead versus native C is **0.60–0.84× on compress and 0.50–1.00× on decompress**. WASM is the slowest binding across the board: zstd and brotli decode are the worst cases because they lean on native SIMD, while lz4 decode is memory-bound and costs nothing extra in the sandbox. The reasons to choose this binding are portability, one API in every runtime, and the small per-codec bundles above, rather than beating native `node:zlib`. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
 ## License
 

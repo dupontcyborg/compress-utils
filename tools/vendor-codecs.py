@@ -23,6 +23,18 @@ Hand-authored config headers (see CONFIG_FILES) are portable, target-agnostic,
 and committed by hand — this tool never fetches or overwrites them. They are
 what replaces the upstream configure step for zlib.
 
+Source patches for the WASM build live in third_party/patches/<codec>/*.patch.
+They are never applied to third_party/<codec>/ (which stays verbatim upstream);
+cmake/Vendor.cmake applies them to a build-directory copy. This tool only
+verifies that they still apply cleanly (re-vendoring and --check), and a patch
+that no longer applies is an error that needs a manual fix.
+
+Source patches for the WASM build live in third_party/patches/<codec>/*.patch.
+They are never applied to third_party/<codec>/ (which stays verbatim upstream);
+cmake/Vendor.cmake applies them to a build-directory copy. This tool only
+verifies that they still apply cleanly (re-vendoring and --check), and a patch
+that no longer applies is an error that needs a manual fix.
+
 Usage:
   tools/vendor-codecs.py                 # re-vendor all codecs (download tags)
   tools/vendor-codecs.py --from-checkout # bootstrap from algorithms/*/build
@@ -40,6 +52,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -51,6 +64,7 @@ REPO = Path(__file__).resolve().parent.parent
 THIRD_PARTY = REPO / "third_party"
 MANIFEST = THIRD_PARTY / "manifest.json"
 VERSIONS = REPO / "codec-versions.json"
+PATCHES = THIRD_PARTY / "patches"
 
 # ---------------------------------------------------------------------------
 # Per-codec curation specs.
@@ -420,6 +434,44 @@ def zng_finish(src_root: Path, dest: Path, spec: dict,
     return out, sources
 
 
+# ---------------------------------------------------------------------------
+# WASM source patches: third_party/patches/<codec>/*.patch, applied in sorted
+# order to a copy of third_party/<codec>/ by cmake/Vendor.cmake (WASM build
+# only). Here we only prove they still apply to the vendored tree.
+# ---------------------------------------------------------------------------
+
+def codec_patches(codec: str) -> list[Path]:
+    return sorted((PATCHES / codec).glob("*.patch"))
+
+
+def check_patches(codec: str, tag: str) -> str | None:
+    """Apply every patch of `codec`, in order, to a scratch copy of its vendored
+    tree. Returns None if all apply, else a message naming codec, tag, patch."""
+    patches = codec_patches(codec)
+    if not patches:
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        work = Path(td) / codec
+        shutil.copytree(THIRD_PARTY / codec, work)
+        # GIT_DIR pointing nowhere makes `git apply` behave as plain `patch -p1`
+        # in `work`; inside a repository it would silently skip paths that do
+        # not exist relative to the repository root.
+        env = {**os.environ, "GIT_DIR": str(Path(td) / "no-git")}
+        for patch in patches:
+            try:
+                r = subprocess.run(["git", "apply", "-p1", str(patch)], cwd=work,
+                                   env=env, capture_output=True, text=True)
+            except FileNotFoundError:
+                return "git is required to verify the WASM patches but was not found on PATH"
+            if r.returncode != 0:
+                return (f"patch {patch.relative_to(REPO)} does not apply to "
+                        f"{codec} {tag}:\n{r.stderr.rstrip()}\n"
+                        f"  This needs a manual fix: re-apply the patch's intent to the new "
+                        f"sources, regenerate the patch, and re-run the codec's upstream test "
+                        f"suites (see third_party/VENDOR.md, \"Patches for the WASM build\").")
+    return None
+
+
 def vendor_codec(codec: str, meta: dict, spec: dict, src_root: Path) -> dict:
     dest = THIRD_PARTY / codec
     config = set(CONFIG_FILES.get(codec, []))
@@ -497,7 +549,20 @@ def main() -> int:
                 print(f"FAIL {codec}: tree hash drift (re-run vendor-codecs.py)")
                 bad = True
             else:
-                print(f"ok   {codec} @ {entry['tag']}")
+                err = check_patches(codec, entry["tag"])
+                if err:
+                    print(f"FAIL {codec}: {err}")
+                    bad = True
+                else:
+                    n = len(codec_patches(codec))
+                    print(f"ok   {codec} @ {entry['tag']}"
+                          + (f" (+{n} wasm patch{'es' if n != 1 else ''} apply cleanly)" if n else ""))
+        if not args.codec:
+            for d in sorted(p for p in PATCHES.glob("*") if p.is_dir()):
+                if d.name not in SPECS:
+                    print(f"FAIL third_party/patches/{d.name}: no such codec "
+                          f"(known: {', '.join(SPECS)})")
+                    bad = True
         return 1 if bad else 0
 
     THIRD_PARTY.mkdir(exist_ok=True)
@@ -505,6 +570,7 @@ def main() -> int:
     if MANIFEST.exists():
         manifest = json.loads(MANIFEST.read_text())
 
+    patch_failed: list[str] = []
     for codec in codecs:
         meta = versions[codec]
         spec = SPECS[codec]
@@ -519,9 +585,21 @@ def main() -> int:
             with tempfile.TemporaryDirectory() as td:
                 src_root = fetch_to_temp(codec, meta, Path(td))
                 entry = vendor_codec(codec, meta, spec, src_root)
+        err = check_patches(codec, meta["tag"])
+        if err:
+            # Keep the old manifest entry: its tree hash no longer matches the
+            # rewritten tree, so --check stays red until the patch is fixed.
+            print(f"\nERROR {codec}: {err}", file=sys.stderr)
+            print(f"third_party/{codec}/ now holds {meta['tag']} but its manifest.json "
+                  f"entry was NOT updated; fix the patch, then re-run this tool.",
+                  file=sys.stderr)
+            patch_failed.append(codec)
+            continue
         manifest["codecs"][codec] = entry
         print(f"  {len(entry['sources'])} sources, "
               f"{len(entry['include_dirs'])} include dirs")
+        if codec_patches(codec):
+            print(f"  {len(codec_patches(codec))} wasm patch(es) apply cleanly")
 
     # Recompute hashes for config headers now that they're on disk.
     MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -537,6 +615,10 @@ def main() -> int:
               "each against the new upstream template:")
         for c, f in preserved:
             print(f"  third_party/{c}/{f}")
+    if patch_failed:
+        print(f"\nFAILED: WASM patch no longer applies for: {', '.join(patch_failed)}",
+              file=sys.stderr)
+        return 1
     return 0
 
 

@@ -62,6 +62,11 @@ set(CU_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # per-target configure. Vendor.cmake reads third_party/ relative to
 # CU_REPO_ROOT (set above), since this child project's CMAKE_SOURCE_DIR is the
 # wasm dir, not the repo root.
+#
+# Only this build applies third_party/patches/<codec>/*.patch (wasm32-specific
+# source changes), to a build-directory copy of the codec; third_party/ itself
+# stays verbatim upstream and every other binding compiles it unpatched.
+set(CU_VENDOR_APPLY_PATCHES ON)
 include(${CU_REPO_ROOT}/cmake/Vendor.cmake)
 
 # Match the root build's optimization shape.
@@ -92,6 +97,26 @@ add_subdirectory(
 # so it is applied only to the wasm build, not the shared manifest.
 if(CU_WASM_ALGO STREQUAL "brotli")
     target_compile_definitions(brotli_objs PRIVATE BROTLI_STATIC_INIT=1)
+endif()
+
+# zstd: use 64-bit registers for bit containers, reload decisions and the row-hash
+# mask. wasm32 has native i64 but 32-bit pointers, and zstd keys those decisions
+# on sizeof(size_t). The patch (third_party/patches/zstd) is inert without this
+# define and applies to every direction variant, since they share one codec lib.
+if(CU_WASM_ALGO STREQUAL "zstd")
+    target_compile_definitions(zstd_objs PRIVATE ZSTD_WASM_WIDE_REGS=1)
+endif()
+
+# brotli: use 64-bit registers (brotli_reg_t = uint64_t) for the bit reader and
+# the match-length routine. wasm32 has native i64 but 32-bit pointers, and brotli
+# keys its register width on the target architecture, so without this define it
+# takes the 32-bit paths. BROTLI_BUILD_64_BIT is upstream's own override. Two
+# patches (third_party/patches/brotli) go with it: the first lets the decoder use
+# its unaligned-load refill on wasm, the second keeps the scalar H5/H6 hashers
+# that this define would otherwise swap for the "SIMD" ones. Applies to every
+# direction variant, since they share one codec lib.
+if(CU_WASM_ALGO STREQUAL "brotli")
+    target_compile_definitions(brotli_objs PRIVATE BROTLI_BUILD_64_BIT=1)
 endif()
 
 # --- Export allow-list groups -----------------------------------------------

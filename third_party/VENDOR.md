@@ -14,6 +14,7 @@ third_party/
   manifest.json       # single source of truth: per-codec sources, include
                       # dirs, defines, cxx flag, upstream tag, tree hash
   <codec>/            # curated upstream sources, upstream relative layout
+  patches/<codec>/    # source patches applied by the WASM build only (see below)
 ```
 
 `manifest.json` is read by the CMake build (`cmake/Vendor.cmake`) and is the
@@ -63,9 +64,30 @@ xz/liblzma needs no config header — its `HAVE_*` knobs are passed as uniform
 `-D` defines (see the `xz` entry in `manifest.json`); platform-specific macros
 are dropped in favor of liblzma's portable fallbacks, and threads are off.
 
+## Patches for the WASM build
+
+`third_party/<codec>/` is always verbatim upstream (apart from the hand-authored files above), so the native, Go, Rust, Python and Swift builds never see a patch. A codec that needs a wasm32-specific source change keeps it in `third_party/patches/<codec>/*.patch`. The WASM build (`bindings/wasm/CMakeLists.txt`, which sets `CU_VENDOR_APPLY_PATCHES`) makes a copy of the codec under its build directory (`vendor-patched/<codec>`), applies the patches in sorted filename order, and compiles that copy. The copy is refreshed whenever the manifest's tag or tree hash, or any patch, changes. Every direction variant (both, decompress-only, compress-only) links the same patched codec library.
+
+Patches are unified diffs relative to the codec root (`a/lib/...`, applied with `git apply -p1`), so they apply the same way to `third_party/<codec>/` and to a fresh upstream checkout. A patch that does not apply, or applies without changing a file it names, is a configure error that names the codec, the pinned tag and the patch.
+
+`tools/vendor-codecs.py` and `tools/vendor-codecs.py --check` verify that every patch still applies to the vendored tree, and `--check` also fails on a `patches/<name>` directory for a codec that does not exist. A patch that no longer applies needs manual intervention; there is no automatic re-basing.
+
+Current patches:
+
+- `lz4/0001-wasm-wide-registers.patch` — 64-bit `reg_t` for lz4 on wasm32. wasm32 has 32-bit pointers but native 64-bit integers, and lz4 makes `reg_t` 64 bits only under `__x86_64__`, so on wasm32 it was `size_t` (32 bits). That narrows `LZ4_count` to 4 bytes per step and makes the fast compressor hash with `LZ4_hash4`, where every native 64-bit build (x86-64, arm64) already uses `LZ4_hash5`. The patch is the one-line `#if defined(__x86_64__) || defined(__wasm32__)` at the `reg_t` typedef in `lib/lz4.c` and keeps the line count. Effect on the WASM build: our levels 1 and 2 (the fast compressor) change output, to what native 64-bit builds produce (within a byte or so on the corpus files tried), and compress about 20% to 44% faster on `dickens` and `sao` and 0% to 14% on `osdb` (Graviton4 and Xeon 6975P, Node and Bun; level 1 measured). The size of the output changes with the hash: `sao` +2.9%, `osdb` +0.6%, `dickens` -0.06%. Levels 3 to 10 (HC), inputs under 64 KB and the decoder are unchanged, so decompression is not affected. Output is valid LZ4 and decodes with the reference implementation. Native, i386, arm64 and x86-64 objects of the patched `lz4.c` are byte-identical to the unpatched ones (the typedef is only reached on `__wasm32__`). The `byPtr`/`byU32` table choice, which is keyed on pointer width, is deliberately left alone. There is no upstream flag for this: `reg_t` is a typedef.
+- `zstd/0001-wasm-wide-registers.patch` — 64-bit registers for zstd on wasm32. wasm32 has 32-bit pointers but native 64-bit integers, and zstd decides its register width from `sizeof(size_t)`, so it takes the slower 32-bit bit-container, reload and row-mask paths. The patch adds `MEM_regT` (`U64` when `ZSTD_WASM_WIDE_REGS` is defined on a wasm32 target, `size_t` otherwise) and uses it for the decoder's bit container and reload decisions, the encoder's flush decisions and the row-based match finder's SWAR tag mask. Address-width checks (`MEM_32bits()`) are untouched, the fast 4-stream Huffman loop stays off (it assumes 64-bit pointers), and compressed output is byte-identical with and without it. The WASM build defines `ZSTD_WASM_WIDE_REGS` on the zstd objects only. With the macro undefined every new name is a plain alias of the existing one: the wasm modules and the native, i386 and aarch64 objects of the patched sources are byte-identical to the unpatched ones (compiled `-g0`; only debug line numbers move). `ZSTD_FORCE_WIDE_REGS` enables the same paths on any target and exists only so the upstream tests can run them on an ILP32 host; never define it in a shipped build.
+- `brotli/0001-wasm-unaligned-read-fast.patch` and `brotli/0002-wasm-no-simd-hashers.patch` — 64-bit registers for brotli on wasm32. wasm32 has 32-bit pointers but native 64-bit integers, and brotli picks its register width (`brotli_reg_t`, the bit reader's refill and multi-bit reads, the 8-byte match-length routine) from the target architecture, so it takes the 32-bit paths. The WASM build turns the 64-bit paths on with upstream's own `BROTLI_BUILD_64_BIT`, defined on the brotli objects only (`bindings/wasm/CMakeLists.txt`). Two patches go with it: `0001` adds `__wasm__` to the `BROTLI_UNALIGNED_READ_FAST` architecture list, which has no `-D` override, so the decoder keeps its constant-width refill (about 4 to 5 points of decompress on top of the flag); `0002` leaves `BROTLI_MAX_SIMD_QUALITY` undefined on `__wasm__`, because the flag would otherwise select the "SIMD" hashers H58/H68 at qualities 5 and 6, and on wasm those run a scalar SWAR tag matcher on 4-byte chunks (up to about 2x faster on binary-like inputs but 10% to 31% slower on text and on 1 KB and 4 KB messages, and a configuration upstream CI does not build). Compressed output is byte-identical to the unpatched, unflagged build at every quality tested (1, 5, 6, 7, 11). The shipped configuration is the flag plus both patches; the intermediate combinations (flag only, flag plus `0001`) were measured but are not shipped.
+
+To bump a patched codec:
+
+1. Edit `codec-versions.json` and run `tools/vendor-codecs.py`. If it reports that a patch does not apply, `third_party/<codec>/` already holds the new sources but its `manifest.json` entry is not updated, so `--check` stays red until the patch is fixed.
+2. Re-apply the patch's intent by hand on a scratch copy of the new sources and regenerate it as a diff relative to the codec root, keeping the descriptive header of the old patch (`git diff --no-index --no-prefix a b` over a pristine copy `a` and the edited copy `b`).
+3. Re-run the upstream test suites against the patched sources before merging. For zstd that means `tests/fuzzer`, `tests/zstreamtest`, `tests/decodecorpus` and the regression suite from the upstream repository at the new tag, built for wasm32-wasi with `-DZSTD_WASM_WIDE_REGS` and for a 32-bit-pointer target with `-DZSTD_FORCE_WIDE_REGS` (with and without SSE2 so both row-mask paths run), plus a corrupted-stream comparison against the native CLI. The WASM test suite (`cd bindings/wasm && npm test`) covers far match offsets and every Huffman decoder shape, but it is not a substitute.
+
 ## Licenses
 
 Each codec retains its upstream license (see the files within each directory
 and [`../ACKNOWLEDGMENTS.md`](../ACKNOWLEDGMENTS.md)). Vendoring copies source
-verbatim; no upstream code is modified (the one patch, in zlib-ng's generated
-`zconf.h`, is described above).
+verbatim; no upstream code is modified in `third_party/<codec>/` (the one patch,
+in zlib-ng's generated `zconf.h`, is described above; the WASM-only patches
+above are applied to a build-directory copy).

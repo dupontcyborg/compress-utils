@@ -138,3 +138,39 @@ The deflate codecs (zlib, gzip, raw deflate share one module per wrapper) moved 
 | gzip compress-only | 61 KB | 79.7 KB | +18.7 KB |
 
 Direction-only builds still drop the other direction's code, even though zlib-ng's dispatch table (`functable`) names functions from both sides. The budgets in `bindings/wasm/tests/bundle.test.ts` were raised to match (zlib 96 → 115 KB, gzip 93 → 114 KB, and the four direction caps).
+
+## lz4 64-bit registers (2026-10)
+
+The WASM build compiles lz4 with a 64-bit `reg_t` (`third_party/patches/lz4`, see `third_party/VENDOR.md`), the register width native x86-64 and arm64 builds already use. Sizes, post `wasm-strip` + `wasm-opt -Oz`, from the same pipeline built before and after (gzip is `gzip -9`):
+
+| Module | Before | After | Δ | gzip before | gzip after |
+|--------|-------:|------:|--:|------------:|-----------:|
+| lz4 (both directions) | 123,853 B | 126,963 B | +3,110 B (+2.5%) | 44,168 B | 43,870 B |
+| lz4 decompress-only | 48,626 B | 48,626 B | 0 | 20,226 B | 20,226 B |
+| lz4 compress-only | 99,073 B | 102,183 B | +3,110 B (+3.1%) | 35,338 B | 35,066 B |
+
+The decoder never uses `reg_t`, so the decompress-only module is byte-identical to the one before. The full and compress-only modules stay inside the budgets in `bindings/wasm/tests/bundle.test.ts`, which are unchanged. An earlier variant that also turned on lz4's fast decode loop (`-DLZ4_FAST_DEC_LOOP=1`) grew the decompress-only module by 11.5% (48,626 to 54,230 B, past its 52 KB cap) and decoded slower on large files under Bun on x86-64, so it is not part of the change.
+
+## zstd 64-bit registers (2026-10)
+
+The WASM build compiles zstd with 64-bit registers for its bit containers, reload decisions, encoder flush decisions and the row-hash mask (`third_party/patches/zstd`, see `third_party/VENDOR.md`). Sizes, post `wasm-strip` + `wasm-opt -Oz`, from the same pipeline built before and after (gzip is `gzip -9`):
+
+| Module | Before | After | Δ | gzip before | gzip after |
+|--------|-------:|------:|--:|------------:|-----------:|
+| zstd (both directions) | 414,254 B | 412,086 B | −2,168 B (−0.5%) | 127,357 B | 126,679 B |
+| zstd decompress-only | 97,011 B | 98,277 B | +1,266 B (+1.3%) | 38,605 B | 38,643 B |
+| zstd compress-only | 347,704 B | 343,954 B | −3,750 B (−1.1%) | 103,162 B | 102,576 B |
+
+The module does not grow, so the budgets in `bindings/wasm/tests/bundle.test.ts` are unchanged. An earlier version of the change that also enabled zstd's fast 4-stream Huffman loop and widened `ZSTD_count` grew the full module by 3.2% (414,254 to 427,694 B) and the decompress-only module by 6.5%; the ablation showed neither part pays for itself (the fast loop is a gain on JavaScriptCore/Graviton, a loss on V8/Graviton, and an upstream-unsupported configuration with 32-bit pointers; `ZSTD_count` made no measurable difference), so they are not part of the patch.
+
+## brotli 64-bit registers (2026-10)
+
+The WASM build compiles brotli with `BROTLI_BUILD_64_BIT` plus two source patches (`third_party/patches/brotli`, see `third_party/VENDOR.md`). Sizes, post `wasm-strip` + `wasm-opt -Oz`, from the same pipeline built before and after (gzip is `gzip -9`):
+
+| Module | Before | After | Δ | gzip before | gzip after |
+|--------|-------:|------:|--:|------------:|-----------:|
+| brotli (both directions) | 503,756 B | 507,004 B | +3,248 B (+0.6%) | 175,227 B | 172,193 B |
+| brotli decompress-only | 192,278 B | 191,097 B | −1,181 B (−0.6%) | 87,083 B | 86,486 B |
+| brotli compress-only | 457,453 B | 461,882 B | +4,429 B (+1.0%) | 157,712 B | 155,762 B |
+
+The budgets in `bindings/wasm/tests/bundle.test.ts` are unchanged. The flag alone, without the second patch, enables upstream's "SIMD" hashers (H58/H68) for qualities up to 6 and adds 26.5 to 30 KB to the compressor (full module 533,458 B); the second patch keeps the scalar hashers, which is what recovers the size.
