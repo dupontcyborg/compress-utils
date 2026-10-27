@@ -50,10 +50,9 @@ jobs:
           go-version: "1.21"
       - name: Show C compiler (cgo toolchain)
         run: gcc --version
-      - name: Build
-        env:
-          CGO_ENABLED: "1"
-        run: go build ./bindings/go/
+      # No separate `go build` step: the tests are in-package, so `go vet` and
+      # `go test` each compile the whole cgo package anyway and a plain build
+      # was a third full C compile (~2.5 min on Windows) proving nothing extra.
       - name: Vet
         env:
           CGO_ENABLED: "1"

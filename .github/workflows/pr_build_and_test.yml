@@ -15,6 +15,10 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+    env:
+      # CMake (>= 3.17) reads these, so every target is compiled through ccache.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
     steps:
     - name: Checkout Code
@@ -22,6 +26,20 @@ jobs:
       with:
         fetch-depth: 0
         clean: true
+
+    # The Visual Studio generator ignores *_COMPILER_LAUNCHER, so Windows
+    # builds with Ninja + the MSVC developer environment instead.
+    - name: Set up MSVC developer environment (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    # Same key prefix as build_and_test_c_cpp.yml, which saves the cache on
+    # main; PRs restore from it (PR-saved caches aren't visible to other PRs).
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ccache-${{ runner.os }}
+        max-size: 300M
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -55,7 +73,9 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
+        GEN=()
+        if [ "$RUNNER_OS" = "Windows" ]; then GEN=(-G Ninja); fi
+        cmake .. "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
       shell: bash
 
     - name: Build All Languages
@@ -81,9 +101,18 @@ jobs:
   # wheels, and brotli/lz4 re-enable the GIL when imported.
   python_free_threaded:
     runs-on: ubuntu-latest
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ccache-${{ runner.os }}
+        max-size: 300M
 
     - name: Set up free-threaded Python
       uses: actions/setup-python@v5
