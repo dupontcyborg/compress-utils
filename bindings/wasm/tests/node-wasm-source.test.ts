@@ -19,7 +19,7 @@ function runNode(source: string, optIn: boolean): string {
     );
 }
 
-describe("Node WASM source imports", () => {
+describe.skipIf(Boolean(process.versions.bun))("Node WASM source imports", () => {
     it("keeps byte loading as the default", () => {
         const result = runNode(
             `
