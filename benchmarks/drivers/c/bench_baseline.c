@@ -19,7 +19,7 @@
  *   bz2    BZ2_bzBuffToBuff{Compress,Decompress}, wf=0
  *   lz4    LZ4F frame, contentSize + checksum + linked
  *   xz     lzma_easy_buffer_encode, CRC64
- *   snappy snappy-c (andikleen), a snappy_env per compress call, one-shot only
+ *   snappy our first-party core (src/algorithms/snappy/core) called directly, one-shot only
  */
 
 #include <stdint.h>
@@ -29,7 +29,7 @@
 #include "bzlib.h"
 #include "lz4frame.h"
 #include "lzma.h"
-#include "snappy.h"
+#include "snappy_core.h"
 #include "zlib.h"
 #include "zstd.h"
 
@@ -550,18 +550,19 @@ static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
 
 static size_t sn_bound(const bench_codec_t* c, size_t n) {
     (void)c;
-    return snappy_max_compressed_length(n);
+    return snappy_core_max_compressed_length(n);
 }
 
 static int sn_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
                        size_t* out_len, int level, const char** err) {
     (void)c;
     (void)level;
-    struct snappy_env env;
-    if (snappy_init_env(&env) != 0) { *err = "snappy_init_env"; return 1; }
-    int rc = snappy_compress(&env, (const char*)in, in_len, (char*)out, out_len);
-    snappy_free_env(&env);
-    if (rc != 0) { *err = "snappy_compress"; return 1; }
+    size_t n = 0;
+    if (snappy_core_encode(in, in_len, out, *out_len, &n) != SNAPPY_CORE_OK) {
+        *err = "snappy_core_encode";
+        return 1;
+    }
+    *out_len = n;
     return 0;
 }
 
@@ -569,15 +570,17 @@ static int sn_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
                          size_t* out_len, const char** err) {
     (void)c;
     size_t needed = 0;
-    if (!snappy_uncompressed_length((const char*)in, in_len, &needed) || needed > *out_len) {
-        *err = "snappy_uncompressed_length";
+    if (snappy_core_uncompressed_length(in, in_len, &needed) != SNAPPY_CORE_OK ||
+        needed > *out_len) {
+        *err = "snappy_core_uncompressed_length";
         return 1;
     }
-    if (snappy_uncompress((const char*)in, in_len, (char*)out) != 0) {
-        *err = "snappy_uncompress";
+    size_t n = 0;
+    if (snappy_core_decode(in, in_len, out, needed, &n) != SNAPPY_CORE_OK) {
+        *err = "snappy_core_decode";
         return 1;
     }
-    *out_len = needed;
+    *out_len = n;
     return 0;
 }
 
@@ -592,7 +595,7 @@ static const bench_codec_t CODECS[] = {
     {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream},
     ZA_GZIP("zlib", 0, 0),
     ZA_DEFLATE("zlib", 0, 0),
-    {"snappy", "snappy-c", 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0},
+    {"snappy", "snappy-core", 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0},
 };
 static const size_t N_CODECS = sizeof(CODECS) / sizeof(CODECS[0]);
 

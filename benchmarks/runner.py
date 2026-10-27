@@ -83,7 +83,10 @@ def _baseline_flags() -> tuple[list[str], list[str]]:
         if not lib.exists():
             sys.exit(f"error: {lib.relative_to(bc.REPO_ROOT)} not found.\n"
                      "       It's produced by a normal build:  ./build.sh --release\n")
-        cflags.append(f"-I{bc.REPO_ROOT / 'third_party' / codec / inc}")
+        # Snappy is first-party (no third_party/snappy): its core lives next to the adapter.
+        root = (bc.REPO_ROOT / "src" / "algorithms" / "snappy" / "core" if codec == "snappy"
+                else bc.REPO_ROOT / "third_party" / codec / inc)
+        cflags.append(f"-I{root}")
         ldflags.append(str(lib))
     return cflags, ldflags
 
