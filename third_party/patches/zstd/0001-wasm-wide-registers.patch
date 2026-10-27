@@ -1,0 +1,371 @@
+compress-utils: 64-bit registers for zstd on wasm32.
+
+Applied to third_party/zstd (v1.5.7) by the WASM build only, never to the vendored tree itself (see third_party/VENDOR.md). Inert unless ZSTD_WASM_WIDE_REGS is defined on a wasm32 target (cmake sets it for the zstd objects of the WASM build); ZSTD_FORCE_WIDE_REGS enables it on any target and is test-only.
+
+wasm32 has 32-bit pointers but native 64-bit integer registers. zstd keys its register-width decisions on sizeof(size_t), so on wasm32 it takes the 32-bit bit-container and reload paths. This patch introduces MEM_regT (U64 when enabled, size_t otherwise) and uses it for:
+
+  - the bit container and its reload decisions in the decoder (bitstream.h, huf_decompress.c, zstd_decompress_block.c)
+  - the matching flush decisions in the encoder (zstd_compress.c, zstd_compress_sequences.c)
+  - the SWAR tag mask of the row-based match finder (zstd_lazy.c)
+
+Address-width checks (MEM_32bits() / MEM_64bits()) keep meaning address width, and the fast 4-stream Huffman loop stays disabled (it assumes 64-bit pointers). When the macros are undefined the new names are plain aliases of the size_t-keyed ones.
+
+Compressed output is byte-identical with and without the patch.
+
+diff --git a/lib/common/bitstream.h b/lib/common/bitstream.h
+index 3b7ad48..5e937c1 100644
+--- a/lib/common/bitstream.h
++++ b/lib/common/bitstream.h
+@@ -42,13 +42,13 @@
+ 
+ #define STREAM_ACCUMULATOR_MIN_32  25
+ #define STREAM_ACCUMULATOR_MIN_64  57
+-#define STREAM_ACCUMULATOR_MIN    ((U32)(MEM_32bits() ? STREAM_ACCUMULATOR_MIN_32 : STREAM_ACCUMULATOR_MIN_64))
++#define STREAM_ACCUMULATOR_MIN    ((U32)(MEM_32bitRegs() ? STREAM_ACCUMULATOR_MIN_32 : STREAM_ACCUMULATOR_MIN_64))
+ 
+ 
+ /*-******************************************
+ *  bitStream encoding API (write forward)
+ ********************************************/
+-typedef size_t BitContainerType;
++typedef MEM_regT BitContainerType;
+ /* bitStream can mix input from multiple sources.
+  * A critical property of these streams is that they encode and decode in **reverse** direction.
+  * So the first bit sequence you add will be the last to be read, like a LIFO stack.
+@@ -127,7 +127,7 @@ MEM_STATIC void BIT_addBitsFast(BIT_CStream_t* bitC, BitContainerType value, uns
+ MEM_STATIC void BIT_flushBitsFast(BIT_CStream_t* bitC);
+ /* unsafe version; does not check buffer overflow */
+ 
+-MEM_STATIC size_t BIT_readBitsFast(BIT_DStream_t* bitD, unsigned nbBits);
++MEM_STATIC BitContainerType BIT_readBitsFast(BIT_DStream_t* bitD, unsigned nbBits);
+ /* faster, but works only if nbBits >= 1 */
+ 
+ /*=====    Local Constants   =====*/
+@@ -207,7 +207,7 @@ MEM_STATIC void BIT_flushBitsFast(BIT_CStream_t* bitC)
+     size_t const nbBytes = bitC->bitPos >> 3;
+     assert(bitC->bitPos < sizeof(bitC->bitContainer) * 8);
+     assert(bitC->ptr <= bitC->endPtr);
+-    MEM_writeLEST(bitC->ptr, bitC->bitContainer);
++    MEM_writeLERegT(bitC->ptr, bitC->bitContainer);
+     bitC->ptr += nbBytes;
+     bitC->bitPos &= 7;
+     bitC->bitContainer >>= nbBytes*8;
+@@ -223,7 +223,7 @@ MEM_STATIC void BIT_flushBits(BIT_CStream_t* bitC)
+     size_t const nbBytes = bitC->bitPos >> 3;
+     assert(bitC->bitPos < sizeof(bitC->bitContainer) * 8);
+     assert(bitC->ptr <= bitC->endPtr);
+-    MEM_writeLEST(bitC->ptr, bitC->bitContainer);
++    MEM_writeLERegT(bitC->ptr, bitC->bitContainer);
+     bitC->ptr += nbBytes;
+     if (bitC->ptr > bitC->endPtr) bitC->ptr = bitC->endPtr;
+     bitC->bitPos &= 7;
+@@ -260,7 +260,7 @@ MEM_STATIC size_t BIT_initDStream(BIT_DStream_t* bitD, const void* srcBuffer, si
+ 
+     if (srcSize >=  sizeof(bitD->bitContainer)) {  /* normal case */
+         bitD->ptr   = (const char*)srcBuffer + srcSize - sizeof(bitD->bitContainer);
+-        bitD->bitContainer = MEM_readLEST(bitD->ptr);
++        bitD->bitContainer = MEM_readLERegT(bitD->ptr);
+         { BYTE const lastByte = ((const BYTE*)srcBuffer)[srcSize-1];
+           bitD->bitsConsumed = lastByte ? 8 - ZSTD_highbit32(lastByte) : 0;  /* ensures bitsConsumed is always set */
+           if (lastByte == 0) return ERROR(GENERIC); /* endMark not present */ }
+@@ -387,7 +387,7 @@ MEM_STATIC BIT_DStream_status BIT_reloadDStream_internal(BIT_DStream_t* bitD)
+     bitD->ptr -= bitD->bitsConsumed >> 3;
+     assert(bitD->ptr >= bitD->start);
+     bitD->bitsConsumed &= 7;
+-    bitD->bitContainer = MEM_readLEST(bitD->ptr);
++    bitD->bitContainer = MEM_readLERegT(bitD->ptr);
+     return BIT_DStream_unfinished;
+ }
+ 
+@@ -438,7 +438,7 @@ FORCE_INLINE_TEMPLATE BIT_DStream_status BIT_reloadDStream(BIT_DStream_t* bitD)
+         }
+         bitD->ptr -= nbBytes;
+         bitD->bitsConsumed -= nbBytes*8;
+-        bitD->bitContainer = MEM_readLEST(bitD->ptr);   /* reminder : srcSize > sizeof(bitD->bitContainer), otherwise bitD->ptr == bitD->start */
++        bitD->bitContainer = MEM_readLERegT(bitD->ptr);   /* reminder : srcSize > sizeof(bitD->bitContainer), otherwise bitD->ptr == bitD->start */
+         return result;
+     }
+ }
+diff --git a/lib/common/mem.h b/lib/common/mem.h
+index e66a2ea..07f3a41 100644
+--- a/lib/common/mem.h
++++ b/lib/common/mem.h
+@@ -137,6 +137,30 @@ MEM_STATIC size_t MEM_swapST(size_t in);
+ MEM_STATIC unsigned MEM_32bits(void) { return sizeof(size_t)==4; }
+ MEM_STATIC unsigned MEM_64bits(void) { return sizeof(size_t)==8; }
+ 
++/* Register width, as opposed to address width (MEM_32bits() / MEM_64bits()).
++ * wasm32 has 32-bit pointers but native 64-bit integer registers, so the bit
++ * containers, the Huffman/FSE reload decisions and the row-hash SWAR mask are
++ * better off on U64 there. Enabled with ZSTD_WASM_WIDE_REGS (compress-utils'
++ * WASM build only); ZSTD_FORCE_WIDE_REGS enables it on any target and exists
++ * only so the tests can exercise these paths on an ILP32 host.
++ * When disabled every name below is a plain alias of the size_t-keyed one, so
++ * the preprocessed output of every unit is unchanged. */
++#if (defined(__wasm32__) && defined(ZSTD_WASM_WIDE_REGS)) || defined(ZSTD_FORCE_WIDE_REGS)
++#  define MEM_regT U64
++#  define MEM_32bitRegs() 0
++#  define MEM_64bitRegs() 1
++#  define MEM_readRegT MEM_read64
++#  define MEM_readLERegT MEM_readLE64
++#  define MEM_writeLERegT MEM_writeLE64
++#else
++#  define MEM_regT size_t
++#  define MEM_32bitRegs() MEM_32bits()
++#  define MEM_64bitRegs() MEM_64bits()
++#  define MEM_readRegT MEM_readST
++#  define MEM_readLERegT MEM_readLEST
++#  define MEM_writeLERegT MEM_writeLEST
++#endif
++
+ MEM_STATIC unsigned MEM_isLittleEndian(void)
+ {
+ #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+diff --git a/lib/compress/zstd_compress.c b/lib/compress/zstd_compress.c
+index d928b1d..80c21ed 100644
+--- a/lib/compress/zstd_compress.c
++++ b/lib/compress/zstd_compress.c
+@@ -2707,8 +2707,8 @@ int ZSTD_seqToCodes(const SeqStore_t* seqStorePtr)
+         llCodeTable[u] = (BYTE)ZSTD_LLcode(llv);
+         ofCodeTable[u] = (BYTE)ofCode;
+         mlCodeTable[u] = (BYTE)ZSTD_MLcode(mlv);
+-        assert(!(MEM_64bits() && ofCode >= STREAM_ACCUMULATOR_MIN));
+-        if (MEM_32bits() && ofCode >= STREAM_ACCUMULATOR_MIN)
++        assert(!(MEM_64bitRegs() && ofCode >= STREAM_ACCUMULATOR_MIN));
++        if (MEM_32bitRegs() && ofCode >= STREAM_ACCUMULATOR_MIN)
+             longOffsets = 1;
+     }
+     if (seqStorePtr->longLengthType==ZSTD_llt_literalLength)
+diff --git a/lib/compress/zstd_compress_sequences.c b/lib/compress/zstd_compress_sequences.c
+index 7beb9da..ce03261 100644
+--- a/lib/compress/zstd_compress_sequences.c
++++ b/lib/compress/zstd_compress_sequences.c
+@@ -312,9 +312,9 @@ ZSTD_encodeSequences_body(
+     FSE_initCState2(&stateOffsetBits,  CTable_OffsetBits,  ofCodeTable[nbSeq-1]);
+     FSE_initCState2(&stateLitLength,   CTable_LitLength,   llCodeTable[nbSeq-1]);
+     BIT_addBits(&blockStream, sequences[nbSeq-1].litLength, LL_bits[llCodeTable[nbSeq-1]]);
+-    if (MEM_32bits()) BIT_flushBits(&blockStream);
++    if (MEM_32bitRegs()) BIT_flushBits(&blockStream);
+     BIT_addBits(&blockStream, sequences[nbSeq-1].mlBase, ML_bits[mlCodeTable[nbSeq-1]]);
+-    if (MEM_32bits()) BIT_flushBits(&blockStream);
++    if (MEM_32bitRegs()) BIT_flushBits(&blockStream);
+     if (longOffsets) {
+         U32 const ofBits = ofCodeTable[nbSeq-1];
+         unsigned const extraBits = ofBits - MIN(ofBits, STREAM_ACCUMULATOR_MIN-1);
+@@ -345,14 +345,14 @@ ZSTD_encodeSequences_body(
+                                                                             /* (7)*/  /* (7)*/
+             FSE_encodeSymbol(&blockStream, &stateOffsetBits, ofCode);       /* 15 */  /* 15 */
+             FSE_encodeSymbol(&blockStream, &stateMatchLength, mlCode);      /* 24 */  /* 24 */
+-            if (MEM_32bits()) BIT_flushBits(&blockStream);                  /* (7)*/
++            if (MEM_32bitRegs()) BIT_flushBits(&blockStream);                  /* (7)*/
+             FSE_encodeSymbol(&blockStream, &stateLitLength, llCode);        /* 16 */  /* 33 */
+-            if (MEM_32bits() || (ofBits+mlBits+llBits >= 64-7-(LLFSELog+MLFSELog+OffFSELog)))
++            if (MEM_32bitRegs() || (ofBits+mlBits+llBits >= 64-7-(LLFSELog+MLFSELog+OffFSELog)))
+                 BIT_flushBits(&blockStream);                                /* (7)*/
+             BIT_addBits(&blockStream, sequences[n].litLength, llBits);
+-            if (MEM_32bits() && ((llBits+mlBits)>24)) BIT_flushBits(&blockStream);
++            if (MEM_32bitRegs() && ((llBits+mlBits)>24)) BIT_flushBits(&blockStream);
+             BIT_addBits(&blockStream, sequences[n].mlBase, mlBits);
+-            if (MEM_32bits() || (ofBits+mlBits+llBits > 56)) BIT_flushBits(&blockStream);
++            if (MEM_32bitRegs() || (ofBits+mlBits+llBits > 56)) BIT_flushBits(&blockStream);
+             if (longOffsets) {
+                 unsigned const extraBits = ofBits - MIN(ofBits, STREAM_ACCUMULATOR_MIN-1);
+                 if (extraBits) {
+diff --git a/lib/compress/zstd_lazy.c b/lib/compress/zstd_lazy.c
+index 272ebe0..5b713ba 100644
+--- a/lib/compress/zstd_lazy.c
++++ b/lib/compress/zstd_lazy.c
+@@ -1078,19 +1078,19 @@ ZSTD_row_getMatchMask(const BYTE* const tagRow, const BYTE tag, const U32 headGr
+     }
+ # endif /* ZSTD_ARCH_ARM_NEON */
+     /* SWAR */
+-    {   const int chunkSize = sizeof(size_t);
+-        const size_t shiftAmount = ((chunkSize * 8) - chunkSize);
+-        const size_t xFF = ~((size_t)0);
+-        const size_t x01 = xFF / 0xFF;
+-        const size_t x80 = x01 << 7;
+-        const size_t splatChar = tag * x01;
++    {   const int chunkSize = sizeof(MEM_regT);
++        const MEM_regT shiftAmount = ((chunkSize * 8) - chunkSize);
++        const MEM_regT xFF = ~((MEM_regT)0);
++        const MEM_regT x01 = xFF / 0xFF;
++        const MEM_regT x80 = x01 << 7;
++        const MEM_regT splatChar = tag * x01;
+         ZSTD_VecMask matches = 0;
+         int i = rowEntries - chunkSize;
+-        assert((sizeof(size_t) == 4) || (sizeof(size_t) == 8));
++        assert((sizeof(MEM_regT) == 4) || (sizeof(MEM_regT) == 8));
+         if (MEM_isLittleEndian()) { /* runtime check so have two loops */
+-            const size_t extractMagic = (xFF / 0x7F) >> chunkSize;
++            const MEM_regT extractMagic = (xFF / 0x7F) >> chunkSize;
+             do {
+-                size_t chunk = MEM_readST(&src[i]);
++                MEM_regT chunk = MEM_readRegT(&src[i]);
+                 chunk ^= splatChar;
+                 chunk = (((chunk | x80) - x01) | chunk) & x80;
+                 matches <<= chunkSize;
+@@ -1098,10 +1098,10 @@ ZSTD_row_getMatchMask(const BYTE* const tagRow, const BYTE tag, const U32 headGr
+                 i -= chunkSize;
+             } while (i >= 0);
+         } else { /* big endian: reverse bits during extraction */
+-            const size_t msb = xFF ^ (xFF >> 1);
+-            const size_t extractMagic = (msb / 0x1FF) | msb;
++            const MEM_regT msb = xFF ^ (xFF >> 1);
++            const MEM_regT extractMagic = (msb / 0x1FF) | msb;
+             do {
+-                size_t chunk = MEM_readST(&src[i]);
++                MEM_regT chunk = MEM_readRegT(&src[i]);
+                 chunk ^= splatChar;
+                 chunk = (((chunk | x80) - x01) | chunk) & x80;
+                 matches <<= chunkSize;
+diff --git a/lib/decompress/huf_decompress.c b/lib/decompress/huf_decompress.c
+index f85dd0b..b43a687 100644
+--- a/lib/decompress/huf_decompress.c
++++ b/lib/decompress/huf_decompress.c
+@@ -532,13 +532,13 @@ HUF_decodeSymbolX1(BIT_DStream_t* Dstream, const HUF_DEltX1* dt, const U32 dtLog
+ 
+ #define HUF_DECODE_SYMBOLX1_1(ptr, DStreamPtr)      \
+     do {                                            \
+-        if (MEM_64bits() || (HUF_TABLELOG_MAX<=12)) \
++        if (MEM_64bitRegs() || (HUF_TABLELOG_MAX<=12)) \
+             HUF_DECODE_SYMBOLX1_0(ptr, DStreamPtr); \
+     } while (0)
+ 
+ #define HUF_DECODE_SYMBOLX1_2(ptr, DStreamPtr)      \
+     do {                                            \
+-        if (MEM_64bits())                           \
++        if (MEM_64bitRegs())                       \
+             HUF_DECODE_SYMBOLX1_0(ptr, DStreamPtr); \
+     } while (0)
+ 
+@@ -560,7 +560,7 @@ HUF_decodeStreamX1(BYTE* p, BIT_DStream_t* const bitDPtr, BYTE* const pEnd, cons
+     }
+ 
+     /* [0-3] symbols remaining */
+-    if (MEM_32bits())
++    if (MEM_32bitRegs())
+         while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) & (p < pEnd))
+             HUF_DECODE_SYMBOLX1_0(p, bitDPtr);
+ 
+@@ -649,7 +649,7 @@ HUF_decompress4X1_usingDTable_internal_body(
+         CHECK_F( BIT_initDStream(&bitD4, istart4, length4) );
+ 
+         /* up to 16 symbols per loop (4 symbols per stream) in 64-bit mode */
+-        if ((size_t)(oend - op4) >= sizeof(size_t)) {
++        if ((size_t)(oend - op4) >= sizeof(MEM_regT)) {
+             for ( ; (endSignal) & (op4 < olimit) ; ) {
+                 HUF_DECODE_SYMBOLX1_2(op1, &bitD1);
+                 HUF_DECODE_SYMBOLX1_2(op2, &bitD2);
+@@ -1294,13 +1294,13 @@ HUF_decodeLastSymbolX2(void* op, BIT_DStream_t* DStream, const HUF_DEltX2* dt, c
+ 
+ #define HUF_DECODE_SYMBOLX2_1(ptr, DStreamPtr)                     \
+     do {                                                           \
+-        if (MEM_64bits() || (HUF_TABLELOG_MAX<=12))                \
++        if (MEM_64bitRegs() || (HUF_TABLELOG_MAX<=12))            \
+             ptr += HUF_decodeSymbolX2(ptr, DStreamPtr, dt, dtLog); \
+     } while (0)
+ 
+ #define HUF_DECODE_SYMBOLX2_2(ptr, DStreamPtr)                     \
+     do {                                                           \
+-        if (MEM_64bits())                                          \
++        if (MEM_64bitRegs())                                      \
+             ptr += HUF_decodeSymbolX2(ptr, DStreamPtr, dt, dtLog); \
+     } while (0)
+ 
+@@ -1312,7 +1312,7 @@ HUF_decodeStreamX2(BYTE* p, BIT_DStream_t* bitDPtr, BYTE* const pEnd,
+ 
+     /* up to 8 symbols at a time */
+     if ((size_t)(pEnd - p) >= sizeof(bitDPtr->bitContainer)) {
+-        if (dtLog <= 11 && MEM_64bits()) {
++        if (dtLog <= 11 && MEM_64bitRegs()) {
+             /* up to 10 symbols at a time */
+             while ((BIT_reloadDStream(bitDPtr) == BIT_DStream_unfinished) & (p < pEnd-9)) {
+                 HUF_DECODE_SYMBOLX2_0(p, bitDPtr);
+@@ -1392,7 +1392,7 @@ HUF_decompress4X2_usingDTable_internal_body(
+     {   const BYTE* const istart = (const BYTE*) cSrc;
+         BYTE* const ostart = (BYTE*) dst;
+         BYTE* const oend = ostart + dstSize;
+-        BYTE* const olimit = oend - (sizeof(size_t)-1);
++        BYTE* const olimit = oend - (sizeof(MEM_regT)-1);
+         const void* const dtPtr = DTable+1;
+         const HUF_DEltX2* const dt = (const HUF_DEltX2*)dtPtr;
+ 
+@@ -1430,7 +1430,7 @@ HUF_decompress4X2_usingDTable_internal_body(
+         CHECK_F( BIT_initDStream(&bitD4, istart4, length4) );
+ 
+         /* 16-32 symbols per loop (4-8 symbols per stream) */
+-        if ((size_t)(oend - op4) >= sizeof(size_t)) {
++        if ((size_t)(oend - op4) >= sizeof(MEM_regT)) {
+             for ( ; (endSignal) & (op4 < olimit); ) {
+ #if defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+                 HUF_DECODE_SYMBOLX2_2(op1, &bitD1);
+diff --git a/lib/decompress/zstd_decompress_block.c b/lib/decompress/zstd_decompress_block.c
+index 862785a..bb82c9c 100644
+--- a/lib/decompress/zstd_decompress_block.c
++++ b/lib/decompress/zstd_decompress_block.c
+@@ -1281,7 +1281,7 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
+                 ZSTD_STATIC_ASSERT(LONG_OFFSETS_MAX_EXTRA_BITS_32 == 5);
+                 ZSTD_STATIC_ASSERT(STREAM_ACCUMULATOR_MIN_32 > LONG_OFFSETS_MAX_EXTRA_BITS_32);
+                 ZSTD_STATIC_ASSERT(STREAM_ACCUMULATOR_MIN_32 - LONG_OFFSETS_MAX_EXTRA_BITS_32 >= MaxMLBits);
+-                if (MEM_32bits() && longOffsets && (ofBits >= STREAM_ACCUMULATOR_MIN_32)) {
++                if (MEM_32bitRegs() && longOffsets && (ofBits >= STREAM_ACCUMULATOR_MIN_32)) {
+                     /* Always read extra bits, this keeps the logic simple,
+                      * avoids branches, and avoids accidentally reading 0 bits.
+                      */
+@@ -1291,7 +1291,7 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
+                     offset += BIT_readBitsFast(&seqState->DStream, extraBits);
+                 } else {
+                     offset = ofBase + BIT_readBitsFast(&seqState->DStream, ofBits/*>0*/);   /* <=  (ZSTD_WINDOWLOG_MAX-1) bits */
+-                    if (MEM_32bits()) BIT_reloadDStream(&seqState->DStream);
++                    if (MEM_32bitRegs()) BIT_reloadDStream(&seqState->DStream);
+                 }
+                 seqState->prevOffset[2] = seqState->prevOffset[1];
+                 seqState->prevOffset[1] = seqState->prevOffset[0];
+@@ -1316,9 +1316,9 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
+         if (mlBits > 0)
+             seq.matchLength += BIT_readBitsFast(&seqState->DStream, mlBits/*>0*/);
+ 
+-        if (MEM_32bits() && (mlBits+llBits >= STREAM_ACCUMULATOR_MIN_32-LONG_OFFSETS_MAX_EXTRA_BITS_32))
++        if (MEM_32bitRegs() && (mlBits+llBits >= STREAM_ACCUMULATOR_MIN_32-LONG_OFFSETS_MAX_EXTRA_BITS_32))
+             BIT_reloadDStream(&seqState->DStream);
+-        if (MEM_64bits() && UNLIKELY(totalBits >= STREAM_ACCUMULATOR_MIN_64-(LLFSELog+MLFSELog+OffFSELog)))
++        if (MEM_64bitRegs() && UNLIKELY(totalBits >= STREAM_ACCUMULATOR_MIN_64-(LLFSELog+MLFSELog+OffFSELog)))
+             BIT_reloadDStream(&seqState->DStream);
+         /* Ensure there are enough bits to read the rest of data in 64-bit mode. */
+         ZSTD_STATIC_ASSERT(16+LLFSELog+MLFSELog+OffFSELog < STREAM_ACCUMULATOR_MIN_64);
+@@ -1326,7 +1326,7 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
+         if (llBits > 0)
+             seq.litLength += BIT_readBitsFast(&seqState->DStream, llBits/*>0*/);
+ 
+-        if (MEM_32bits())
++        if (MEM_32bitRegs())
+             BIT_reloadDStream(&seqState->DStream);
+ 
+         DEBUGLOG(6, "seq: litL=%u, matchL=%u, offset=%u",
+@@ -1336,7 +1336,7 @@ ZSTD_decodeSequence(seqState_t* seqState, const ZSTD_longOffset_e longOffsets, c
+             /* don't update FSE state for last Sequence */
+             ZSTD_updateFseStateWithDInfo(&seqState->stateLL, &seqState->DStream, llNext, llnbBits);    /* <=  9 bits */
+             ZSTD_updateFseStateWithDInfo(&seqState->stateML, &seqState->DStream, mlNext, mlnbBits);    /* <=  9 bits */
+-            if (MEM_32bits()) BIT_reloadDStream(&seqState->DStream);    /* <= 18 bits */
++            if (MEM_32bitRegs()) BIT_reloadDStream(&seqState->DStream);    /* <= 18 bits */
+             ZSTD_updateFseStateWithDInfo(&seqState->stateOffb, &seqState->DStream, ofNext, ofnbBits);  /* <=  8 bits */
+             BIT_reloadDStream(&seqState->DStream);
+         }
+@@ -2044,7 +2044,7 @@ ZSTD_getOffsetInfo(const ZSTD_seqSymbol* offTable, int nbSeq)
+  */
+ static size_t ZSTD_maxShortOffset(void)
+ {
+-    if (MEM_64bits()) {
++    if (MEM_64bitRegs()) {
+         /* We can decode any offset without reloading bits.
+          * This might change if the max window size grows.
+          */
+@@ -2106,7 +2106,7 @@ ZSTD_decompressBlock_internal(ZSTD_DCtx* dctx,
+          * If isLongOffsets is true, then we will later check our decoding table to see
+          * if it is even possible to generate long offsets.
+          */
+-        ZSTD_longOffset_e isLongOffset = (ZSTD_longOffset_e)(MEM_32bits() && (totalHistorySize > ZSTD_maxShortOffset()));
++        ZSTD_longOffset_e isLongOffset = (ZSTD_longOffset_e)(MEM_32bitRegs() && (totalHistorySize > ZSTD_maxShortOffset()));
+         /* These macros control at build-time which decompressor implementation
+          * we use. If neither is defined, we do some inspection and dispatch at
+          * runtime.

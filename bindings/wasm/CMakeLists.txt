@@ -99,6 +99,14 @@ if(CU_WASM_ALGO STREQUAL "brotli")
     target_compile_definitions(brotli_objs PRIVATE BROTLI_STATIC_INIT=1)
 endif()
 
+# zstd: use 64-bit registers for bit containers, reload decisions and the row-hash
+# mask. wasm32 has native i64 but 32-bit pointers, and zstd keys those decisions
+# on sizeof(size_t). The patch (third_party/patches/zstd) is inert without this
+# define and applies to every direction variant, since they share one codec lib.
+if(CU_WASM_ALGO STREQUAL "zstd")
+    target_compile_definitions(zstd_objs PRIVATE ZSTD_WASM_WIDE_REGS=1)
+endif()
+
 # --- Export allow-list groups -----------------------------------------------
 # The toolchain dropped `-Wl,--export-dynamic`, so by default nothing but the
 # reactor `_initialize` + `memory` is exported and wasm-ld GCs everything the
