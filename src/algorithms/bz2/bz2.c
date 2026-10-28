@@ -265,13 +265,27 @@ static void bz2_cstream_destroy(void* state) {
 typedef struct {
     bz_stream strm;
     int       strm_inited;
-    uint8_t*  pending;
+    uint8_t*  pending;     /* unconsumed input: live bytes are [pending_off, pending_len) */
+    size_t    pending_off;
     size_t    pending_len;
     size_t    pending_cap;
     int       stream_end;
     int       single;      /* CU_DSTREAM_SINGLE: keep input after the end */
     cu_unused_t unused;    /* single: input received after the end */
 } bz2_dstream_state_t;
+
+/* Appends to the live pending bytes, first moving them to the front. Pumping
+ * only advances pending_off, so each byte is moved at most once per append
+ * instead of once per output window. */
+static cu_status_t dstream_pending_append(bz2_dstream_state_t* st, const uint8_t* src, size_t n) {
+    if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
+    return pending_append(&st->pending, &st->pending_len, &st->pending_cap, src, n);
+}
 
 static cu_status_t bz2_dstream_create(void** out_state) {
     bz2_dstream_state_t* st = calloc(1, sizeof(*st));
@@ -296,9 +310,11 @@ static cu_status_t bz2_dstream_create_single(void** out_state) {
 /* Single mode: once the stream has ended (bzip2 reports that only after all
  * output is out), whatever input is left pending came after it. */
 static cu_status_t bz2_keep_unused(bz2_dstream_state_t* st, cu_status_t s) {
-    if (s != CU_OK || !st->single || !st->stream_end || st->pending_len == 0) return s;
-    s = cu_unused_append(&st->unused, st->pending, st->pending_len);
-    st->pending_len = 0;
+    if (s != CU_OK || !st->single || !st->stream_end) return s;
+    if (st->pending_off == st->pending_len) return s;
+    s = cu_unused_append(&st->unused, st->pending + st->pending_off,
+                         st->pending_len - st->pending_off);
+    st->pending_off = st->pending_len = 0;
     return s;
 }
 
@@ -307,8 +323,8 @@ static cu_status_t dstream_pump(bz2_dstream_state_t* st,
     size_t cap = *out_len;
     size_t written = 0;
 
-    st->strm.next_in  = (char*)st->pending;
-    st->strm.avail_in = (unsigned int)st->pending_len;
+    st->strm.next_in  = (char*)(st->pending + st->pending_off);
+    st->strm.avail_in = (unsigned int)(st->pending_len - st->pending_off);
 
     for (;;) {
         st->strm.next_out  = (char*)(out + written);
@@ -320,11 +336,7 @@ static cu_status_t dstream_pump(bz2_dstream_state_t* st,
 
         if (r == BZ_STREAM_END) {
             st->stream_end = 1;
-            size_t consumed = st->pending_len - st->strm.avail_in;
-            if (consumed > 0 && st->strm.avail_in > 0) {
-                memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-            }
-            st->pending_len = st->strm.avail_in;
+            st->pending_off = st->pending_len - st->strm.avail_in;
             *out_len = written;
             return CU_OK;
         }
@@ -333,17 +345,13 @@ static cu_status_t dstream_pump(bz2_dstream_state_t* st,
              * consumed: bzip2 decodes a whole block (up to 900 KB) at once and
              * may still hold most of it. The drain call then runs it again. */
             if (st->strm.avail_out == 0) {
-                size_t consumed = st->pending_len - st->strm.avail_in;
-                if (consumed > 0 && st->strm.avail_in > 0) {
-                    memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-                }
-                st->pending_len = st->strm.avail_in;
+                st->pending_off = st->pending_len - st->strm.avail_in;
                 *out_len = written;
                 return CU_ERR_BUF_TOO_SMALL;
             }
             if (st->strm.avail_in == 0) {
                 /* All current input consumed, not yet at stream end. */
-                st->pending_len = 0;
+                st->pending_off = st->pending_len = 0;
                 *out_len = written;
                 return CU_OK;
             }
@@ -368,7 +376,7 @@ static cu_status_t bz2_dstream_write(
         *out_len = 0;
         return CU_OK;
     }
-    cu_status_t s = pending_append(&st->pending, &st->pending_len, &st->pending_cap, in, in_len);
+    cu_status_t s = dstream_pending_append(st, in, in_len);
     if (s != CU_OK) return s;
     return bz2_keep_unused(st, dstream_pump(st, out, out_len));
 }
@@ -379,7 +387,7 @@ static cu_status_t bz2_dstream_finish(
     bz2_dstream_state_t* st = (bz2_dstream_state_t*)state;
     /* If the stream is already complete and there's no pending input,
      * skip the pump (BZ2_bzDecompress would return BZ_SEQUENCE_ERROR). */
-    if (st->stream_end && st->pending_len == 0) {
+    if (st->stream_end && st->pending_off == st->pending_len) {
         *out_len = 0;
         return CU_OK;
     }
