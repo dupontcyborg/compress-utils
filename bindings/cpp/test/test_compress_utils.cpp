@@ -337,6 +337,31 @@ static int test_cap_every_format() {
     return 0;
 }
 
+/* One-shot xz caps the dictionary at the input size (4 KiB floor, never above
+ * the preset's): round trips at, one byte under and one byte over the caps, with
+ * text and incompressible data, on levels with different preset dictionaries. */
+static int test_xz_fitted_dictionary() {
+    if (!cu::is_available(cu::Algorithm::Xz)) return 0;
+    const std::size_t sizes[] = {0, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537};
+    for (int level : {1, 6, 10}) {
+        for (std::size_t n : sizes) {
+            const auto text = sample(n);
+            const auto noise = pseudo_random(n, static_cast<std::uint32_t>(n));
+            for (const auto* in : {&text, &noise}) {
+                auto packed = cu::compress(cu::Algorithm::Xz, std::span<const std::uint8_t>(*in), level);
+                auto back = cu::decompress(cu::Algorithm::Xz, std::span<const std::uint8_t>(packed));
+                CHECK(back == *in, "xz level %d n=%zu round trip", level, n);
+            }
+        }
+    }
+    /* Larger than level 1's 256 KiB dictionary: the cap must not apply. */
+    const auto big = pseudo_random(300000, 7);
+    auto packed = cu::compress(cu::Algorithm::Xz, std::span<const std::uint8_t>(big), 1);
+    CHECK(cu::decompress(cu::Algorithm::Xz, std::span<const std::uint8_t>(packed)) == big,
+          "xz above the preset dictionary round trip");
+    return 0;
+}
+
 int main() {
     std::printf("cu version: %s\n", cu::version().c_str());
     if (test_freefn_roundtrip())  return 1;
@@ -348,6 +373,7 @@ int main() {
     if (test_single_stream())     return 1;
     if (test_moves_and_cap())     return 1;
     if (test_cap_every_format())  return 1;
+    if (test_xz_fitted_dictionary()) return 1;
     std::printf("OK\n");
     return 0;
 }
