@@ -6,7 +6,12 @@ package compressutils
 // our own headers, and the per-algorithm INCLUDE_<ALGO> switches the
 // registry compiles on. LZMA_API_STATIC is global (only <lzma.h> reads
 // it). CPPFLAGS apply to both the C and C++ (snappy) shims. Runtime link
-// flags live in the hand-written cgo.go preamble.
+// flags live in the hand-written cgo.go preamble. HAVE_USABLE_CLMUL (only
+// liblzma reads it) turns on its CLMUL CRC on amd64, chosen at run time by
+// CPUID; it pulls in x86 intrinsics, so it is not in the portable manifest
+// set (see algorithms/xz/CMakeLists.txt). NDEBUG is what CMake's Release
+// defines: liblzma keeps asserts in its hot decoder paths, and cgo's default
+// flags leave them on.
 
 // #cgo CPPFLAGS: -I${SRCDIR}/../../include
 // #cgo CPPFLAGS: -I${SRCDIR}/../../src
@@ -27,4 +32,6 @@ package compressutils
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/zlib
 // #cgo CPPFLAGS: -I${SRCDIR}/../../third_party/zstd/lib
 // #cgo CPPFLAGS: -DINCLUDE_ZSTD -DINCLUDE_BROTLI -DINCLUDE_ZLIB -DINCLUDE_GZIP -DINCLUDE_BZ2 -DINCLUDE_LZ4 -DINCLUDE_XZ -DINCLUDE_SNAPPY -DINCLUDE_DEFLATE -DINCLUDE_LZ4_RAW -DINCLUDE_LZO -DLZMA_API_STATIC
+// #cgo CPPFLAGS: -DNDEBUG
+// #cgo amd64 CPPFLAGS: -DHAVE_USABLE_CLMUL
 import "C"

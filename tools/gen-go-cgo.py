@@ -162,10 +162,17 @@ def cgo_generated_go(codecs: dict) -> dict[str, str]:
         "// our own headers, and the per-algorithm INCLUDE_<ALGO> switches the\n"
         "// registry compiles on. LZMA_API_STATIC is global (only <lzma.h> reads\n"
         "// it). CPPFLAGS apply to both the C and C++ (snappy) shims. Runtime link\n"
-        "// flags live in the hand-written cgo.go preamble.\n"
+        "// flags live in the hand-written cgo.go preamble. HAVE_USABLE_CLMUL (only\n"
+        "// liblzma reads it) turns on its CLMUL CRC on amd64, chosen at run time by\n"
+        "// CPUID; it pulls in x86 intrinsics, so it is not in the portable manifest\n"
+        "// set (see algorithms/xz/CMakeLists.txt). NDEBUG is what CMake's Release\n"
+        "// defines: liblzma keeps asserts in its hot decoder paths, and cgo's default\n"
+        "// flags leave them on.\n"
         "\n"
         + inc_lines
         + f"// #cgo CPPFLAGS: {defs} -DLZMA_API_STATIC\n"
+        "// #cgo CPPFLAGS: -DNDEBUG\n"
+        "// #cgo amd64 CPPFLAGS: -DHAVE_USABLE_CLMUL\n"
         "import \"C\"\n")
     return {GEN_GO: body}
 
