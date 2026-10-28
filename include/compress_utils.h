@@ -247,8 +247,10 @@ CU_API cu_status_t cu_decompress(
  *   - For ZSTD inputs containing multiple concatenated frames, this
  *     returns the decompressed size of the *first* frame only. Callers
  *     handling concatenated frames should use the streaming API.
- *   - For XZ, parses the stream footer; requires `in` to contain the
- *     complete stream (i.e. `in_len` reaches the end-of-stream marker).
+ *   - For XZ, parses the stream footer and index; requires `in` to be
+ *     exactly one complete stream. Concatenated streams, stream padding,
+ *     trailing bytes and damaged footers return CU_ERR_SIZE_UNKNOWN, so the
+ *     caller streams and the decoder reports any error.
  */
 CU_API cu_status_t cu_decompress_size_hint(
     cu_algorithm_t algo,

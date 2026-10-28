@@ -22,7 +22,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <span>
 #include <string>
@@ -104,14 +106,111 @@ static bool worth_releasing(std::size_t bytes) {
     return bytes >= CU_PY_RELEASE_GIL_MIN;
 }
 
-/* A small input can still decode to a lot, so also ask the format for its
- * recorded output size when it has one (zstd, LZ4 frames, Snappy). */
-static bool worth_releasing_decompress(cu::Algorithm algo, std::span<const std::uint8_t> in) {
-    if (worth_releasing(in.size())) return true;
+/* ---- One-shot decompress ---- */
+
+/* A bytes object of `n` bytes whose contents are not yet set. Fill it before
+ * the object is shared; nothing else can see it until it's returned. */
+static py::bytes new_bytes(std::size_t n) {
+    PyObject* o = PyBytes_FromStringAndSize(nullptr, static_cast<Py_ssize_t>(n));
+    if (!o) throw py::error_already_set();
+    return py::reinterpret_steal<py::bytes>(o);
+}
+
+/*
+ * Decodes into a bytes object of `capacity` bytes, the most the output can be,
+ * so the result needs no copy and no zero-fill. Shorter output (an
+ * `expected_size` that is only a bound) is copied into a right-sized object.
+ */
+static py::bytes decompress_into_bytes(cu_algorithm_t algo, std::span<const std::uint8_t> in,
+                                       std::size_t capacity, bool release) {
+    py::bytes out = new_bytes(capacity);
+    std::uint8_t empty = 0;  /* a non-null target for a zero capacity */
+    auto* buf = capacity ? reinterpret_cast<std::uint8_t*>(PyBytes_AS_STRING(out.ptr())) : &empty;
+    std::size_t out_len = capacity;
+    {
+        std::optional<py::gil_scoped_release> nogil;
+        if (release) nogil.emplace();
+        cu::detail::check(cu_decompress(algo, in.data(), in.size(), buf, &out_len));
+    }
+    if (out_len == capacity) return out;
+    return py::bytes(reinterpret_cast<const char*>(buf), out_len);
+}
+
+/* A buffer from malloc, grown with realloc: a large one grows without copying. */
+struct Malloced {
+    std::uint8_t* p = nullptr;
+    ~Malloced() { std::free(p); }
+    void grow(std::size_t n) {
+        void* q = std::realloc(p, n);
+        if (!q) throw std::bad_alloc();
+        p = static_cast<std::uint8_t*>(q);
+    }
+};
+
+struct DecompressStreamHandle {
+    cu_decompress_stream_t* s = nullptr;
+    ~DecompressStreamHandle() { cu_decompress_stream_destroy(s); }
+};
+
+/*
+ * For a format that doesn't record its size: streams into one buffer that
+ * doubles as needed, bounded by the same cap as the sized path, then copies
+ * it once into the result. Runs without the GIL when `release` is set.
+ */
+static py::bytes decompress_streaming(cu_algorithm_t algo, std::span<const std::uint8_t> in,
+                                      bool release) {
+    constexpr std::size_t kMinWindow = 64 * 1024;
+    Malloced buf;
+    std::size_t pos = 0, cap = 0;
+    {
+        std::optional<py::gil_scoped_release> nogil;
+        if (release) nogil.emplace();
+        DecompressStreamHandle ds;
+        cu::detail::check(cu_decompress_stream_create(algo, &ds.s));
+        cu::detail::check(cu_decompress_stream_set_max_output(ds.s, cu_get_max_decompressed_size()));
+        cap = std::max<std::size_t>(kMinWindow, in.size() * 4);
+        buf.grow(cap);
+        const std::uint8_t* next = in.data();
+        std::size_t next_len = in.size();
+        bool finishing = false;
+        for (;;) {
+            if (cap - pos < kMinWindow) {
+                cap *= 2;
+                buf.grow(cap);
+            }
+            std::size_t out_len = cap - pos;
+            cu_status_t s = finishing
+                ? cu_decompress_stream_finish(ds.s, buf.p + pos, &out_len)
+                : cu_decompress_stream_write(ds.s, next, next_len, buf.p + pos, &out_len);
+            next = nullptr;
+            next_len = 0;
+            pos += out_len;
+            if (s == CU_ERR_BUF_TOO_SMALL) continue;
+            cu::detail::check(s);
+            if (finishing) break;
+            finishing = true;
+        }
+    }
+    return py::bytes(reinterpret_cast<const char*>(buf.p), pos);
+}
+
+/* The size from `expected_size`, else the format's recorded size, else streaming. */
+static py::bytes decompress_oneshot(cu::Algorithm a, std::span<const std::uint8_t> in,
+                                    std::optional<std::size_t> expected_size) {
+    cu_algorithm_t algo = cu::detail::c_algo(a);
+    if (expected_size) {
+        bool release = worth_releasing(in.size()) || worth_releasing(*expected_size);
+        return decompress_into_bytes(algo, in, *expected_size, release);
+    }
     std::size_t hint = 0;
-    return cu_decompress_size_hint(static_cast<cu_algorithm_t>(algo), in.data(), in.size(),
-                                   &hint) == CU_OK &&
-           worth_releasing(hint);
+    cu_status_t s = cu_decompress_size_hint(algo, in.data(), in.size(), &hint);
+    if (s == CU_OK) {
+        return decompress_into_bytes(algo, in, hint, worth_releasing(in.size()) || worth_releasing(hint));
+    }
+    if (s != CU_ERR_SIZE_UNKNOWN) cu::detail::throw_status(s);
+    /* A small input can still decode to a lot, but with no recorded size there
+     * is no way to tell, so only the input's size counts. */
+    return decompress_streaming(algo, in, worth_releasing(in.size()));
 }
 
 /* Runs `f` without the GIL when `release` is set. `f` must not touch Python. */
@@ -197,14 +296,7 @@ PYBIND11_MODULE(compress_utils_py, m, py::mod_gil_not_used()) {
                            std::optional<std::size_t> expected_size) {
         cu::Algorithm algo = parse_algorithm(algorithm);
         InputView in(data);
-        bool release = expected_size ? worth_releasing(in.span().size()) ||
-                                           worth_releasing(*expected_size)
-                                     : worth_releasing_decompress(algo, in.span());
-        auto out = run(release, [&] {
-            return expected_size ? cu::decompress(algo, in.span(), *expected_size)
-                                 : cu::decompress(algo, in.span());
-        });
-        return to_bytes(out);
+        return decompress_oneshot(algo, in.span(), expected_size);
     }, py::arg("data"), py::arg("algorithm"), py::arg("expected_size") = py::none(),
        "Decompress bytes/buffer using the given algorithm.\n\n"
        "expected_size is an upper bound on the output size; the result holds the\n"

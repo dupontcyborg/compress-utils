@@ -74,6 +74,7 @@ fn main() {
         let mut b = cc::Build::new();
         b.cpp(cxx);
         b.warnings(false);
+        define_ndebug(&mut b);
 
         for s in c["sources"].as_array().expect("sources array") {
             b.file(dir.join(s.as_str().unwrap()));
@@ -90,6 +91,15 @@ fn main() {
         // liblzma's public headers pick static-linkage decoration off this.
         if name == "xz" {
             b.define("LZMA_API_STATIC", None);
+            // CLMUL CRC64/CRC32 on x86-64, picked at run time by CPUID. The
+            // manifest's define set is portable across targets and this one
+            // pulls in x86 intrinsics. See algorithms/xz/CMakeLists.txt.
+            let cc = b.get_compiler();
+            if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64")
+                && (cc.is_like_gnu() || cc.is_like_clang())
+            {
+                b.define("HAVE_USABLE_CLMUL", None);
+            }
         }
         b.compile(&format!("cu_codec_{name}"));
     }
@@ -97,6 +107,7 @@ fn main() {
     // Core dispatcher + registry + every vtable, in one Build.
     let mut core = cc::Build::new();
     core.warnings(false);
+    define_ndebug(&mut core);
     for inc in &core_includes {
         core.include(inc);
     }
@@ -124,6 +135,15 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "linux" || target_os == "android" {
         println!("cargo:rustc-link-lib=m");
+    }
+}
+
+/// Optimized builds define NDEBUG, as CMake's Release configuration and the
+/// upstream release builds do. `cc` does not, and liblzma keeps `assert`s in its
+/// decoder's hot paths: left on, they cost over a quarter of xz decompress speed.
+fn define_ndebug(b: &mut cc::Build) {
+    if env::var("OPT_LEVEL").as_deref() != Ok("0") {
+        b.define("NDEBUG", None);
     }
 }
 

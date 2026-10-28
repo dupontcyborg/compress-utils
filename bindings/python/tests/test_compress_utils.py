@@ -115,6 +115,18 @@ class TestCompressUtils(unittest.TestCase):
                 with self.assertRaises(cu.CompressError):
                     cu.decompress(compressed, name, expected_size=len(data) // 2)
 
+    def test_output_far_larger_than_input(self):
+        # Formats without a recorded size decode into a buffer that grows with
+        # the output; 10 MB from a few KB of input doubles it many times, and a
+        # buffer boundary must not lose or repeat a byte.
+        words = b"alpha beta gamma delta epsilon zeta eta theta iota kappa\n"
+        data = (words * 1000 + bytes(range(256)) * 40) * 150
+        for name in available_algorithms():
+            with self.subTest(algorithm=name):
+                compressed = cu.compress(data, name)
+                self.assertGreater(len(data), 8 * len(compressed))
+                self.assertEqual(cu.decompress(compressed, name), data)
+
     def test_max_decompressed_size_every_format(self):
         # The cap holds for formats that don't record their size too: those
         # decode through a stream that the cap also bounds.

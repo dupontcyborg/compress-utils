@@ -64,6 +64,8 @@ xz/liblzma needs no config header — its `HAVE_*` knobs are passed as uniform
 `-D` defines (see the `xz` entry in `manifest.json`); platform-specific macros
 are dropped in favor of liblzma's portable fallbacks, and threads are off.
 
+The one exception is `HAVE_USABLE_CLMUL`, which selects the CLMUL CRC64/CRC32 on x86-64 (chosen at run time by CPUID) and pulls in x86 intrinsics, so it cannot live in the portable set: `algorithms/xz/CMakeLists.txt` defines it for GCC and Clang targeting x86-64, after a compile check. Without it CRC64, the `.xz` check, runs the table-driven code, about 10% of decompress time on x86-64. The Rust and Go bindings compile the manifest's sources themselves, so they repeat the rule: `bindings/rust/build.rs` for x86-64 with GCC or Clang, and `tools/gen-go-cgo.py` (`#cgo amd64`). They also define `NDEBUG` as CMake's Release does, which matters more than CLMUL: liblzma keeps `assert`s in its decoder's hot paths, and `cc` and cgo leave them on by default (xz decompress about 37% slower on x86-64).
+
 ## Patches for the WASM build
 
 `third_party/<codec>/` is always verbatim upstream (apart from the hand-authored files above), so the native, Go, Rust, Python and Swift builds never see a patch. A codec that needs a wasm32-specific source change keeps it in `third_party/patches/<codec>/*.patch`. The WASM build (`bindings/wasm/CMakeLists.txt`, which sets `CU_VENDOR_APPLY_PATCHES`) makes a copy of the codec under its build directory (`vendor-patched/<codec>`), applies the patches in sorted filename order, and compiles that copy. The copy is refreshed whenever the manifest's tag or tree hash, or any patch, changes. Every direction variant (both, decompress-only, compress-only) links the same patched codec library.

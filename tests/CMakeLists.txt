@@ -104,6 +104,15 @@ if(ENABLE_TESTS)
     add_test(NAME test_xz_dict COMMAND test_xz_dict)
 endif()
 
+# The xz size hint reads the Stream Footer and Index: exact for a single Stream
+# (one-shot, streamed, many Blocks from the reference xz CLI), SIZE_UNKNOWN for
+# concatenated Streams, padding, trailing bytes and damaged input.
+add_executable(test_xz_size_hint test_xz_size_hint.c)
+target_link_libraries(test_xz_size_hint PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_xz_size_hint COMMAND test_xz_size_hint)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses our own pure-C core. This is a C++ target on
