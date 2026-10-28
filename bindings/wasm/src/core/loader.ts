@@ -209,7 +209,7 @@ function wasiImports(getMemory: () => WebAssembly.Memory): WebAssembly.ModuleImp
 }
 
 export async function loadModule(
-    source: BufferSource | Response | PromiseLike<Response>,
+    source: BufferSource | Response | PromiseLike<Response> | WebAssembly.Module,
 ): Promise<WasmExports> {
     // random_get needs `instance.exports.memory`, which doesn't exist
     // until after `WebAssembly.instantiate` returns. The closure captures
@@ -221,7 +221,9 @@ export async function loadModule(
         ),
     };
 
-    if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) {
+    if (source instanceof WebAssembly.Module) {
+        instance = await WebAssembly.instantiate(source, imports);
+    } else if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) {
         const { instance: inst } = await WebAssembly.instantiate(source, imports);
         instance = inst;
     } else {
