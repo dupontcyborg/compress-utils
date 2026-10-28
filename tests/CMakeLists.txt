@@ -43,6 +43,16 @@ if(ENABLE_TESTS)
     add_test(NAME test_stream_drain COMMAND test_stream_drain)
 endif()
 
+# Streaming decompression into an exactly-sized output buffer: finish() returns
+# CU_OK at once on a complete stream (zstd and LZ4 once asked for more room
+# forever), truncated input still fails, and the max-output limit holds at the
+# boundary. Skips any codec that isn't compiled in.
+add_executable(test_stream_exact_output test_stream_exact_output.c)
+target_link_libraries(test_stream_exact_output PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_stream_exact_output COMMAND test_stream_exact_output)
+endif()
+
 # Nonterminal flush: every checkpoint decodes completely from the bytes so
 # far, on the same open stream. Skips any codec that isn't compiled in.
 add_executable(test_stream_flush test_stream_flush.c)

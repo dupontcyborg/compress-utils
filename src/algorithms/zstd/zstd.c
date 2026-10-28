@@ -491,6 +491,12 @@ static cu_status_t dstream_pending_append(zstd_dstream_state_t* st, const uint8_
  * the decoder just finished a frame, which leaves nothing held. In single
  * mode it stops at the end of the first data frame, leaving ib->pos there. */
 static cu_status_t dstream_pump(zstd_dstream_state_t* st, ZSTD_inBuffer* ib, ZSTD_outBuffer* ob) {
+    /* Past a frame end with no input, the decoder holds nothing: its output was
+     * flushed when the frame ended, and a further call would only report that
+     * it wants the next frame header (a nonzero hint). With `ob` full that hint
+     * reads as held output, so a complete stream could never finish into an
+     * exactly-sized buffer. */
+    if (ib->pos == ib->size && st->at_frame_end) return CU_OK;
     for (;;) {
         size_t before = ib->pos;
         size_t r = ZSTD_decompressStream(st->ds, ob, ib);

@@ -71,6 +71,11 @@ static int cu_do_compress_stream(const bench_codec_t* c, const uint8_t* in, size
             return (int)st;
         }
     }
+    if (st != CU_OK) {
+        *err = "finish still returned BUF_TOO_SMALL after CU_DRAIN_MAX calls";
+        cu_compress_stream_destroy(s);
+        return (int)st;
+    }
     cu_compress_stream_destroy(s);
     *out_len = pos;
     return 0;
@@ -108,6 +113,11 @@ static int cu_do_decompress_stream(const bench_codec_t* c, const uint8_t* in, si
             cu_decompress_stream_destroy(s);
             return (int)st;
         }
+    }
+    if (st != CU_OK) {
+        *err = "finish still returned BUF_TOO_SMALL after CU_DRAIN_MAX calls";
+        cu_decompress_stream_destroy(s);
+        return (int)st;
     }
     cu_decompress_stream_destroy(s);
     *out_len = pos;
