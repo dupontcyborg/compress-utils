@@ -493,5 +493,52 @@ class TestXzFittedDictionary(unittest.TestCase):
             lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=128 << 10).decompress(packed)
 
 
+class TestXzOneShotInputs(unittest.TestCase):
+    """One-shot xz decompress reads the size from the Stream Footer and Index when
+    the input is exactly one Stream, and streams otherwise (concatenated Streams,
+    Stream Padding). Either way the result is what Python's own lzma gives."""
+
+    def _data(self, n, seed=0):
+        rng = random.Random(seed * 1_000_003 + n)
+        words = [rng.randbytes(rng.randint(2, 9)) for _ in range(300)]
+        out = bytearray()
+        while len(out) < n:
+            out += rng.choice(words) + b" "
+        return bytes(out[:n])
+
+    def test_stdlib_streams_with_every_check(self):
+        import lzma
+        for check in (lzma.CHECK_NONE, lzma.CHECK_CRC32, lzma.CHECK_CRC64, lzma.CHECK_SHA256):
+            for n in (0, 1, 1000, 300_000):
+                with self.subTest(check=check, size=n):
+                    data = self._data(n)
+                    packed = lzma.compress(data, check=check)
+                    self.assertEqual(cu.decompress(packed, "xz"), data)
+
+    def test_concatenated_streams(self):
+        import lzma
+        a, b = self._data(50_000, 1), self._data(30_000, 2)
+        packed = lzma.compress(a) + lzma.compress(b)
+        self.assertEqual(lzma.decompress(packed), a + b)
+        self.assertEqual(cu.decompress(packed, "xz"), a + b)
+
+    def test_stream_padding(self):
+        import lzma
+        data = self._data(50_000)
+        # The xz format allows it and liblzma's concatenated decoder reads past it;
+        # Python's lzma.decompress does not, so there is nothing to compare with.
+        packed = lzma.compress(data) + b"\0" * 8
+        self.assertEqual(cu.decompress(packed, "xz"), data)
+
+    def test_truncated_and_trailing_garbage_are_errors(self):
+        import lzma
+        data = self._data(50_000)
+        packed = lzma.compress(data)
+        for case, bad in (("truncated", packed[:-1]), ("garbage", packed + b"\x5a")):
+            with self.subTest(case=case):
+                with self.assertRaises(cu.CompressError):
+                    cu.decompress(bad, "xz")
+
+
 if __name__ == "__main__":
     unittest.main()

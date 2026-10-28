@@ -103,6 +103,41 @@ static cu_status_t xz_compress(
     return CU_OK;
 }
 
+/* The uncompressed size is in the Index, which the Stream Footer locates from
+ * the end of the input. Only an input that is exactly one Stream (no
+ * concatenated Streams, no Stream Padding) has a size the footer vouches for;
+ * anything else, or anything malformed, is SIZE_UNKNOWN so the caller streams
+ * and the decoder reports what is wrong. */
+static cu_status_t xz_decompress_size_hint(
+    const uint8_t* in, size_t in_len, size_t* out_size
+) {
+    if (in_len < 2 * LZMA_STREAM_HEADER_SIZE) return CU_ERR_SIZE_UNKNOWN;
+
+    lzma_stream_flags footer;
+    if (lzma_stream_footer_decode(&footer, in + in_len - LZMA_STREAM_HEADER_SIZE) != LZMA_OK)
+        return CU_ERR_SIZE_UNKNOWN;
+    if (footer.backward_size > in_len - 2 * LZMA_STREAM_HEADER_SIZE) return CU_ERR_SIZE_UNKNOWN;
+
+    /* The Index is a few bytes per Block, but its in-memory form is larger; a
+     * small limit keeps this cheap on a hostile input. */
+    uint64_t memlimit = (uint64_t)16 << 20;
+    size_t index_size = (size_t)footer.backward_size;
+    size_t index_pos = 0;
+    lzma_index* index = NULL;
+    const uint8_t* index_in = in + in_len - LZMA_STREAM_HEADER_SIZE - index_size;
+    if (lzma_index_buffer_decode(&index, &memlimit, NULL, index_in, &index_pos, index_size) != LZMA_OK)
+        return CU_ERR_SIZE_UNKNOWN;
+
+    cu_status_t s = CU_ERR_SIZE_UNKNOWN;
+    lzma_vli total = lzma_index_uncompressed_size(index);
+    if (lzma_index_stream_size(index) == in_len && total <= SIZE_MAX) {
+        *out_size = (size_t)total;
+        s = CU_OK;
+    }
+    lzma_index_end(index, NULL);
+    return s;
+}
+
 static cu_status_t xz_decompress(
     const uint8_t* in, size_t in_len,
     uint8_t* out, size_t* out_len
@@ -140,8 +175,15 @@ static cu_status_t xz_decompress(
             ret = CU_OK;
         }
     } else if (r == LZMA_OK && strm.avail_out == 0) {
-        cu_set_last_error("xz: output buffer too small (size not probed)");
-        ret = CU_ERR_SIZE_UNKNOWN;
+        size_t need = 0;
+        if (xz_decompress_size_hint(in, in_len, &need) == CU_OK && need > *out_len) {
+            cu_set_last_error("xz: output buffer too small");
+            *out_len = need;
+            ret = CU_ERR_BUF_TOO_SMALL;
+        } else {
+            cu_set_last_error("xz: output buffer too small (size not probed)");
+            ret = CU_ERR_SIZE_UNKNOWN;
+        }
     } else if (r == LZMA_OK || r == LZMA_BUF_ERROR) {
         /* LZMA_FINISH returned without STREAM_END and the output buffer is NOT
          * full → the input was an incomplete .xz stream. (LZMA_OK here is not
@@ -155,15 +197,6 @@ static cu_status_t xz_decompress(
     return ret;
 }
 
-static cu_status_t xz_decompress_size_hint(
-    const uint8_t* in, size_t in_len, size_t* out_size
-) {
-    (void)in; (void)in_len; (void)out_size;
-    /* TODO: parse the xz stream footer/index for the uncompressed size.
-     * For now, callers route to streaming for size-unknown inputs. */
-    return CU_ERR_SIZE_UNKNOWN;
-}
-
 /* ============================================================================
  * Streaming (shared infrastructure)
  * ============================================================================ */
@@ -171,7 +204,8 @@ static cu_status_t xz_decompress_size_hint(
 typedef struct {
     lzma_stream strm;
     int      strm_inited;
-    uint8_t* pending;
+    uint8_t* pending;     /* unconsumed input: live bytes are [pending_off, pending_len) */
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
     int      finishing;
@@ -181,8 +215,16 @@ typedef struct {
     cu_unused_t unused; /* single: input received after the end */
 } xz_stream_state_t;
 
+/* Appends to the live pending bytes, first moving them to the front. Pumping
+ * only advances pending_off, so each byte is moved at most once per append
+ * instead of once per output window. */
 static cu_status_t pending_append(xz_stream_state_t* st, const uint8_t* src, size_t n) {
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -207,8 +249,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
     size_t written = 0;
     cu_status_t s;
 
-    st->strm.next_in = st->pending;
-    st->strm.avail_in = st->pending_len;
+    st->strm.next_in = st->pending + st->pending_off;
+    st->strm.avail_in = st->pending_len - st->pending_off;
     for (;;) {
         st->strm.next_out = out + written;
         st->strm.avail_out = cap - written;
@@ -262,7 +304,7 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
                 cu_set_last_error("xz: sync flush made no progress");
                 return CU_ERR_COMPRESSION;
             }
-            st->pending_len = st->strm.avail_in;
+            st->pending_off = st->pending_len - st->strm.avail_in;
             *out_len = written;
             cu_set_last_error("xz: truncated stream");
             return CU_ERR_TRUNCATED;
@@ -271,11 +313,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
         return map_lzma_error(r, action == LZMA_RUN ? CU_ERR_COMPRESSION : CU_ERR_DECOMPRESSION);
     }
 
-    size_t consumed = st->pending_len - st->strm.avail_in;
-    if (consumed > 0 && st->strm.avail_in > 0) {
-        memmove(st->pending, st->pending + consumed, st->strm.avail_in);
-    }
-    st->pending_len = st->strm.avail_in;
+    st->pending_off = st->pending_len - st->strm.avail_in;
+    if (st->pending_off == st->pending_len) st->pending_off = st->pending_len = 0;
     *out_len = written;
     return s;
 }
@@ -394,9 +433,11 @@ static cu_status_t xz_dstream_create_single(void** out_state) {
 /* Single mode: once the stream has ended (liblzma reports that only after all
  * output is out), whatever input is left pending came after it. */
 static cu_status_t xz_keep_unused(xz_stream_state_t* st, cu_status_t s) {
-    if (s != CU_OK || !st->single || !st->stream_end || st->pending_len == 0) return s;
-    s = cu_unused_append(&st->unused, st->pending, st->pending_len);
-    st->pending_len = 0;
+    if (s != CU_OK || !st->single || !st->stream_end) return s;
+    if (st->pending_off == st->pending_len) return s;
+    s = cu_unused_append(&st->unused, st->pending + st->pending_off,
+                         st->pending_len - st->pending_off);
+    st->pending_off = st->pending_len = 0;
     return s;
 }
 
@@ -423,7 +464,7 @@ static cu_status_t xz_dstream_finish(
     void* state, uint8_t* out, size_t* out_len
 ) {
     xz_stream_state_t* st = (xz_stream_state_t*)state;
-    if (st->stream_end && st->pending_len == 0) {
+    if (st->stream_end && st->pending_off == st->pending_len) {
         *out_len = 0;
         return CU_OK;
     }
