@@ -10,6 +10,10 @@
  *
  * Streaming uses lzma_easy_encoder / lzma_stream_decoder with the standard
  * stashed-tail protocol.
+ *
+ * One-shot compression caps the preset's dictionary at the input size (see
+ * xz_fit_dict_size). Streaming compression cannot: it does not know the total
+ * input size when the encoder is created, so it keeps the preset's dictionary.
  */
 
 #include "algorithm_registry.h"
@@ -27,6 +31,21 @@
 /* XZ: user 1..10 → XZ preset 0..9 (zero-based). */
 static uint32_t xz_native_level(int user_level) {
     return (uint32_t)cu_clamp_level(user_level - 1, 0, 9);
+}
+
+/* The dictionary one-shot compression needs for in_len bytes: in_len rounded
+ * up to a power of two, at least LZMA_DICT_SIZE_MIN (4 KiB) and never above the
+ * preset's own dictionary. No match can reach back further than the input is
+ * long, so the dictionary never limits a match: the payload is byte-identical
+ * for the bt4 presets (levels 5-10) and can differ by a few bytes for the hc3
+ * and hc4 ones (levels 1-4), whose hash table size follows the dictionary. What
+ * changes is the dictionary recorded in the stream header (and so the decoder's
+ * memory) and liblzma's set-up cost (its hash table and buffers scale with the
+ * dictionary). Same rule as 7-Zip. */
+static uint32_t xz_fit_dict_size(size_t in_len, uint32_t preset_dict_size) {
+    uint32_t d = LZMA_DICT_SIZE_MIN;
+    while (d < preset_dict_size && (size_t)d < in_len) d <<= 1;
+    return d < preset_dict_size ? d : preset_dict_size;
 }
 
 static cu_status_t map_lzma_error(lzma_ret r, cu_status_t fallback) {
@@ -59,9 +78,21 @@ static cu_status_t xz_compress(
         *out_len = needed;
         return CU_ERR_BUF_TOO_SMALL;
     }
+    /* What lzma_easy_buffer_encode does, with the dictionary fitted to the
+     * input. */
+    lzma_options_lzma opts;
+    if (lzma_lzma_preset(&opts, xz_native_level(level))) {
+        cu_set_last_error("xz: unsupported preset");
+        return CU_ERR_COMPRESSION;
+    }
+    opts.dict_size = xz_fit_dict_size(in_len, opts.dict_size);
+    lzma_filter filters[] = {
+        { .id = LZMA_FILTER_LZMA2, .options = &opts },
+        { .id = LZMA_VLI_UNKNOWN,  .options = NULL },
+    };
     size_t out_pos = 0;
-    lzma_ret r = lzma_easy_buffer_encode(
-        xz_native_level(level), LZMA_CHECK_CRC64, NULL,
+    lzma_ret r = lzma_stream_buffer_encode(
+        filters, LZMA_CHECK_CRC64, NULL,
         in, in_len,
         out, &out_pos, cap
     );
@@ -253,6 +284,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
  * Streaming compression
  * ============================================================================ */
 
+/* The input size is unknown here, so the stream keeps the preset's full
+ * dictionary (8 MiB at level 6), however little is written. */
 static cu_status_t xz_cstream_create(int level, void** out_state) {
     xz_stream_state_t* st = calloc(1, sizeof(*st));
     if (!st) { cu_set_last_error("xz: oom"); return CU_ERR_OOM; }

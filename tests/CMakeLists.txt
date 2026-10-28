@@ -85,6 +85,15 @@ if(ENABLE_TESTS)
     add_test(NAME test_deflate_levels COMMAND test_deflate_levels)
 endif()
 
+# One-shot xz compression caps the dictionary at the input size: the header
+# records it, round trips and far matches hold at the boundaries, the reference
+# xz CLI decodes (skipped when absent), streaming keeps the preset's dictionary.
+add_executable(test_xz_dict test_xz_dict.c)
+target_link_libraries(test_xz_dict PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_xz_dict COMMAND test_xz_dict)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses our own pure-C core. This is a C++ target on

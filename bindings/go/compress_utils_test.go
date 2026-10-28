@@ -77,6 +77,48 @@ func TestOneShotRoundTrip(t *testing.T) {
 	}
 }
 
+// One-shot xz caps the dictionary at the input size (4 KiB floor, never above
+// the preset's): round trips at, one byte under and one byte over each cap, with
+// text and incompressible data, on levels with different preset dictionaries.
+func TestXzFittedDictionary(t *testing.T) {
+	if !Available(Xz) {
+		t.Skip("xz not compiled in")
+	}
+	rng := rand.New(rand.NewSource(7))
+	text := func(n int) []byte {
+		return bytes.Repeat([]byte("The quick brown fox jumps over the lazy dog. "), n/45+1)[:n]
+	}
+	noise := func(n int) []byte {
+		b := make([]byte, n)
+		rng.Read(b)
+		return b
+	}
+	sizes := []int{0, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537}
+	for _, level := range []int{1, 6, 10} {
+		for _, n := range sizes {
+			for kind, data := range map[string][]byte{"text": text(n), "noise": noise(n)} {
+				c, err := Compress(Xz, data, level)
+				if err != nil {
+					t.Fatalf("level %d %s n=%d: Compress: %v", level, kind, n, err)
+				}
+				got, err := Decompress(Xz, c)
+				if err != nil || !bytes.Equal(got, data) {
+					t.Fatalf("level %d %s n=%d: round trip (err %v)", level, kind, n, err)
+				}
+			}
+		}
+	}
+	// Larger than level 1's 256 KiB dictionary: the cap must not apply.
+	big := noise(300000)
+	c, err := Compress(Xz, big, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Decompress(Xz, c); err != nil || !bytes.Equal(got, big) {
+		t.Fatalf("above the preset dictionary: round trip (err %v)", err)
+	}
+}
+
 func TestStreamingRoundTrip(t *testing.T) {
 	for _, a := range allAlgos {
 		if !Available(a) {

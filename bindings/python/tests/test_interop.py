@@ -451,5 +451,47 @@ class TestCanonicalInterop(unittest.TestCase):
                 self.assertEqual(cu.decompress(theirs, "lz4_raw", expected_size=len(data)), data)
 
 
+class TestXzFittedDictionary(unittest.TestCase):
+    """One-shot xz caps the dictionary at the input size (4 KiB floor, never above
+    the preset's): output stays a standard .xz that Python's own lzma decodes, and
+    a decoder needs far less memory than the preset's 8 MiB dictionary."""
+
+    SIZES = [0, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537]
+
+    def _data(self, n):
+        rng = random.Random(n)
+        words = [rng.randbytes(rng.randint(2, 9)) for _ in range(300)]
+        out = bytearray()
+        while len(out) < n:
+            out += rng.choice(words) + b" "
+        return bytes(out[:n])
+
+    def test_round_trip_around_the_cap(self):
+        import lzma
+        for level in (1, 6, 10):
+            for n in self.SIZES:
+                with self.subTest(level=level, size=n):
+                    data = self._data(n)
+                    packed = cu.compress(data, "xz", level=level)
+                    self.assertEqual(cu.decompress(packed, "xz"), data)
+                    self.assertEqual(lzma.decompress(packed), data)
+
+    def test_decoder_memory_follows_the_input(self):
+        import lzma
+        for n in (1, 4096, 4097, 65536):
+            with self.subTest(size=n):
+                data = self._data(n)
+                packed = cu.compress(data, "xz", level=6)
+                # Level 6's preset dictionary is 8 MiB; a fitted one fits well under 1 MiB.
+                dec = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=1 << 20)
+                self.assertEqual(dec.decompress(packed), data)
+        # Above the preset's dictionary the cap does not apply: level 1 is 256 KiB.
+        data = self._data(300_000)
+        packed = cu.compress(data, "xz", level=1)
+        self.assertEqual(lzma.decompress(packed), data)
+        with self.assertRaises(lzma.LZMAError):
+            lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=128 << 10).decompress(packed)
+
+
 if __name__ == "__main__":
     unittest.main()
