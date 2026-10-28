@@ -941,7 +941,9 @@ fn xz_fitted_dictionary_round_trips() {
             .collect()
     };
     for level in [1, 6, 10] {
-        for n in [0usize, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537] {
+        for n in [
+            0usize, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537,
+        ] {
             for (kind, data) in [("text", text(n)), ("noise", pseudo_random(n, n as u64))] {
                 let packed = compress(Algorithm::Xz, &data, level).unwrap();
                 let back = decompress(Algorithm::Xz, &packed).unwrap();
