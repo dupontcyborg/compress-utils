@@ -32,7 +32,7 @@ fn main() -> Result<(), compress_utils::Error> {
 }
 ```
 
-`decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which. It is bounded by `set_max_decompressed_size` (default 1 GiB) to stay safe against malformed "decompression bomb" inputs.
+`decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and otherwise has the C core grow the output buffer as it decodes (copied once into the result), so you don't need to know which is which. It is bounded by `set_max_decompressed_size` (default 1 GiB) to stay safe against malformed "decompression bomb" inputs.
 
 ## Supported algorithms
 

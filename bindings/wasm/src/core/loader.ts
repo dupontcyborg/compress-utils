@@ -55,6 +55,14 @@ export interface WasmExports {
         in_len: number,
         out_size_ptr: number,
     ) => number;
+    readonly cu_decompress_alloc: (
+        algo: number,
+        in_ptr: number,
+        in_len: number,
+        out_pp: number,
+        out_len_ptr: number,
+    ) => number;
+    readonly cu_buffer_free: (ptr: number) => void;
 
     readonly cu_compress_stream_create: (
         algo: number,

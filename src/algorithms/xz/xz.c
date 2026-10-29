@@ -249,7 +249,8 @@ static cu_status_t stream_pump(xz_stream_state_t* st, lzma_action action,
     size_t written = 0;
     cu_status_t s;
 
-    st->strm.next_in = st->pending + st->pending_off;
+    /* pending is NULL until the first input arrives; NULL + 0 is undefined. */
+    st->strm.next_in = st->pending ? st->pending + st->pending_off : NULL;
     st->strm.avail_in = st->pending_len - st->pending_off;
     for (;;) {
         st->strm.next_out = out + written;

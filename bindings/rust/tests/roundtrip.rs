@@ -877,9 +877,7 @@ fn size_cap_in_child_process() {
 
     compress_utils::set_max_decompressed_size(cap);
     for &algo in &algos {
-        // At the cap is fine, one byte over is rejected, whether the C
-        // one-shot path (size-recording formats) or the binding's streaming
-        // fallback (zlib, gzip, brotli, ...) enforces it.
+        // At the cap is fine, one byte over is rejected, whether the sized one-shot path (size-recording formats) or the core's growing decode (zlib, gzip, brotli, ...) enforces it.
         assert_eq!(
             decompress(algo, &packed(algo, &at_cap)).unwrap(),
             at_cap,
@@ -889,7 +887,7 @@ fn size_cap_in_child_process() {
         assert_eq!(err.code, Status::SizeLimit, "{algo}: {err}");
         assert!(err.message.contains("exceeds"), "{algo}: {err}");
     }
-    // The stream behind the fallback names the cap it enforced.
+    // The stream behind the growing decode names the cap it enforced.
     if Algorithm::Gzip.available() {
         let err = decompress(Algorithm::Gzip, &packed(Algorithm::Gzip, &over_cap)).unwrap_err();
         assert!(err.message.contains(&cap.to_string()), "{err}");
@@ -955,4 +953,50 @@ fn xz_fitted_dictionary_round_trips() {
     let big = pseudo_random(300_000, 7);
     let packed = compress(Algorithm::Xz, &big, 1).unwrap();
     assert_eq!(decompress(Algorithm::Xz, &packed).unwrap(), big);
+}
+
+/// Formats that don't record their size decode through the C core's growing buffer: a ratio high enough that it doubles many times, input of many 256 KiB feed chunks, an empty result, an xz input that isn't exactly one Stream (its size hint says unknown), and corrupt or truncated input.
+#[test]
+fn unknown_size_decodes_through_the_core() {
+    let zeros = vec![0u8; 8 << 20];
+    let noise = pseudo_random(700_000, 5);
+    let mut algos = available(&[
+        Algorithm::Zlib,
+        Algorithm::Gzip,
+        Algorithm::Deflate,
+        Algorithm::Brotli,
+        Algorithm::Bz2,
+        Algorithm::Xz,
+    ]);
+    algos.extend(available(&[Algorithm::Lz4Raw]));
+    for algo in algos {
+        for data in [&zeros, &noise, &Vec::new()] {
+            let packed = compress(algo, data, 5).unwrap();
+            assert_eq!(
+                &decompress(algo, &packed).unwrap(),
+                data,
+                "{algo} {} bytes",
+                data.len()
+            );
+        }
+    }
+
+    if Algorithm::Xz.available() {
+        let data = b"first part ".repeat(5_000);
+        let mut packed = compress(Algorithm::Xz, &data, 5).unwrap();
+        let once = packed.clone();
+        packed.extend_from_slice(&[0; 4]); // Stream Padding
+        assert_eq!(decompress(Algorithm::Xz, &packed).unwrap(), data);
+        packed.extend_from_slice(&once);
+        let twice = [data.clone(), data].concat();
+        assert_eq!(decompress(Algorithm::Xz, &packed).unwrap(), twice);
+    }
+
+    if Algorithm::Zlib.available() {
+        let packed = compress(Algorithm::Zlib, &noise, 5).unwrap();
+        let err = decompress(Algorithm::Zlib, &packed[..packed.len() / 2]).unwrap_err();
+        assert_eq!(err.code, Status::Truncated, "{err}");
+        let err = decompress(Algorithm::Zlib, &[0xff; 32]).unwrap_err();
+        assert_eq!(err.code, Status::Decompression, "{err}");
+    }
 }

@@ -323,7 +323,8 @@ static cu_status_t dstream_pump(bz2_dstream_state_t* st,
     size_t cap = *out_len;
     size_t written = 0;
 
-    st->strm.next_in  = (char*)(st->pending + st->pending_off);
+    /* pending is NULL until the first input arrives; NULL + 0 is undefined. */
+    st->strm.next_in  = st->pending ? (char*)(st->pending + st->pending_off) : NULL;
     st->strm.avail_in = (unsigned int)(st->pending_len - st->pending_off);
 
     for (;;) {

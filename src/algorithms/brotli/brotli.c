@@ -329,7 +329,8 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
                                 uint8_t* out, size_t* out_len) {
     size_t cap = *out_len;
     size_t written = 0;
-    const uint8_t* next_in = st->pending + st->pending_off;
+    /* pending is NULL until the first input arrives; NULL + 0 is undefined. */
+    const uint8_t* next_in = st->pending ? st->pending + st->pending_off : NULL;
     size_t avail_in = st->pending_len - st->pending_off;
 
     for (;;) {

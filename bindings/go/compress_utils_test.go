@@ -243,6 +243,66 @@ func TestErrorType(t *testing.T) {
 	}
 }
 
+// TestDecompressUnknownSize: formats that don't record their size decode through the C core's growing buffer. Covers a ratio high enough that it doubles many times, input of many 256 KiB feed chunks, an empty result, an xz input that isn't exactly one Stream (its size hint says unknown) and corrupt or truncated input.
+func TestDecompressUnknownSize(t *testing.T) {
+	zeros := make([]byte, 8<<20)
+	noise := make([]byte, 700_000)
+	rand.New(rand.NewSource(5)).Read(noise)
+	for _, a := range []Algorithm{Zlib, Gzip, Deflate, Brotli, Bz2, Xz, Lz4Raw} {
+		if !Available(a) {
+			continue
+		}
+		t.Run(a.Name(), func(t *testing.T) {
+			for name, data := range map[string][]byte{"zeros": zeros, "noise": noise, "empty": {}} {
+				c, err := Compress(a, data, DefaultLevel)
+				if err != nil {
+					t.Fatalf("%s: Compress: %v", name, err)
+				}
+				got, err := Decompress(a, c)
+				if err != nil {
+					t.Fatalf("%s: Decompress: %v", name, err)
+				}
+				if !bytes.Equal(got, data) {
+					t.Fatalf("%s: round-trip mismatch (%d bytes back, want %d)", name, len(got), len(data))
+				}
+				if got == nil {
+					t.Fatalf("%s: result is nil", name)
+				}
+			}
+		})
+	}
+
+	if Available(Xz) {
+		data := bytes.Repeat([]byte("first part "), 5000)
+		c, err := Compress(Xz, data, DefaultLevel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		padded := append(append([]byte{}, c...), 0, 0, 0, 0) // Stream Padding
+		if got, err := Decompress(Xz, padded); err != nil || !bytes.Equal(got, data) {
+			t.Fatalf("xz with Stream Padding: err %v, %d bytes back", err, len(got))
+		}
+		twice := append(append([]byte{}, padded...), c...)
+		if got, err := Decompress(Xz, twice); err != nil || !bytes.Equal(got, append(append([]byte{}, data...), data...)) {
+			t.Fatalf("two xz Streams: err %v, %d bytes back", err, len(got))
+		}
+	}
+
+	if Available(Zlib) {
+		c, err := Compress(Zlib, noise, DefaultLevel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ce *Error
+		if _, err := Decompress(Zlib, c[:len(c)/2]); !errors.As(err, &ce) || ce.Code != ErrTruncated {
+			t.Fatalf("truncated zlib: %v", err)
+		}
+		if _, err := Decompress(Zlib, bytes.Repeat([]byte{0xff}, 32)); !errors.As(err, &ce) || ce.Code != ErrDecompression {
+			t.Fatalf("corrupt zlib: %v", err)
+		}
+	}
+}
+
 func TestDecompressWithCapacity(t *testing.T) {
 	for _, a := range allAlgos {
 		if !Available(a) {

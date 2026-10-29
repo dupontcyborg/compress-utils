@@ -6,7 +6,7 @@
 //! place that mirrors the header; keep the two in sync. Everything here is
 //! `unsafe` to call — the safe wrappers live in `lib.rs` / `stream.rs`.
 
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_void};
 
 // cu_algorithm_t — values match the CU_ALGO_* enumerators.
 pub const CU_ALGO_ZSTD: c_int = 0;
@@ -90,8 +90,16 @@ extern "C" {
         out_size: *mut usize,
     ) -> c_int;
 
+    pub fn cu_decompress_alloc(
+        algo: c_int,
+        input: *const u8,
+        in_len: usize,
+        out: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> c_int;
+    pub fn cu_buffer_free(buf: *mut c_void);
+
     pub fn cu_set_max_decompressed_size(bytes: usize);
-    pub fn cu_get_max_decompressed_size() -> usize;
 
     pub fn cu_compress_stream_create(
         algo: c_int,

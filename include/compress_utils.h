@@ -9,9 +9,10 @@
  * the current version; check cu_version() at runtime if you need to gate on
  * specific behavior.
  *
- * Memory model: the library never allocates memory it hands back to the
- * caller. All output buffers are caller-allocated. Use the cu_*_bound()
- * helpers to size them. See "Allocation model" below for the unknown-size
+ * Memory model: output buffers are caller-allocated. Use the cu_*_bound()
+ * helpers to size them. The one exception is cu_decompress_alloc(), which
+ * returns a buffer the library allocated for you; free it with
+ * cu_buffer_free(). See "One-shot decompression" below for the unknown-size
  * decompression pattern.
  *
  * Thread safety:
@@ -112,7 +113,7 @@ typedef enum {
     CU_ERR_INVALID_ARG       = 1,   /* NULL pointer, bad enum value, etc. */
     CU_ERR_INVALID_LEVEL     = 2,   /* level outside 1..10 */
     CU_ERR_BUF_TOO_SMALL     = 3,   /* output buffer insufficient; *out_len holds the required size */
-    CU_ERR_SIZE_UNKNOWN      = 4,   /* wire format does not carry decompressed size; use cu_decompress_stream_t */
+    CU_ERR_SIZE_UNKNOWN      = 4,   /* wire format does not carry decompressed size; use cu_decompress_alloc or cu_decompress_stream_t */
     CU_ERR_UNSUPPORTED_ALGO  = 5,   /* algorithm not compiled into this build */
 
     /* Codec errors */
@@ -201,7 +202,8 @@ CU_API cu_status_t cu_compress(
  *       s = cu_decompress(algo, in, in_len, out, &out_size);
  *       // ...
  *   } else if (s == CU_ERR_SIZE_UNKNOWN) {
- *       // wire format does not carry the size; use cu_decompress_stream_t
+ *       // wire format does not carry the size; use cu_decompress_alloc, or
+ *       // cu_decompress_stream_t
  *   } else {
  *       // input is malformed
  *   }
@@ -214,8 +216,8 @@ CU_API cu_status_t cu_compress(
  *                           holds the size the caller should allocate
  *   CU_ERR_SIZE_UNKNOWN   — output buffer was insufficient and the codec
  *                           cannot report the required size from the
- *                           wire format; caller should switch to the
- *                           streaming API
+ *                           wire format; caller should switch to
+ *                           cu_decompress_alloc or the streaming API
  *   CU_ERR_SIZE_LIMIT     — decompressed size would exceed the global
  *                           cap (see cu_set_max_decompressed_size)
  *   CU_ERR_DECOMPRESSION  — input is corrupted or invalid
@@ -245,8 +247,8 @@ CU_API cu_status_t cu_decompress(
  *
  * Notes:
  *   - For ZSTD inputs containing multiple concatenated frames, this
- *     returns the decompressed size of the *first* frame only. Callers
- *     handling concatenated frames should use the streaming API.
+ *     returns the total over all frames if every one records its size, and
+ *     CU_ERR_SIZE_UNKNOWN if any does not.
  *   - For XZ, parses the stream footer and index; requires `in` to be
  *     exactly one complete stream. Concatenated streams, stream padding,
  *     trailing bytes and damaged footers return CU_ERR_SIZE_UNKNOWN, so the
@@ -259,18 +261,73 @@ CU_API cu_status_t cu_decompress_size_hint(
 );
 
 /*
- * Sets a global cap on the decompressed size that cu_decompress and
- * cu_decompress_size_hint will accept. Defaults to 1 GiB. Set to 0 to
- * disable. Inputs that would decompress to more than this return
- * CU_ERR_SIZE_LIMIT.
+ * One-shot decompress into a buffer the library allocates, for input whose size
+ * isn't known up front. On CU_OK, *out holds a malloc'd buffer of *out_len
+ * bytes (never NULL, even for empty output) that the caller owns and must
+ * release with cu_buffer_free(); on any error *out is NULL and *out_len is 0.
+ * Thread-safe, like cu_decompress.
  *
- * Streams don't apply it by default: a stream may legitimately decode more
- * than any in-memory cap. Set a stream's limit with
- * cu_decompress_stream_set_max_output. Every binding's one-shot decompress
- * that falls back to a stream (formats that don't record their size) sets
- * that limit to this cap, so the cap holds for every format. Raw LZ4/LZO and
- * Snappy stream decoders also capture this cap at creation (Snappy because it
- * allocates the declared size before emitting anything).
+ * It does what the pattern above does, so a caller needs neither a size hint
+ * nor its own growth policy:
+ *
+ *   - If the wire format records the size (cu_decompress_size_hint returns
+ *     CU_OK), it allocates exactly that and decodes straight into it.
+ *   - Otherwise (formats with no recorded size, an xz input that isn't exactly
+ *     one Stream) it streams into a buffer that starts at four times the input
+ *     (at least 64 KiB) and doubles once less than an eighth of it is free.
+ *     Input is fed to the decoder in 256 KiB chunks. The result is shrunk with
+ *     realloc only when more than half the buffer would otherwise go unused, so
+ *     it can carry up to as much spare capacity as data.
+ *   - A size recorded in a header is never trusted blindly: if it can't be
+ *     allocated, or the decode shows it was short, the stream path decodes into
+ *     a buffer that only grows as real output appears.
+ *
+ * Output is capped by cu_get_max_decompressed_size() exactly as in
+ * cu_decompress and cu_decompress_size_hint: more than the cap fails with
+ * CU_ERR_SIZE_LIMIT and exactly the cap succeeds. The growing buffer never
+ * exceeds cap + 1 bytes, so doubling can't overshoot the cap. With the cap
+ * disabled (0) the output is bounded only by memory.
+ *
+ * Returns:
+ *   CU_OK                 — *out and *out_len are set
+ *   CU_ERR_INVALID_ARG    — out or out_len is NULL, or in is NULL with
+ *                           in_len > 0
+ *   CU_ERR_UNSUPPORTED_ALGO, CU_ERR_DECOMPRESSION, CU_ERR_TRUNCATED,
+ *   CU_ERR_SIZE_LIMIT     — as cu_decompress
+ *   CU_ERR_OOM            — the output buffer could not be allocated (a
+ *                           status, never an abort)
+ *
+ * Concatenated frames, members and Streams decode as one, as in cu_decompress.
+ * The cost over a caller-owned buffer is one copy if the caller then moves the
+ * result into its own container, so prefer a sized buffer (hint, allocate,
+ * cu_decompress) when you already know the size or a bound on it.
+ */
+CU_API cu_status_t cu_decompress_alloc(
+    cu_algorithm_t algo,
+    const uint8_t* in, size_t in_len,
+    uint8_t** out, size_t* out_len
+);
+
+/*
+ * Releases a buffer returned by cu_decompress_alloc. NULL is a no-op. Always
+ * free with this, not free(): the library and the caller may use different C
+ * runtimes (a DLL on Windows).
+ */
+CU_API void cu_buffer_free(void* buf);
+
+/*
+ * Sets a global cap on the decompressed size that cu_decompress,
+ * cu_decompress_size_hint and cu_decompress_alloc will accept. Defaults to 1
+ * GiB. Set to 0 to disable. Inputs that would decompress to more than this
+ * return CU_ERR_SIZE_LIMIT.
+ *
+ * Streams don't apply it by default: a stream may legitimately decode more than
+ * any in-memory cap. Set a stream's limit with
+ * cu_decompress_stream_set_max_output. cu_decompress_alloc, which every
+ * binding's one-shot decompress uses for formats that don't record their size,
+ * sets that limit to this cap, so the cap holds for every format. Raw LZ4/LZO
+ * and Snappy stream decoders also capture this cap at creation (Snappy because
+ * it allocates the declared size before emitting anything).
  *
  * Thread-safe; takes effect for subsequent calls.
  */

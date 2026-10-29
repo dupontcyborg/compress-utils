@@ -337,6 +337,57 @@ static int test_cap_every_format() {
     return 0;
 }
 
+/* Formats that don't record their size decode through cu_decompress_alloc: a ratio high enough that its buffer doubles many times, input of many 256 KiB feed chunks, an empty result, an xz input that isn't exactly one Stream (so its size hint says unknown) and concatenated zstd frames. */
+static int test_unknown_size() {
+    const std::vector<std::uint8_t> zeros(8 << 20);
+    const auto noise = pseudo_random(700 * 1000, 11);
+    for (cu::Algorithm a : {cu::Algorithm::Zlib, cu::Algorithm::Gzip, cu::Algorithm::Deflate,
+                            cu::Algorithm::Brotli, cu::Algorithm::Bz2, cu::Algorithm::Xz,
+                            cu::Algorithm::Lz4Raw}) {
+        if (!cu::is_available(a)) continue;
+        const std::string name = cu::algorithm_name(a);
+        for (const auto* in : {&zeros, &noise}) {
+            const auto packed = cu::compress(a, std::span<const std::uint8_t>(*in));
+            CHECK(cu::decompress(a, packed) == *in, "%s unknown-size round trip of %zu bytes", name.c_str(), in->size());
+        }
+        const std::uint8_t none = 0;  /* a non-null empty input; bz2 rejects a NULL one */
+        const auto empty = cu::compress(a, std::span<const std::uint8_t>(&none, 0));
+        CHECK(cu::decompress(a, empty).empty(), "%s empty output", name.c_str());
+    }
+
+    if (cu::is_available(cu::Algorithm::Xz)) {
+        const auto in = sample(100 * 1000);
+        auto packed = cu::compress(cu::Algorithm::Xz, std::span<const std::uint8_t>(in));
+        packed.insert(packed.end(), {0, 0, 0, 0});  /* Stream Padding */
+        CHECK(cu::decompress(cu::Algorithm::Xz, packed) == in, "xz with Stream Padding");
+        auto twice = cu::compress(cu::Algorithm::Xz, std::span<const std::uint8_t>(in));
+        const auto again = twice;
+        twice.insert(twice.end(), again.begin(), again.end());
+        auto both = in;
+        both.insert(both.end(), in.begin(), in.end());
+        CHECK(cu::decompress(cu::Algorithm::Xz, twice) == both, "two concatenated xz Streams");
+    }
+    if (cu::is_available(cu::Algorithm::Zstd)) {
+        const auto in = sample(70 * 1000);
+        auto packed = cu::compress(cu::Algorithm::Zstd, std::span<const std::uint8_t>(in));
+        const auto again = packed;
+        packed.insert(packed.end(), again.begin(), again.end());
+        auto both = in;
+        both.insert(both.end(), in.begin(), in.end());
+        CHECK(cu::decompress(cu::Algorithm::Zstd, packed) == both, "two concatenated zstd frames");
+    }
+
+    /* A corrupt or truncated input still reports its error. */
+    const auto packed = cu::compress(cu::Algorithm::Zlib, std::span<const std::uint8_t>(noise));
+    try {
+        (void)cu::decompress(cu::Algorithm::Zlib, std::span<const std::uint8_t>(packed).first(packed.size() / 2));
+        CHECK(false, "truncated zlib must throw");
+    } catch (const cu::Error& e) {
+        CHECK(e.code() == CU_ERR_TRUNCATED, "truncated zlib: code %d", static_cast<int>(e.code()));
+    }
+    return 0;
+}
+
 /* One-shot xz caps the dictionary at the input size (4 KiB floor, never above
  * the preset's): round trips at, one byte under and one byte over the caps, with
  * text and incompressible data, on levels with different preset dictionaries. */
@@ -374,6 +425,7 @@ int main() {
     if (test_moves_and_cap())     return 1;
     if (test_cap_every_format())  return 1;
     if (test_xz_fitted_dictionary()) return 1;
+    if (test_unknown_size())      return 1;
     std::printf("OK\n");
     return 0;
 }
