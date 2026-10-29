@@ -113,6 +113,13 @@ if(ENABLE_TESTS)
     add_test(NAME test_xz_size_hint COMMAND test_xz_size_hint)
 endif()
 
+# cu_decompress_alloc: one-shot decompress into a library-allocated buffer, for every codec, including the growth path (huge ratios, the cap exactly, huge declared sizes) and the status cu_decompress gives for bad input.
+add_executable(test_decompress_alloc test_decompress_alloc.c)
+target_link_libraries(test_decompress_alloc PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_decompress_alloc COMMAND test_decompress_alloc)
+endif()
+
 # Snappy differential test vs the reference google/snappy (C++). google/snappy
 # is compiled HERE ONLY (from third_party/snappy-oracle) — it never enters the
 # release library, which uses our own pure-C core. This is a C++ target on

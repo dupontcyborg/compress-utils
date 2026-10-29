@@ -50,6 +50,7 @@ Each binding has its own test suite, all wired through ctest:
 | Target | What it covers |
 |--------|----------------|
 | `test_compress_utils` (C) | One-shot, streaming with tight buffers, cross-API round-trip, error codes, edge cases |
+| `test_decompress_alloc` (C) | `cu_decompress_alloc`: every codec's round trip, output far larger than the input, the cap exactly and one byte over, malformed, truncated and empty input against `cu_decompress`, concatenated xz Streams, zstd frames and gzip members, a bogus declared size, and (on Linux) running out of memory as a status |
 | `test_compress_utils_cpp` (C++) | `cu::` namespace surface, RAII semantics, exception translation |
 | `test_compress_utils_py` (Python) | Same surface via pybind11, plus 1MB random/repetitive cases, string-vs-enum spellings |
 | `test_snappy_oracle` (C++) | The `cu_*` API's Snappy output and input against the reference google/snappy (`third_party/snappy-oracle`, test-only) |

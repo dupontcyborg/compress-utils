@@ -573,3 +573,147 @@ void cu_decompress_stream_destroy(cu_decompress_stream_t* stream) {
     }
     free(stream);
 }
+
+/* ============================================================================
+ * One-shot decompress into a library-allocated buffer
+ * ============================================================================
+ *
+ * Growth policy for formats with no recorded size: one malloc'd buffer that starts at four times the input (at least CU_ALLOC_MIN_CAP) and doubles once less than 1/CU_ALLOC_GROW_FRACTION of it is free, so a codec is never handed a window under CU_ALLOC_MIN_CAP / CU_ALLOC_GROW_FRACTION and a small output never makes it grow at all (a fixed free-space threshold would double the minimum buffer for a 4 KB result, which costs a `memory.grow` per call in WASM). Growing with realloc lets the allocator extend or remap a large block instead of copying it. With a cap the buffer never exceeds cap + 1 bytes: the stream rejects output past the cap, and the one spare byte lets output of exactly the cap finish without another grow. Input is fed in CU_ALLOC_FEED chunks so the decoder never holds a second copy of all of it, and the chunks are big enough that the per-call cost doesn't show (64 KiB ones cost zlib about 4%).
+ *
+ * The result is shrunk only when more than half the buffer is unused, which is when the slack matters (a small output in the minimum buffer, a start far above the real size). Shrinking costs a copy on some allocators (macOS) and about 5% for the fastest codecs, and the unused tail of a big buffer is untouched memory, so a typical result is returned as is.
+ */
+#define CU_ALLOC_MIN_CAP        ((size_t)64 * 1024)
+#define CU_ALLOC_GROW_FRACTION  8
+#define CU_ALLOC_FEED       ((size_t)256 * 1024)
+
+/* Shrinks `buf` to `n` bytes (at least 1, so it stays a valid allocation). A failed shrink keeps the larger block. */
+static uint8_t* shrink_to(uint8_t* buf, size_t n) {
+    uint8_t* p = realloc(buf, n ? n : 1);
+    return p ? p : buf;
+}
+
+static cu_status_t decompress_alloc_oom(size_t bytes) {
+    cu_set_last_errorf("out of memory allocating %zu bytes of decompressed output", bytes);
+    return CU_ERR_OOM;
+}
+
+/* Streams `in` into a growing buffer, bounded by `limit` (0 = none). */
+static cu_status_t decompress_alloc_stream(
+    cu_algorithm_t algo,
+    const uint8_t* in, size_t in_len,
+    size_t limit,
+    uint8_t** out, size_t* out_len
+) {
+    cu_decompress_stream_t* ds = NULL;
+    cu_status_t s = cu_decompress_stream_create(algo, &ds);
+    if (s != CU_OK) return s;
+    cu_decompress_stream_set_max_output(ds, limit);
+
+    size_t ceiling = limit == 0 || limit == SIZE_MAX ? SIZE_MAX : limit + 1;
+    size_t cap = in_len > SIZE_MAX / 4 ? SIZE_MAX : in_len * 4;
+    if (cap < CU_ALLOC_MIN_CAP) cap = CU_ALLOC_MIN_CAP;
+    if (cap > ceiling) cap = ceiling;
+    uint8_t* buf = malloc(cap);
+    /* A start that can't be had (a huge input with no cap) is retried smaller; the buffer grows from there as output appears. */
+    while (!buf && cap > CU_ALLOC_MIN_CAP) {
+        cap = cap / 2 < CU_ALLOC_MIN_CAP ? CU_ALLOC_MIN_CAP : cap / 2;
+        buf = malloc(cap);
+    }
+    if (!buf) {
+        cu_decompress_stream_destroy(ds);
+        return decompress_alloc_oom(cap);
+    }
+
+    size_t pos = 0;
+    const uint8_t* src = in;
+    size_t src_left = in_len;
+    size_t chunk = src_left < CU_ALLOC_FEED ? src_left : CU_ALLOC_FEED;
+    int finishing = 0;
+    for (;;) {
+        if (cap - pos < cap / CU_ALLOC_GROW_FRACTION && cap < ceiling) {
+            size_t grown = cap > SIZE_MAX / 2 ? SIZE_MAX : cap * 2;
+            if (grown > ceiling) grown = ceiling;
+            uint8_t* p = realloc(buf, grown);
+            /* Keep going in what is left if it can't grow. */
+            if (p) { buf = p; cap = grown; }
+            else if (cap == pos) { s = decompress_alloc_oom(grown); break; }
+        }
+        size_t n = cap - pos;
+        s = finishing ? cu_decompress_stream_finish(ds, buf + pos, &n)
+                      : cu_decompress_stream_write(ds, chunk ? src : NULL, chunk, buf + pos, &n);
+        pos += n;
+        /* A write retains its input even when it reports the output full, so the rest is drained with empty writes before the next chunk. */
+        if (chunk) {
+            src += chunk;
+            src_left -= chunk;
+            chunk = 0;
+        }
+        if (s == CU_ERR_BUF_TOO_SMALL) {
+            if (cap == pos && cap == ceiling) {
+                /* No room, and none can be made: only reachable with no cap. */
+                s = decompress_alloc_oom(cap);
+                break;
+            }
+            continue;
+        }
+        if (s != CU_OK || finishing) break;
+        if (src_left == 0) finishing = 1;
+        else chunk = src_left < CU_ALLOC_FEED ? src_left : CU_ALLOC_FEED;
+    }
+    cu_decompress_stream_destroy(ds);
+    if (s != CU_OK) {
+        free(buf);
+        return s;
+    }
+    if (cap / 2 > pos) buf = shrink_to(buf, pos);
+    *out = buf;
+    *out_len = pos;
+    return CU_OK;
+}
+
+cu_status_t cu_decompress_alloc(
+    cu_algorithm_t algo,
+    const uint8_t* in, size_t in_len,
+    uint8_t** out, size_t* out_len
+) {
+    if (!out || !out_len)  return CU_ERR_INVALID_ARG;
+    *out = NULL;
+    *out_len = 0;
+    if (in_len > 0 && !in) return CU_ERR_INVALID_ARG;
+
+    const cu_algorithm_vtbl_t* v;
+    cu_status_t s = resolve(algo, &v);
+    if (s != CU_OK) return s;
+    if (!v->decompress) {
+        cu_set_last_error("operation unsupported for this algorithm");
+        return CU_ERR_UNSUPPORTED_ALGO;
+    }
+
+    size_t hint = 0;
+    s = cu_decompress_size_hint(algo, in, in_len, &hint);
+    if (s == CU_OK) {
+        /* The hint comes from the input: if it can't be allocated, or the decode shows it was short, fall through to the stream, which grows only as real output appears. */
+        uint8_t* buf = malloc(hint ? hint : 1);
+        if (buf) {
+            size_t n = hint;
+            cu_clear_last_error();
+            s = v->decompress(in, in_len, buf, &n);
+            if (s == CU_OK) {
+                *out = n < hint ? shrink_to(buf, n) : buf;
+                *out_len = n;
+                return CU_OK;
+            }
+            free(buf);
+            if (s != CU_ERR_SIZE_UNKNOWN && s != CU_ERR_BUF_TOO_SMALL) return s;
+        }
+    } else if (s != CU_ERR_SIZE_UNKNOWN) {
+        return s;
+    }
+
+    cu_clear_last_error();
+    return decompress_alloc_stream(algo, in, in_len, CU_CAP_LOAD(), out, out_len);
+}
+
+void cu_buffer_free(void* buf) {
+    free(buf);
+}
