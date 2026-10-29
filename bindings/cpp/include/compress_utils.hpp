@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -130,10 +131,31 @@ inline std::vector<std::uint8_t> compress(
     return out;
 }
 
+/*
+ * Decompress `in`. When the wire format records the decompressed size the output is allocated once and decoded into directly; otherwise cu_decompress_alloc grows its own buffer, and the result is copied out of it once.
+ */
 inline std::vector<std::uint8_t> decompress(
     Algorithm a,
     std::span<const std::uint8_t> in
-);  // forward decl; defined below the streaming class.
+) {
+    std::size_t hint = 0;
+    cu_status_t s = cu_decompress_size_hint(detail::c_algo(a), in.data(), in.size(), &hint);
+    if (s == CU_OK) {
+        std::vector<std::uint8_t> out(hint ? hint : 1);
+        std::size_t out_len = hint;
+        detail::check(cu_decompress(detail::c_algo(a), in.data(), in.size(),
+                                    out.data(), &out_len));
+        out.resize(out_len);
+        return out;
+    }
+    if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
+
+    std::uint8_t* grown = nullptr;
+    std::size_t grown_len = 0;
+    detail::check(cu_decompress_alloc(detail::c_algo(a), in.data(), in.size(), &grown, &grown_len));
+    std::unique_ptr<std::uint8_t, decltype(&cu_buffer_free)> owner(grown, cu_buffer_free);
+    return std::vector<std::uint8_t>(grown, grown + grown_len);
+}
 
 /*
  * Decompress into at most `capacity` bytes. The capacity is an upper bound on
@@ -323,36 +345,6 @@ private:
         return out;
     }
 };
-
-/* ============================================================================
- * decompress() definition — needs DecompressStream for unknown-size path.
- * ============================================================================ */
-
-inline std::vector<std::uint8_t> decompress(
-    Algorithm a,
-    std::span<const std::uint8_t> in
-) {
-    std::size_t hint = 0;
-    cu_status_t s = cu_decompress_size_hint(detail::c_algo(a), in.data(), in.size(), &hint);
-    if (s == CU_OK) {
-        std::vector<std::uint8_t> out(hint ? hint : 1);
-        std::size_t out_len = hint;
-        detail::check(cu_decompress(detail::c_algo(a), in.data(), in.size(),
-                                    out.data(), &out_len));
-        out.resize(out_len);
-        return out;
-    }
-    if (s != CU_ERR_SIZE_UNKNOWN) detail::throw_status(s);
-
-    // Unknown size (zlib, gzip, brotli, bz2, xz, raw LZ4): stream-decompress,
-    // bounded by the same cap as the one-shot path.
-    DecompressStream ds(a);
-    ds.set_max_output(cu_get_max_decompressed_size());
-    auto first = ds.write(in);
-    auto last  = ds.finish();
-    first.insert(first.end(), last.begin(), last.end());
-    return first;
-}
 
 }  // namespace cu
 
