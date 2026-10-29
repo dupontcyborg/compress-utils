@@ -12,6 +12,8 @@
  * come from tests/fixtures/lzo. The fuzzer mutates these into the malformed
  * inputs it actually tests; starting from valid frames gets it past each
  * format's magic bytes, headers and checksums.
+ *
+ * A mode byte of 0x20 sets a 4 KiB stream limit, which is also the cap cu_decompress_alloc runs under: the 4096-byte sample decodes to exactly the cap and the 20000-byte run is over it.
  */
 
 #include "compress_utils.h"
@@ -23,6 +25,7 @@
 #include <string.h>
 
 #define SAMPLE_MAX 4096
+#define RUN_LEN 20000
 
 static const char* g_out_dir;
 static int g_written;
@@ -110,7 +113,7 @@ int main(int argc, char** argv) {
     /* Sample inputs: empty, one byte, repetitive text, and mixed data (text,
      * pseudo-random bytes, a long run, and a repeat of the random block at a
      * distance) so the frames carry literals, matches and runs. */
-    static uint8_t text[1024], mixed[SAMPLE_MAX];
+    static uint8_t text[1024], mixed[SAMPLE_MAX], run[RUN_LEN];
     static const char phrase[] = "The quick brown fox jumps over the lazy dog. ";
     for (size_t i = 0; i < sizeof(text); i++) text[i] = (uint8_t)phrase[i % (sizeof(phrase) - 1)];
     memcpy(mixed, text, 1024);
@@ -121,6 +124,7 @@ int main(int argc, char** argv) {
     }
     memset(mixed + 2048, 'x', 1024);
     memcpy(mixed + 3072, mixed + 1024, 1024);
+    memset(run, 'a', sizeof(run));
 
     const struct {
         const char* name;
@@ -131,6 +135,7 @@ int main(int argc, char** argv) {
         {"byte", (const uint8_t*)"a", 1},
         {"text", text, sizeof(text)},
         {"mixed", mixed, sizeof(mixed)},
+        {"run", run, sizeof(run)},
     };
     static const int levels[] = {1, 10};
     static const uint8_t junk[] = "trailing junk after the frame";
@@ -159,7 +164,8 @@ int main(int argc, char** argv) {
                 char name[128];
                 snprintf(name, sizeof(name), "%s-%s-l%d", algo_name, samples[s].name, levels[l]);
                 int failed = write_seed(name, index, 0x00, frame, len, NULL, 0) ||
-                             write_seed(name, index, 0x01, frame, len, NULL, 0);
+                             write_seed(name, index, 0x01, frame, len, NULL, 0) ||
+                             write_seed(name, index, 0x20, frame, len, NULL, 0);
                 free(frame);
                 if (failed) return 1;
             }

@@ -60,7 +60,7 @@ Plus a libFuzzer harness at `tests/fuzz/fuzz_decompress.c` (see [Fuzzing](#fuzzi
 
 ## Fuzzing
 
-`tests/fuzz/fuzz_decompress.c` feeds mutated input to every decoder: the one-shot path, the size hint, and the streaming decoder with varied chunk and buffer sizes, in default and single-stream mode. It fails on crashes, leaks, ASan/UBSan reports, decoders that stall in a drain loop, and single-stream contract violations. The first input byte picks the codec (an index into `tests/fuzz/fuzz_algos.h`, append only) and the second picks the streaming mode.
+`tests/fuzz/fuzz_decompress.c` feeds mutated input to every decoder: the one-shot path, the size hint, `cu_decompress_alloc` (under a cap that is sometimes tiny), and the streaming decoder with varied chunk and buffer sizes, in default and single-stream mode. It fails on crashes, leaks, ASan/UBSan reports, decoders that stall in a drain loop, and single-stream contract violations. The first input byte picks the codec (an index into `tests/fuzz/fuzz_algos.h`, append only) and the second picks the streaming mode.
 
 A second harness, `tests/fuzz/fuzz_roundtrip.c`, fuzzes the encoders: the input bytes are the data, which must compress (one-shot into exactly `cu_compress_bound` bytes, and through the streaming encoder with small buffers and flushes) and decompress back to themselves. Saved inputs for it live in `tests/fuzz/regressions-roundtrip/`, replayed by the `fuzz_roundtrip_regressions` ctest.
 
