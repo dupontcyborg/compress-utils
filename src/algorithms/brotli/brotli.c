@@ -272,7 +272,8 @@ static void brotli_cstream_destroy(void* state) {
 
 typedef struct {
     BrotliDecoderState* dec;
-    uint8_t* pending;
+    uint8_t* pending;    /* unconsumed input: live bytes are [pending_off, pending_len) */
+    size_t   pending_off;
     size_t   pending_len;
     size_t   pending_cap;
     int      finished;
@@ -280,9 +281,17 @@ typedef struct {
     cu_unused_t unused;  /* single: input received after the end */
 } brotli_dstream_state_t;
 
+/* Appends to the live pending bytes, first moving them to the front. Pumping
+ * only advances pending_off, so each byte is moved at most once per append
+ * instead of once per output window. */
 static cu_status_t dstream_pending_append(brotli_dstream_state_t* st,
                                           const uint8_t* src, size_t n) {
     if (n == 0) return CU_OK;
+    if (st->pending_off > 0) {
+        st->pending_len -= st->pending_off;
+        memmove(st->pending, st->pending + st->pending_off, st->pending_len);
+        st->pending_off = 0;
+    }
     size_t need = st->pending_len + n;
     if (need > st->pending_cap) {
         size_t new_cap = st->pending_cap ? st->pending_cap * 2 : 16 * 1024;
@@ -320,8 +329,8 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
                                 uint8_t* out, size_t* out_len) {
     size_t cap = *out_len;
     size_t written = 0;
-    const uint8_t* next_in = st->pending;
-    size_t avail_in = st->pending_len;
+    const uint8_t* next_in = st->pending + st->pending_off;
+    size_t avail_in = st->pending_len - st->pending_off;
 
     for (;;) {
         uint8_t* next_out = out + written;
@@ -336,11 +345,11 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
              * out, and hands back the whole bytes it didn't use. */
             if (st->single) {
                 cu_status_t a = cu_unused_append(&st->unused, next_in, avail_in);
-                st->pending_len = 0;
+                st->pending_off = st->pending_len = 0;
                 *out_len = written;
                 return a;
             }
-            st->pending_len = avail_in;  /* should be 0; if not, trailing data error */
+            st->pending_off = st->pending_len - avail_in;  /* should be 0 left; if not, trailing data error */
             if (avail_in > 0) {
                 cu_set_last_error("brotli: trailing data after end of stream");
                 return CU_ERR_DECOMPRESSION;
@@ -352,17 +361,13 @@ static cu_status_t dstream_pump(brotli_dstream_state_t* st,
             /* All pending consumed. Brotli reports this even when the output
              * filled with decoded data still held back; the drain call then
              * collects it. */
-            st->pending_len = 0;
+            st->pending_off = st->pending_len = 0;
             *out_len = written;
             return BrotliDecoderHasMoreOutput(st->dec) ? CU_ERR_BUF_TOO_SMALL : CU_OK;
         }
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
-            /* Buffer full; shift pending tail. */
-            size_t consumed = st->pending_len - avail_in;
-            if (consumed > 0 && avail_in > 0) {
-                memmove(st->pending, st->pending + consumed, avail_in);
-            }
-            st->pending_len = avail_in;
+            /* Buffer full; the unconsumed tail stays pending. */
+            st->pending_off = st->pending_len - avail_in;
             *out_len = written;
             return CU_ERR_BUF_TOO_SMALL;
         }

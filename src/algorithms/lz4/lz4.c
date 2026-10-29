@@ -562,6 +562,15 @@ static cu_status_t dstream_decode(lz4_dstream_state_t* st, const uint8_t* src, s
     static const uint8_t empty = 0;
     size_t cap = *out_len, written = 0;
     *consumed = 0;
+    /* Past a frame end with no input, the decoder holds nothing: its output
+     * was flushed when the frame ended, and a further call would only report
+     * that it wants the next frame header (a nonzero hint). With `out` full
+     * that hint reads as held output, so a complete stream could never finish
+     * into an exactly-sized buffer. */
+    if (src_len == 0 && st->at_frame_end) {
+        *out_len = 0;
+        return CU_OK;
+    }
     if (!src) src = &empty;
     for (;;) {
         size_t src_size = src_len - *consumed, dst_size = cap - written;

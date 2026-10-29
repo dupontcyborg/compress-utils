@@ -923,3 +923,36 @@ fn size_cap_in_child_process() {
         );
     }
 }
+
+/// One-shot xz caps the dictionary at the input size (4 KiB floor, never above
+/// the preset's): round trips at, one byte under and one byte over each cap, with
+/// text and incompressible data, on levels with different preset dictionaries.
+#[test]
+fn xz_fitted_dictionary_round_trips() {
+    if !Algorithm::Xz.available() {
+        return;
+    }
+    let text = |n: usize| -> Vec<u8> {
+        b"The quick brown fox jumps over the lazy dog. "
+            .iter()
+            .copied()
+            .cycle()
+            .take(n)
+            .collect()
+    };
+    for level in [1, 6, 10] {
+        for n in [
+            0usize, 1, 4095, 4096, 4097, 8191, 8192, 8193, 65535, 65536, 65537,
+        ] {
+            for (kind, data) in [("text", text(n)), ("noise", pseudo_random(n, n as u64))] {
+                let packed = compress(Algorithm::Xz, &data, level).unwrap();
+                let back = decompress(Algorithm::Xz, &packed).unwrap();
+                assert_eq!(back, data, "xz level {level} {kind} n={n}");
+            }
+        }
+    }
+    // Larger than level 1's 256 KiB dictionary: the cap must not apply.
+    let big = pseudo_random(300_000, 7);
+    let packed = compress(Algorithm::Xz, &big, 1).unwrap();
+    assert_eq!(decompress(Algorithm::Xz, &packed).unwrap(), big);
+}

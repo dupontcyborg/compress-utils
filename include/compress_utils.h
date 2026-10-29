@@ -247,8 +247,10 @@ CU_API cu_status_t cu_decompress(
  *   - For ZSTD inputs containing multiple concatenated frames, this
  *     returns the decompressed size of the *first* frame only. Callers
  *     handling concatenated frames should use the streaming API.
- *   - For XZ, parses the stream footer; requires `in` to contain the
- *     complete stream (i.e. `in_len` reaches the end-of-stream marker).
+ *   - For XZ, parses the stream footer and index; requires `in` to be
+ *     exactly one complete stream. Concatenated streams, stream padding,
+ *     trailing bytes and damaged footers return CU_ERR_SIZE_UNKNOWN, so the
+ *     caller streams and the decoder reports any error.
  */
 CU_API cu_status_t cu_decompress_size_hint(
     cu_algorithm_t algo,
@@ -366,6 +368,17 @@ CU_API void cu_compress_stream_destroy(cu_compress_stream_t* stream);
  * returns CU_ERR_TRUNCATED. CU_ERR_BUF_TOO_SMALL can also mean the output
  * filled exactly with output still held inside the decoder, so keep
  * draining until a call returns CU_OK.
+ *
+ * A caller that knows the output size may pass a buffer of exactly that size.
+ * Once all of a complete stream's input has been written and the buffer is
+ * full, cu_decompress_stream_finish() returns CU_OK on its first call, even
+ * with no room left to offer (NULL, 0). One caveat: if the buffer fills while
+ * some input is still to be written (a checksum or end marker split from the
+ * data by the way the input is chunked, e.g. fed a few bytes at a time), the
+ * decoder can't tell held output from a trailer still to come, so the write
+ * returns CU_ERR_BUF_TOO_SMALL and draining without room can't succeed (zstd
+ * then fails with CU_ERR_DECOMPRESSION after repeated calls that make no
+ * progress). Offer at least one spare byte of room in that case.
  *
  * Any error from decoding (corrupt or truncated input, CU_ERR_SIZE_LIMIT,
  * CU_ERR_OOM, ...) is final: every later write or finish returns the same

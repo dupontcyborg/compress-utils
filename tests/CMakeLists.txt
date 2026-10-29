@@ -43,6 +43,16 @@ if(ENABLE_TESTS)
     add_test(NAME test_stream_drain COMMAND test_stream_drain)
 endif()
 
+# Streaming decompression into an exactly-sized output buffer: finish() returns
+# CU_OK at once on a complete stream (zstd and LZ4 once asked for more room
+# forever), truncated input still fails, and the max-output limit holds at the
+# boundary. Skips any codec that isn't compiled in.
+add_executable(test_stream_exact_output test_stream_exact_output.c)
+target_link_libraries(test_stream_exact_output PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_stream_exact_output COMMAND test_stream_exact_output)
+endif()
+
 # Nonterminal flush: every checkpoint decodes completely from the bytes so
 # far, on the same open stream. Skips any codec that isn't compiled in.
 add_executable(test_stream_flush test_stream_flush.c)
@@ -83,6 +93,24 @@ add_executable(test_deflate_levels test_deflate_levels.c)
 target_link_libraries(test_deflate_levels PRIVATE compress_utils_obj)
 if(ENABLE_TESTS)
     add_test(NAME test_deflate_levels COMMAND test_deflate_levels)
+endif()
+
+# One-shot xz compression caps the dictionary at the input size: the header
+# records it, round trips and far matches hold at the boundaries, the reference
+# xz CLI decodes (skipped when absent), streaming keeps the preset's dictionary.
+add_executable(test_xz_dict test_xz_dict.c)
+target_link_libraries(test_xz_dict PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_xz_dict COMMAND test_xz_dict)
+endif()
+
+# The xz size hint reads the Stream Footer and Index: exact for a single Stream
+# (one-shot, streamed, many Blocks from the reference xz CLI), SIZE_UNKNOWN for
+# concatenated Streams, padding, trailing bytes and damaged input.
+add_executable(test_xz_size_hint test_xz_size_hint.c)
+target_link_libraries(test_xz_size_hint PRIVATE compress_utils_obj)
+if(ENABLE_TESTS)
+    add_test(NAME test_xz_size_hint COMMAND test_xz_size_hint)
 endif()
 
 # Snappy differential test vs the reference google/snappy (C++). google/snappy

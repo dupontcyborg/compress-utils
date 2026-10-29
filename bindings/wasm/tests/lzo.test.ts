@@ -1,20 +1,31 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vitest";
+import { readFile } from "node:fs/promises";
+import { describe, expect, test, vi } from "vitest";
 import * as lzo from "../dist/algorithms/lzo/decompress/index.js";
+import { createBindings } from "../src/core/dispatch.js";
+import { Algorithm } from "../src/core/types.js";
 import * as lzoEntry from "compress-utils/lzo/decompress";
 import * as zstd from "compress-utils/zstd";
 const fixture = (name: string) =>
     new Uint8Array(
         readFileSync(new URL(`../../../tests/fixtures/lzo/${name}.bin`, import.meta.url)),
     );
+const wasmUrl = new URL("../dist/algorithms/lzo/decompress/lzo.wasm", import.meta.url);
 describe("raw LZO1X decoder", () => {
     test("requires preload before synchronous decoding and shares concurrent preload", async () => {
         const input = new Uint8Array([22, 104, 101, 108, 108, 111, 17, 0, 0]);
-        expect(() => lzo.decompressSync(input, { expectedSize: 10 })).toThrow(/preload/);
+        const hello = new TextEncoder().encode("hello");
+        // `lzo` is a module singleton, and `bun test` runs every file in one process, so
+        // another file may already have preloaded it. Check the uninitialized state and the
+        // shared preload on a fresh instance instead of the module's own.
+        const resolveWasm = vi.fn(() => readFile(wasmUrl));
+        const fresh = createBindings(Algorithm.Lzo, "lzo", wasmUrl, resolveWasm);
+        expect(() => fresh.decompressSync(input, { expectedSize: 10 })).toThrow(/preload/);
+        await Promise.all([fresh.preload(), fresh.preload()]);
+        expect(resolveWasm).toHaveBeenCalledTimes(1);
+        expect(fresh.decompressSync(input, { expectedSize: 10 })).toEqual(hello);
         await Promise.all([lzo.preload(), lzo.preload()]);
-        expect(lzo.decompressSync(input, { expectedSize: 10 })).toEqual(
-            new TextEncoder().encode("hello"),
-        );
+        expect(lzo.decompressSync(input, { expectedSize: 10 })).toEqual(hello);
         for (const expectedSize of [-1, 0.5, Number.NaN, 0x80000000]) {
             expect(() => lzo.decompressSync(input, { expectedSize })).toThrow(/expectedSize/);
             await expect(lzo.decompress(input, { expectedSize })).rejects.toMatchObject({
