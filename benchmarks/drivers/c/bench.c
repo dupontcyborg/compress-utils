@@ -137,55 +137,28 @@ static int cu_do_size_hint(const bench_codec_t* c, const uint8_t* in, size_t in_
     return cu_decompress_size_hint((cu_algorithm_t)c->native_id, in, in_len, out_size) != CU_OK;
 }
 
-/* Unknown-size decompress as a streaming caller does it: the stream API into a buffer that
- * grows and keeps decoding, the input fed in 256 KiB chunks, honouring the BUF_TOO_SMALL drain
- * protocol. This is a stand-in for the core helper cu_decompress_alloc: replace it with a call
- * to cu_decompress_alloc once that lands in the main tree. */
-#define CU_ALLOC_CHUNK ((size_t)256 * 1024)
-
-/* One write/finish call into the buffer's free space, draining with (NULL, 0) and growing the
- * buffer whenever it reports BUF_TOO_SMALL, until it returns something else. */
-static cu_status_t cu_alloc_standin_step(cu_decompress_stream_t* s, const uint8_t* in, size_t n,
-                                         int finish, bench_dbuf_t* buf, size_t* pos,
-                                         const char** err) {
-    cu_status_t st = CU_OK;
-    for (int guard = 0; guard < CU_DRAIN_MAX; guard++) {
-        size_t ol = buf->cap - *pos;
-        st = finish ? cu_decompress_stream_finish(s, buf->p + *pos, &ol)
-                    : cu_decompress_stream_write(s, in, n, buf->p + *pos, &ol);
-        *pos += ol;
-        if (st != CU_ERR_BUF_TOO_SMALL) return st;
-        if ((*pos == buf->cap || ol == 0) && bench_dbuf_grow(buf, err)) return CU_ERR_BUF_TOO_SMALL;
-        in = NULL;
-        n = 0;
-    }
-    *err = "BUF_TOO_SMALL after CU_DRAIN_MAX calls";
-    return CU_ERR_BUF_TOO_SMALL;
-}
-
-static int cu_do_decompress_alloc_standin(const bench_codec_t* c, const uint8_t* in,
-                                          size_t in_len, bench_dbuf_t* buf, size_t* out_len,
-                                          const char** err) {
-    cu_decompress_stream_t* s = NULL;
-    cu_status_t st = cu_decompress_stream_create((cu_algorithm_t)c->native_id, &s);
+/* Unknown-size decompress through the library's own helper: it sizes from the header or grows
+ * a buffer it owns, and hands the result back. The result stays the harness buffer's contents
+ * (no copy, as a C caller would use it) and the previous result is freed here, so allocation
+ * and free are inside the timed call, unlike the competitors' kept buffers. decompress_retries
+ * is 0: the library hides its growth. */
+static int cu_do_decompress_alloc(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                                  bench_dbuf_t* buf, size_t* out_len, const char** err) {
+    uint8_t* r = NULL;
+    size_t n = 0;
+    cu_status_t st = cu_decompress_alloc((cu_algorithm_t)c->native_id, in, in_len, &r, &n);
     if (st != CU_OK) { *err = cu_last_error(); return (int)st; }
-    size_t pos = 0;
-    const char* gerr = NULL;
-    for (size_t off = 0; off < in_len && st == CU_OK; off += CU_ALLOC_CHUNK) {
-        size_t n = in_len - off < CU_ALLOC_CHUNK ? in_len - off : CU_ALLOC_CHUNK;
-        st = cu_alloc_standin_step(s, in + off, n, 0, buf, &pos, &gerr);
-    }
-    if (st == CU_OK) st = cu_alloc_standin_step(s, NULL, 0, 1, buf, &pos, &gerr);
-    cu_decompress_stream_destroy(s);
-    if (st != CU_OK) { *err = gerr ? gerr : cu_last_error(); return (int)st; }
-    *out_len = pos;
+    cu_buffer_free(buf->p);
+    buf->p = r;
+    buf->alloc = buf->cap = n;
+    *out_len = n;
     return 0;
 }
 
 #define CU_CODEC(NAME, ENUM)                                              \
     { NAME, "compress-utils", (ENUM), cu_bound, cu_do_compress,           \
       cu_do_decompress, cu_do_compress_stream, cu_do_decompress_stream, 0, 0, cu_do_size_hint,    \
-      cu_do_decompress_alloc_standin }
+      cu_do_decompress_alloc }
 
 static const bench_codec_t CODECS[] = {
     CU_CODEC("zstd", CU_ALGO_ZSTD),
