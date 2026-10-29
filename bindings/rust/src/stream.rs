@@ -39,25 +39,6 @@ fn stuck_error() -> io::Error {
     .into()
 }
 
-/// Recover a library [`Error`] from an [`io::Error`] produced by the streaming
-/// adapters (used by the top-level [`crate::decompress`] fallback).
-pub(crate) fn io_to_error(e: io::Error) -> Error {
-    let fallback = e.to_string();
-    match e.into_inner() {
-        Some(b) => match b.downcast::<Error>() {
-            Ok(err) => *err,
-            Err(b) => Error {
-                code: Status::Internal,
-                message: b.to_string(),
-            },
-        },
-        None => Error {
-            code: Status::Internal,
-            message: fallback,
-        },
-    }
-}
-
 /// A [`Write`] that compresses into an inner sink.
 ///
 /// You **must** call [`Compressor::finish`] to flush the final frame and get a

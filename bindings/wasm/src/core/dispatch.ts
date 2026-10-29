@@ -127,9 +127,8 @@ export class Dispatcher {
             const outSize = opts.expectedSize ?? this.tryProbeSize(arena, inPtr, inLen);
             if (outSize === undefined) {
                 // Wire format doesn't carry size (bz2, brotli, raw deflate,
-                // current xz size_hint impl). Fall through to a
-                // streaming decode so the one-shot API still works.
-                return this.decompressStreaming(input);
+                // an xz input that isn't exactly one Stream). The core grows its own buffer, so the one-shot API still works.
+                return this.decompressAlloc(arena, inPtr, inLen);
             }
 
             const outPtr = arena.alloc(outSize, this.algorithmName);
@@ -149,21 +148,24 @@ export class Dispatcher {
         }
     }
 
-    /* Bounded by the same cap as the one-shot path. */
-    private decompressStreaming(input: Uint8Array): Uint8Array {
-        const stream = this.createDecompressStream({
-            maxOutput: this.exports.cu_get_max_decompressed_size(),
-        });
+    /* Decodes the input already staged at `inPtr` into a buffer the core grows (bounded by the same cap as the one-shot path), then copies the result out of the heap once. */
+    private decompressAlloc(arena: Arena, inPtr: number, inLen: number): Uint8Array {
+        const outPP = arena.alloc(8, this.algorithmName);
+        this.writeU32(outPP, 0);
+        this.writeU32(outPP + 4, 0);
+        const status = this.exports.cu_decompress_alloc(
+            this.algorithm,
+            inPtr,
+            inLen,
+            outPP,
+            outPP + 4,
+        );
+        checkStatus(this.exports, status, this.algorithmName);
+        const outPtr = this.readU32(outPP);
         try {
-            const body = stream.write(input);
-            const tail = stream.finish();
-            if (tail.byteLength === 0) return body;
-            const out = new Uint8Array(body.byteLength + tail.byteLength);
-            out.set(body, 0);
-            out.set(tail, body.byteLength);
-            return out;
+            return this.readBytes(outPtr, this.readU32(outPP + 4));
         } finally {
-            stream.destroy();
+            this.exports.cu_buffer_free(outPtr);
         }
     }
 

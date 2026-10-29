@@ -188,13 +188,14 @@ describe("decoder-only LZO bundle", () => {
         );
         expect([...result.referencedAlgos]).toEqual(["lzo"]);
     });
-    it("keeps the incremental decoder below 32 KiB", async () => {
+    it("keeps the incremental decoder below 34 KiB", async () => {
         const bytes = await readFile(
             path.join(PKG_ROOT, "dist/algorithms/lzo/decompress/lzo.wasm"),
         );
         // Includes the native incremental state machine and public stream ABI exports.
         // Raised 28 → 32 KiB (current 29.3) for the shared single-stream
         // decoding dispatch (CU_DSTREAM_SINGLE), which LZO links but can't use.
-        expect(bytes.length).toBeLessThan(32 * 1024);
+        // Raised 32 → 34 KiB (current 32.9) for cu_decompress_alloc, which every decoder export list now carries (about 2.3 KiB here, 1.6 in zlib).
+        expect(bytes.length).toBeLessThan(34 * 1024);
     });
 });

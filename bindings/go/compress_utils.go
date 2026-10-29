@@ -24,7 +24,6 @@ import "C"
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"runtime"
 	"unsafe"
 )
@@ -172,9 +171,7 @@ func Compress(algo Algorithm, data []byte, level int) ([]byte, error) {
 }
 
 // Decompress decompresses data produced by the given algorithm. When the
-// wire format records the decompressed size it is recovered in a single
-// pass; otherwise Decompress falls back to the streaming decoder, including
-// raw LZ4. DecompressWithCapacity can avoid this fallback.
+// wire format records the decompressed size it is decoded straight into one right-sized allocation; otherwise the C core decodes into a buffer it grows (bounded by the same cap as the sized path) and the result is copied out of it once, including raw LZ4. DecompressWithCapacity can avoid this growing decode.
 func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 	out, unknownSize, err := decompressOneShot(algo, data)
 	if err != nil {
@@ -183,26 +180,29 @@ func Decompress(algo Algorithm, data []byte) ([]byte, error) {
 	if !unknownSize {
 		return out, nil
 	}
+	return decompressAlloc(algo, data)
+}
 
-	// Wire format does not carry the size (zlib, gzip, brotli, bz2, xz, raw
-	// LZ4): stream-decompress the whole buffer, bounded by the same cap as the
-	// one-shot path.
-	r, err := NewReader(bytes.NewReader(data), algo)
-	if err != nil {
+// decompressAlloc decodes into a buffer the C core allocates and grows (for a format that doesn't record its size), then copies it once into a Go slice.
+func decompressAlloc(algo Algorithm, data []byte) ([]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	var buf *C.uint8_t
+	var n C.size_t
+	st := C.cu_decompress_alloc(
+		C.cu_algorithm_t(algo), bytePtr(data), C.size_t(len(data)), &buf, &n)
+	if err := statusErr(st); err != nil {
 		return nil, err
 	}
-	defer r.Close()
-	r.SetMaxOutput(uint64(C.cu_get_max_decompressed_size()))
-	if out, err = io.ReadAll(r); err != nil {
-		return nil, err
-	}
-	return out, nil
+	defer C.cu_buffer_free(unsafe.Pointer(buf))
+	// Clone copies without zero-filling the destination first.
+	return bytes.Clone(unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(n))), nil
 }
 
 // DecompressWithCapacity decompresses data into at most capacity bytes. The
 // capacity is an upper bound on the output, allocated up front; the result
-// holds only the bytes written. It skips the size probe and the streaming
-// fallback, which is much faster than Decompress for Lz4Raw.
+// holds only the bytes written. It skips the size probe and the growing decode, which is much faster than Decompress for Lz4Raw.
 func DecompressWithCapacity(algo Algorithm, data []byte, capacity int) ([]byte, error) {
 	if capacity < 0 {
 		return nil, &Error{Code: ErrInvalidArg, Msg: "compress-utils: negative capacity"}
@@ -223,7 +223,7 @@ func DecompressWithCapacity(algo Algorithm, data []byte, capacity int) ([]byte, 
 
 // decompressOneShot attempts the size-hint + one-shot path. It returns
 // unknownSize=true (with a nil slice and nil error) when the caller should
-// fall back to streaming.
+// use the core's growing decode.
 func decompressOneShot(algo Algorithm, data []byte) (out []byte, unknownSize bool, err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

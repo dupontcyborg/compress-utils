@@ -22,9 +22,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <cstdlib>
 #include <mutex>
-#include <new>
 #include <optional>
 #include <span>
 #include <string>
@@ -136,65 +134,27 @@ static py::bytes decompress_into_bytes(cu_algorithm_t algo, std::span<const std:
     return py::bytes(reinterpret_cast<const char*>(buf), out_len);
 }
 
-/* A buffer from malloc, grown with realloc: a large one grows without copying. */
-struct Malloced {
+/* A buffer from cu_decompress_alloc, released with cu_buffer_free. */
+struct CoreBuffer {
     std::uint8_t* p = nullptr;
-    ~Malloced() { std::free(p); }
-    void grow(std::size_t n) {
-        void* q = std::realloc(p, n);
-        if (!q) throw std::bad_alloc();
-        p = static_cast<std::uint8_t*>(q);
-    }
-};
-
-struct DecompressStreamHandle {
-    cu_decompress_stream_t* s = nullptr;
-    ~DecompressStreamHandle() { cu_decompress_stream_destroy(s); }
+    std::size_t n = 0;
+    ~CoreBuffer() { cu_buffer_free(p); }
 };
 
 /*
- * For a format that doesn't record its size: streams into one buffer that
- * doubles as needed, bounded by the same cap as the sized path, then copies
- * it once into the result. Runs without the GIL when `release` is set.
+ * For a format that doesn't record its size: the core decodes into a buffer it grows (and bounds by the same cap as the sized path), then the result is copied once into a bytes object. Runs without the GIL when `release` is set.
  */
-static py::bytes decompress_streaming(cu_algorithm_t algo, std::span<const std::uint8_t> in,
-                                      bool release) {
-    constexpr std::size_t kMinWindow = 64 * 1024;
-    Malloced buf;
-    std::size_t pos = 0, cap = 0;
+static py::bytes decompress_alloc(cu_algorithm_t algo, std::span<const std::uint8_t> in, bool release) {
+    CoreBuffer buf;
     {
         std::optional<py::gil_scoped_release> nogil;
         if (release) nogil.emplace();
-        DecompressStreamHandle ds;
-        cu::detail::check(cu_decompress_stream_create(algo, &ds.s));
-        cu::detail::check(cu_decompress_stream_set_max_output(ds.s, cu_get_max_decompressed_size()));
-        cap = std::max<std::size_t>(kMinWindow, in.size() * 4);
-        buf.grow(cap);
-        const std::uint8_t* next = in.data();
-        std::size_t next_len = in.size();
-        bool finishing = false;
-        for (;;) {
-            if (cap - pos < kMinWindow) {
-                cap *= 2;
-                buf.grow(cap);
-            }
-            std::size_t out_len = cap - pos;
-            cu_status_t s = finishing
-                ? cu_decompress_stream_finish(ds.s, buf.p + pos, &out_len)
-                : cu_decompress_stream_write(ds.s, next, next_len, buf.p + pos, &out_len);
-            next = nullptr;
-            next_len = 0;
-            pos += out_len;
-            if (s == CU_ERR_BUF_TOO_SMALL) continue;
-            cu::detail::check(s);
-            if (finishing) break;
-            finishing = true;
-        }
+        cu::detail::check(cu_decompress_alloc(algo, in.data(), in.size(), &buf.p, &buf.n));
     }
-    return py::bytes(reinterpret_cast<const char*>(buf.p), pos);
+    return py::bytes(reinterpret_cast<const char*>(buf.p), buf.n);
 }
 
-/* The size from `expected_size`, else the format's recorded size, else streaming. */
+/* The size from `expected_size`, else the format's recorded size, else the core's growing decode. */
 static py::bytes decompress_oneshot(cu::Algorithm a, std::span<const std::uint8_t> in,
                                     std::optional<std::size_t> expected_size) {
     cu_algorithm_t algo = cu::detail::c_algo(a);
@@ -210,7 +170,7 @@ static py::bytes decompress_oneshot(cu::Algorithm a, std::span<const std::uint8_
     if (s != CU_ERR_SIZE_UNKNOWN) cu::detail::throw_status(s);
     /* A small input can still decode to a lot, but with no recorded size there
      * is no way to tell, so only the input's size counts. */
-    return decompress_streaming(algo, in, worth_releasing(in.size()));
+    return decompress_alloc(algo, in, worth_releasing(in.size()));
 }
 
 /* Runs `f` without the GIL when `release` is set. `f` must not touch Python. */

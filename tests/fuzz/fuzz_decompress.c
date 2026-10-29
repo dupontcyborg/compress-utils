@@ -25,6 +25,8 @@
  * after eof that isn't rejected. With a stream output limit, it aborts if the
  * stream delivers more than the limit.
  *
+ * cu_decompress_alloc runs too, with the stream limit (when there is one) as the global cap, so its cap + 1 ceiling and SIZE_LIMIT paths get fuzzed. It must return no buffer on failure, at most the cap on success, a buffer readable to its last byte, and the same bytes as a one-shot decode when both succeed.
+ *
  * Build artifact: fuzz_decompress. Run with:
  *   ./fuzz_decompress -max_total_time=60 corpus/ seeds/
  * replay_main.c builds the same harness into fuzz_replay, which runs saved
@@ -82,6 +84,29 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     size_t out_len = out_cap;
     (void)cu_decompress(algo, payload, payload_len, out, &out_len);
     free(out);
+
+    /* The allocating helper, under the stream limit as its cap when there is one. */
+    size_t alloc_cap = limit ? limit : MAX_OUT;
+    cu_set_max_decompressed_size(alloc_cap);
+    uint8_t* abuf = (uint8_t*)1;
+    size_t alen = 1;
+    cu_status_t as = cu_decompress_alloc(algo, payload, payload_len, &abuf, &alen);
+    cu_set_max_decompressed_size(MAX_OUT);
+    if (as == CU_OK) {
+        REQUIRE(abuf && alen <= alloc_cap);
+        volatile uint8_t last = abuf[alen ? alen - 1 : 0];
+        (void)last;
+        /* Where the one-shot decoder also succeeds, it agrees. */
+        uint8_t* ref = malloc(alen + 1);
+        REQUIRE(ref);
+        size_t ref_len = alen + 1;
+        if (cu_decompress(algo, payload, payload_len, ref, &ref_len) == CU_OK)
+            REQUIRE(ref_len == alen && (alen == 0 || !memcmp(ref, abuf, alen)));
+        free(ref);
+        cu_buffer_free(abuf);
+    } else {
+        REQUIRE(abuf == NULL && alen == 0);
+    }
 
     /* Also exercise the streaming decompressor. Bound the total output so a
      * small input can't make tiny output buffers spin for millions of calls. */

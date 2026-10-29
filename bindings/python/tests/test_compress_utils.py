@@ -127,6 +127,15 @@ class TestCompressUtils(unittest.TestCase):
                 self.assertGreater(len(data), 8 * len(compressed))
                 self.assertEqual(cu.decompress(compressed, name), data)
 
+    def test_xz_without_a_recorded_size(self):
+        # Stream Padding (valid, and common after concatenation) and a second Stream both defeat the size hint, so the core grows the output.
+        if not cu.is_available("xz"):
+            self.skipTest("xz not compiled in")
+        a, b = b"first part " * 5000, b"second part " * 7000
+        packed = cu.compress(a, "xz")
+        self.assertEqual(cu.decompress(packed + bytes(4), "xz"), a)
+        self.assertEqual(cu.decompress(packed + cu.compress(b, "xz"), "xz"), a + b)
+
     def test_max_decompressed_size_every_format(self):
         # The cap holds for formats that don't record their size too: those
         # decode through a stream that the cap also bounds.
@@ -366,13 +375,8 @@ class TestThreading(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip(), "False", result.stderr)
 
-    def test_large_calls_release_the_gil(self):
-        # With a 10 s switch interval, a thread holding the GIL is never made
-        # to give it up, so the helper can only count while a call has
-        # released it. The input is small: the release comes from the 16 MiB
-        # size recorded in the frame.
-        packed = cu.compress(GIL_PAYLOAD, "zstd")
-        self.assertLess(len(packed), 256 * 1024)
+    def _helper_ticks_during(self, work):
+        # With a 10 s switch interval, a thread holding the GIL is never made to give it up, so a helper thread can only count while `work` has released it. Returns how often the helper ran.
         count, go, stop = [0], threading.Event(), threading.Event()
 
         def helper():
@@ -388,14 +392,39 @@ class TestThreading(unittest.TestCase):
         try:
             go.set()
             before = count[0]
-            for _ in range(5):
-                self.assertEqual(cu.decompress(packed, "zstd"), GIL_PAYLOAD)
-            during = count[0] - before
+            work()
+            return count[0] - before
         finally:
             sys.setswitchinterval(old_interval)
             stop.set()
             thread.join()
-        self.assertGreater(during, 0)
+
+    def test_large_calls_release_the_gil(self):
+        # The input is small: the release comes from the 16 MiB size recorded in the frame.
+        packed = cu.compress(GIL_PAYLOAD, "zstd")
+        self.assertLess(len(packed), 256 * 1024)
+
+        def work():
+            for _ in range(5):
+                self.assertEqual(cu.decompress(packed, "zstd"), GIL_PAYLOAD)
+
+        self.assertGreater(self._helper_ticks_during(work), 0)
+
+    def test_unknown_size_calls_release_the_gil(self):
+        # A format with no recorded size decodes in the core's growing buffer; a large input releases the GIL for that too.
+        data = random.Random(5).randbytes(600 * 1024)
+        for name in ("zlib", "brotli"):
+            if not cu.is_available(name):
+                continue
+            with self.subTest(algorithm=name):
+                packed = cu.compress(data, name)
+                self.assertGreater(len(packed), 256 * 1024)
+
+                def work():
+                    for _ in range(5):
+                        self.assertEqual(cu.decompress(packed, name), data)
+
+                self.assertGreater(self._helper_ticks_during(work), 0)
 
     def test_input_cannot_be_resized_mid_call(self):
         # The binding keeps the buffer exported while it runs without the GIL,
