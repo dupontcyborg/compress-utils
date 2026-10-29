@@ -28,7 +28,7 @@ compressed, err := cu.Compress(cu.Zstd, data, 5)   // level 1 (fast) .. 10 (smal
 restored,   err := cu.Decompress(cu.Zstd, compressed)
 ```
 
-`Decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and transparently falls back to streaming otherwise, so you don't need to know which is which.
+`Decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and otherwise has the C core grow the output buffer as it decodes (copied once into the result), so you don't need to know which is which.
 
 ## Supported algorithms
 
