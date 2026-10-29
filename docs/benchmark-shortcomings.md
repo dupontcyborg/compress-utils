@@ -25,7 +25,7 @@ Keep this lean: fix a shortcoming only if it threatens a decision we are about t
 
 ## What is not measured
 
-- **Memory.** No peak RSS, allocation counts or per-context footprint. This matters for the xz dictionary and for WASM, where the heap is the constraint, and it is where we may be worse than the competitors without the speed tables showing it. The core `cu_decompress_alloc` keeps up to twice the output as spare capacity when it does not shrink; that trade is not measured either.
+- **Memory.** Only the C drivers on Linux, by `benchmarks/memory.py` (see the README): peak resident set size of one compress and one decompress on dickens (one-shot and streaming) and on a 4 KiB message, minus the output written, in a fresh process per measurement. It counts touched pages only, so a large dictionary or table the codec never fills does not show; `malloc_trim` between the phases is glibc-only; the peak includes allocator slack and the codec's own input and output copies. No allocation counts, no per-context footprint when many contexts live at once, and nothing for Python, Go, Rust or WASM (where the heap is the constraint). The core `cu_decompress_alloc` keeps up to twice the output as spare capacity when it does not shrink; that trade is not measured either.
 - **Concurrency.** Single-threaded only. No multi-threaded zstd, no free-threaded Python, no check of GIL release under load.
 - **Latency distribution.** Throughput only. Tail latency and first-call cost are not measured; cold start only for JavaScript, as the median of 5 launches.
 - **Browser.** Node and Bun stand in. Bun runs levels 1, 6 and 10 only.

@@ -399,3 +399,14 @@ Both Go and Rust competitors get native levels and are set to compress-utils' wi
 ```sh
 python3 benchmarks/size/size.py               # table + results/size-<stamp>.json
 ```
+
+### Memory
+
+`memory.py` measures how much memory one compress and one decompress need, for the C drivers only and on Linux only (it reads `/proc/self/status` and resets the high-water mark through `/proc/self/clear_refs`; elsewhere it prints a note and exits 0). Per driver, algorithm and level it runs three jobs, each in a fresh driver process so an earlier job cannot hide a peak through heap reuse: one-shot on dickens (`mem`), streaming on dickens with 64 KiB chunks and window (`memstream`), and one-shot on the first 4 KiB of dickens (the fixed cost of one call). The job (`bench_run_mem_job` in `bench_harness.h`) mallocs the output buffers without touching them, then records VmRSS, resets VmHWM, makes the one call and reads VmHWM; the delta is the peak. The `*_overhead_kb` fields subtract what the call had to write (the compressed bytes; the decompressed bytes one-shot, one window streaming), leaving dictionary, hash tables and per-context state. RSS counts touched pages only, so a large dictionary the codec never fills is invisible. Between the phases `malloc_trim(0)` returns heap the compressor freed (glibc only), so it does not hide what the decompressor needs.
+
+```sh
+python3 benchmarks/memory.py                                              # 12 C drivers, 9 algos, levels 1,6,10
+python3 benchmarks/memory.py --drivers c,c-baseline --algos xz --levels 1,6
+```
+
+Cost: a full default run is about 2.2 one-shot passes of the ecosystem run's C drivers over dickens, roughly 5 minutes on a c8i.xlarge and 6 on a c8g.xlarge. That is an estimate from the speed numbers in `results/ec2`, not a measured run. Results go to `results/<stamp>-memory-<drivers>-<sha>.json` (records carry the driver key, `input_id`, the compress-utils `level` and the `native_level` sent).

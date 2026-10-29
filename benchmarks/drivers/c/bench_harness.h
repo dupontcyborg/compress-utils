@@ -550,6 +550,143 @@ static void bench_emit_marker(const char* key) {
     fflush(stdout);
 }
 
+/* ---- memory jobs ---------------------------------------------------------- */
+
+#ifdef __linux__
+#include <malloc.h>
+
+/* Reads VmRSS and VmHWM (kB) from /proc/self/status. Returns 0 on success. */
+static int bench_mem_read(size_t* rss_kb, size_t* hwm_kb) {
+    FILE* f = fopen("/proc/self/status", "r");
+    if (!f) return 1;
+    char l[256];
+    int got = 0;
+    while (fgets(l, sizeof(l), f)) {
+        if (!strncmp(l, "VmRSS:", 6) && sscanf(l + 6, "%zu", rss_kb) == 1) got |= 1;
+        else if (!strncmp(l, "VmHWM:", 6) && sscanf(l + 6, "%zu", hwm_kb) == 1) got |= 2;
+    }
+    fclose(f);
+    return got != 3;
+}
+
+/* Resets VmHWM to the current RSS (writing 5 to clear_refs). Returns 0 on success. */
+static int bench_mem_reset_hwm(void) {
+    FILE* f = fopen("/proc/self/clear_refs", "w");
+    if (!f) return 1;
+    fputs("5", f);
+    return fclose(f) != 0;
+}
+
+/* One measured phase: RSS before, reset the high-water mark, run `op`, peak after. Sets
+ * *base_kb and *delta_kb (peak - base, at least 0). Returns 0 on success. */
+#define BENCH_MEM_PHASE(base_kb, delta_kb, failed, op)                                   \
+    do {                                                                                 \
+        size_t rss_ = 0, hwm_ = 0, junk_ = 0;                                            \
+        if (bench_mem_read(&rss_, &junk_) || bench_mem_reset_hwm()) { (failed) = 2; break; } \
+        (failed) = (op);                                                                 \
+        if (bench_mem_read(&junk_, &hwm_)) { (failed) = 2; break; }                      \
+        (base_kb) = rss_;                                                                \
+        (delta_kb) = hwm_ > rss_ ? hwm_ - rss_ : 0;                                      \
+    } while (0)
+
+static size_t bench_kb_sub(size_t kb, size_t bytes) {
+    size_t b = (bytes + 1023) / 1024;
+    return kb > b ? kb - b : 0;
+}
+#endif
+
+/* Peak memory of one compress and one decompress of a file, in a process that has done
+ * nothing else (memory.py starts a fresh driver per job). The compressed and decompressed
+ * buffers are malloc'd but never touched before the call, so they cost RSS only as the
+ * codec writes them; each phase measures the peak RSS above the RSS before it, and the
+ * overhead columns subtract the bytes the call had to write. RSS counts touched pages
+ * only. Returns 1 = result emitted, 0 = failure, -1 = skipped (no streaming functions). */
+static int bench_run_mem_job(const char* lang, const bench_codec_t* codec, int level,
+                             int is_stream, size_t chunk, const char* path) {
+#ifndef __linux__
+    (void)lang; (void)codec; (void)level; (void)is_stream; (void)chunk; (void)path;
+    bench_emit_marker("mem_unsupported");
+    return 1;
+#else
+    if (is_stream && (!codec->compress_stream || !codec->decompress_stream)) return -1;
+    size_t in_len = 0;
+    uint8_t* in = bench_read_file(path, &in_len);
+    if (!in) {
+        fprintf(stderr, "bench: cannot read '%s'\n", path);
+        return 0;
+    }
+    size_t bound = codec->bound(codec, in_len);
+    size_t win_len = chunk > BENCH_WIN_MIN ? chunk : BENCH_WIN_MIN;
+    uint8_t* comp = (uint8_t*)malloc(bound ? bound : 1);
+    uint8_t* dec = (uint8_t*)malloc(is_stream ? win_len : (in_len ? in_len : 1));
+    if (!comp || !dec) {
+        fprintf(stderr, "bench: OOM sizing '%s'\n", path);
+        free(in); free(comp); free(dec);
+        return 0;
+    }
+
+    const char* err = NULL;
+    size_t comp_len = bound, dec_len = is_stream ? win_len : in_len;
+    size_t base_kb = 0, c_kb = 0, d_kb = 0, junk_kb = 0;
+    int failed = 0;
+    bench_sink = (bench_sink_t){in, in_len, 0, 1, 0};
+#ifdef __GLIBC__
+    malloc_trim(0);
+#endif
+    BENCH_MEM_PHASE(base_kb, c_kb, failed,
+                    is_stream
+                        ? codec->compress_stream(codec, in, in_len, comp, &comp_len, level, chunk, &err)
+                        : codec->compress(codec, in, in_len, comp, &comp_len, level, &err));
+#ifdef __GLIBC__
+    malloc_trim(0);  /* heap the compressor freed must not hide what the decompressor needs */
+#endif
+    if (!failed) {
+        BENCH_MEM_PHASE(junk_kb, d_kb, failed,
+                        is_stream
+                            ? codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err)
+                            : codec->decompress(codec, comp, comp_len, dec, &dec_len, &err));
+    }
+    if (failed) {
+        fprintf(stderr, "bench: mem(%s/%s L%d %s) failed: %s\n", codec->name, codec->impl, level,
+                is_stream ? "stream" : "oneshot",
+                failed == 2 ? "cannot read or reset /proc/self (clear_refs)" : err ? err : "?");
+        free(in); free(comp); free(dec);
+        return 0;
+    }
+
+    int verified;
+    if (is_stream) {
+        dec_len = win_len;
+        bench_sink = (bench_sink_t){in, in_len, 0, 1, 1};
+        verified = !codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err) &&
+                   bench_sink.ok && bench_sink.pos == in_len && dec_len == in_len;
+    } else {
+        verified = dec_len == in_len && (in_len == 0 || memcmp(in, dec, in_len) == 0);
+    }
+
+    /* Overhead = peak above the RSS before the call, minus the output the call wrote: the
+     * compressed bytes (both modes); the decompressed bytes (one-shot), or the one window
+     * (streaming, which reuses it). */
+    FILE* o = stdout;
+    fputs("{\"lang\":", o); bench_emit_json_string(o, lang);
+    fputs(",\"impl\":", o); bench_emit_json_string(o, codec->impl);
+    fputs(",\"algo\":", o); bench_emit_json_string(o, codec->name);
+    fprintf(o, ",\"level\":%d,\"mode\":\"%s\",", level, is_stream ? "memstream" : "mem");
+    fprintf(o, "\"chunk_bytes\":%zu,", is_stream ? chunk : (size_t)0);
+    fputs("\"input\":", o); bench_emit_json_string(o, path);
+    fprintf(o, ",\"input_bytes\":%zu,\"output_bytes\":%zu,", in_len, comp_len);
+    fprintf(o, "\"mem_compress_kb\":%zu,\"mem_compress_overhead_kb\":%zu,", c_kb,
+            bench_kb_sub(c_kb, comp_len));
+    fprintf(o, "\"mem_decompress_kb\":%zu,\"mem_decompress_overhead_kb\":%zu,", d_kb,
+            bench_kb_sub(d_kb, is_stream ? win_len : in_len));
+    fprintf(o, "\"baseline_kb\":%zu,\"verified\":%s}\n", base_kb, verified ? "true" : "false");
+    fflush(o);
+
+    free(in); free(comp); free(dec);
+    return 1;
+#endif
+}
+
 /* Print {"lang","version","driver"} and return 0. `driver` is the runner's
  * registry key for this binary (e.g. "c" or "c-baseline"); the runner uses it
  * to name the results file so distinct drivers don't collide. */
@@ -579,7 +716,8 @@ static int bench_info_codecs(const char* lang, const char* version, const char* 
 /* Read jobs from stdin, run each, emit NDJSON. Returns process exit code.
  *
  * Job line: "<algo> <level> [<mode>] <path>". `mode` is "oneshot", "stream" or
- * "msgset" (path is a message set); it's optional for backward compatibility —
+ * "msgset" (path is a message set), or "mem" / "memstream" (one memory measurement, see
+ * bench_run_mem_job; memory.py sends one job per fresh process); it's optional for backward compatibility —
  * a 3-field line is treated as one-shot. `path` may contain spaces. */
 static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_codecs) {
     size_t samples = bench_env_size("BENCH_SAMPLES", 5);
@@ -609,9 +747,15 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
         /* Remainder is "[mode ]path". Detect an optional leading mode token. */
         char* rest = sp2 + 1;
         while (*rest == ' ') rest++;
-        int is_stream = 0, is_msgset = 0;
+        int is_stream = 0, is_msgset = 0, is_mem = 0;
         char* path = rest;
-        if (!strncmp(rest, "stream ", 7)) {
+        if (!strncmp(rest, "memstream ", 10)) {
+            is_mem = is_stream = 1;
+            path = rest + 10;
+        } else if (!strncmp(rest, "mem ", 4)) {
+            is_mem = 1;
+            path = rest + 4;
+        } else if (!strncmp(rest, "stream ", 7)) {
             is_stream = 1;
             path = rest + 7;
         } else if (!strncmp(rest, "msgset ", 7)) {
@@ -628,7 +772,8 @@ static int bench_run(const char* lang, const bench_codec_t* codecs, size_t n_cod
             continue;
         }
 
-        int r = is_msgset ? bench_run_msgset_job(lang, codec, level, path, samples, warmup)
+        int r = is_mem ? bench_run_mem_job(lang, codec, level, is_stream, chunk, path)
+              : is_msgset ? bench_run_msgset_job(lang, codec, level, path, samples, warmup)
                           : bench_run_job(lang, codec, level, is_stream, chunk, path, samples,
                                           warmup);
         if (r == 1) {
