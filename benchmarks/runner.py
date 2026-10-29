@@ -249,6 +249,11 @@ def build_go(impl: str = "compress-utils") -> list[str]:
 
 
 RUST_DIR = bc.BENCH_ROOT / "drivers" / "rust"
+# impl -> (target dir, cargo flags) for the crates that need a binary without compress-utils.
+RUST_SEPARATE = {
+    "zstd": ("target-zstd", ["--no-default-features", "--features", "zstd-crate"]),
+    "xz2": ("target-xz2", ["--no-default-features", "--features", "xz2-crate"]),
+}
 RUST_IMPLS = ["flate2", "flate2-zlib-rs", "zstd", "brotli", "lz4_flex", "snap", "bzip2", "xz2"]
 
 
@@ -257,12 +262,19 @@ def build_rust(impl: str = "compress-utils") -> list[str]:
     dependency on the binding, so it never touches the published manifest, and the
     competitor crates are its own dependencies. Like Go it compiles the C core from
     source; only cargo and a C toolchain are needed. Cargo does its own staleness
-    tracking, so this always shells out."""
+    tracking, so this always shells out.
+
+    Which binary serves an impl is a build-time choice. flate2's backend is one, so
+    zlib-rs is its own binary. A crate that embeds a C library we also ship (zstd-sys,
+    lzma-sys) cannot share a binary with compress-utils: symbols like ZSTD_* and lzma_*
+    resolve to a single definition, so "ours" would run the competitor's C code. Those
+    are built without compress-utils (RUST_SEPARATE); everything else, ours included,
+    is the default binary."""
     print(f"[runner] cargo build --release in {RUST_DIR.name} (first run is slow)")
-    # flate2's backend is a build-time choice, so zlib-rs is its own binary.
-    target, extra = ("target-zlib-rs", ["--features", "zlib-rs"]) if impl == "flate2-zlib-rs" \
-        else ("target", [])
-    subprocess.run(["cargo", "build", "--release", "--target-dir", target, *extra],
+    target, flags = RUST_SEPARATE.get(impl, ("target", []))
+    if impl == "flate2-zlib-rs":
+        target, flags = "target-zlib-rs", ["--features", "zlib-rs"]
+    subprocess.run(["cargo", "build", "--release", "--target-dir", target, *flags],
                    cwd=str(RUST_DIR), check=True)
     return [str(RUST_DIR / target / "release" / "bench_rust"), "--impl", impl]
 

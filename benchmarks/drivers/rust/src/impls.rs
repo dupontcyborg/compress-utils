@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 
+#[cfg(feature = "ours")]
 use compress_utils::{
     compress, decompress, Algorithm, Compressor, Decompressor,
 };
@@ -38,19 +39,40 @@ pub struct Impl {
     pub codecs: BTreeMap<&'static str, Codec>,
 }
 
-pub const NAMES: &[&str] =
-    &["compress-utils", "flate2", "flate2-zlib-rs", "zstd", "brotli", "lz4_flex", "snap", "bzip2", "xz2"];
+/// The implementations this binary contains (the C-backed competitors and compress-utils are
+/// separate builds, see Cargo.toml).
+pub const NAMES: &[&str] = &[
+    #[cfg(feature = "ours")]
+    "compress-utils",
+    #[cfg(not(feature = "zlib-rs"))]
+    "flate2",
+    #[cfg(feature = "zlib-rs")]
+    "flate2-zlib-rs",
+    #[cfg(feature = "zstd-crate")]
+    "zstd",
+    "brotli",
+    "lz4_flex",
+    "snap",
+    "bzip2",
+    #[cfg(feature = "xz2-crate")]
+    "xz2",
+];
 
 pub fn load(name: &str) -> Option<Impl> {
     Some(match name {
+        #[cfg(feature = "ours")]
         "compress-utils" => compress_utils_impl(),
-        "flate2" if !cfg!(feature = "zlib-rs") => flate2_impl(),
-        "flate2-zlib-rs" if cfg!(feature = "zlib-rs") => flate2_impl(),
+        #[cfg(not(feature = "zlib-rs"))]
+        "flate2" => flate2_impl(),
+        #[cfg(feature = "zlib-rs")]
+        "flate2-zlib-rs" => flate2_impl(),
+        #[cfg(feature = "zstd-crate")]
         "zstd" => zstd_impl(),
         "brotli" => brotli_impl(),
         "lz4_flex" => lz4_flex_impl(),
         "snap" => snap_impl(),
         "bzip2" => bzip2_impl(),
+        #[cfg(feature = "xz2-crate")]
         "xz2" => xz2_impl(),
         _ => return None,
     })
@@ -125,6 +147,7 @@ where
 
 // ---- compress-utils --------------------------------------------------------------
 
+#[cfg(feature = "ours")]
 fn compress_utils_impl() -> Impl {
     let codec = |algo: Algorithm| Codec {
         compress: Some(Box::new(move |d, l| compress(algo, d, l).map_err(io::Error::from))),
@@ -145,6 +168,7 @@ fn compress_utils_impl() -> Impl {
     Impl { version: compress_utils::version().to_string(), codecs }
 }
 
+#[cfg(feature = "ours")]
 pub const ALGOS: &[(&str, Algorithm)] = &[
     ("zstd", Algorithm::Zstd),
     ("brotli", Algorithm::Brotli),
@@ -180,6 +204,7 @@ fn flate2_impl() -> Impl {
 
 // ---- zstd (bindings to libzstd) --------------------------------------------------
 
+#[cfg(feature = "zstd-crate")]
 fn zstd_impl() -> Impl {
     let mut c = adapter_codec(
         |w, l| zstd::stream::write::Encoder::new(w, l),
@@ -273,6 +298,7 @@ fn bzip2_impl() -> Impl {
 
 // ---- xz2 (bindings to liblzma) ---------------------------------------------------
 
+#[cfg(feature = "xz2-crate")]
 fn xz2_impl() -> Impl {
     use xz2::read::XzDecoder;
     use xz2::write::XzEncoder;
@@ -282,5 +308,5 @@ fn xz2_impl() -> Impl {
         |c| Ok(Box::new(XzDecoder::new(c))),
     );
     c.levels = Some((0, 9));
-    Impl { version: "xz2 crate 0.1 (liblzma)".into(), codecs: [("xz", c)].into_iter().collect() }
+    Impl { version: "xz2 crate 0.1 (bundled liblzma 5.2)".into(), codecs: [("xz", c)].into_iter().collect() }
 }

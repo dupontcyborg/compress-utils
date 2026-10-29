@@ -374,21 +374,21 @@ klauspost's zstd runs its single-threaded encoder and decoder with a context per
 
 ### Rust: competitors
 
-`drivers/rust` is a sibling crate (`bench-rust`, path dependency on the binding; its `Cargo.lock` pins the competitors). One binary, `--impl` selects the implementation:
+`drivers/rust` is a sibling crate (`bench-rust`, path dependency on the binding; its `Cargo.lock` pins the competitors). `--impl` selects the implementation; most share one binary, the ones noted below do not:
 
 | Driver | Library | Formats |
 |--------|---------|---------|
 | `rust` | compress-utils | all |
 | `rust-flate2` | flate2 1.1, default `miniz_oxide` backend | zlib, gzip |
 | `rust-flate2-zlib-rs` | flate2 1.1 with its `zlib-rs` backend (a second binary, built with `--features zlib-rs`) | zlib, gzip |
-| `rust-zstd` | zstd 0.14 (libzstd 1.5.7) | zstd |
+| `rust-zstd` | zstd 0.14 (libzstd 1.5.7, bundled; its own binary) | zstd |
 | `rust-brotli` | brotli 9 (the Rust port) | brotli |
 | `rust-lz4_flex` | lz4_flex 0.14, frame format (no levels) | lz4 |
 | `rust-snap` | snap 1.1, raw blocks (no levels, no streaming) | snappy |
 | `rust-bzip2` | bzip2 0.6 (libbz2-rs-sys, pure Rust) | bz2 |
-| `rust-xz2` | xz2 0.1 (liblzma) | xz |
+| `rust-xz2` | xz2 0.1 (bundled liblzma 5.2, built static; its own binary) | xz |
 
-flate2 chooses its backend at build time, so the two it is usually run with are two binaries: the default `miniz_oxide` (what most `Cargo.lock` files have) and `zlib-rs`, the fast one. (zlib-ng is benchmarked as a C library above.) zstd's one-shot path is `zstd::bulk`, as its docs recommend; with a known size, decompression passes it.
+A crate that embeds a C library we also ship cannot share a binary with compress-utils: the linker keeps one definition of each C symbol (`ZSTD_*`, `lzma_*`), so both would run the same C code and the comparison would be void. `rust-zstd` and `rust-xz2` are therefore built without compress-utils (`--no-default-features --features zstd-crate|xz2-crate`, target dirs `target-zstd` and `target-xz2`; `runner.py` `RUST_SEPARATE`), and their records carry no `interop`. To add a competitor that bundles C, put it behind its own optional feature and add it to `RUST_SEPARATE`; pure-Rust crates (flate2, brotli, lz4_flex, snap, bzip2 via libbz2-rs-sys) are safe in the main binary. Check with `nm target*/release/bench_rust | grep -c ' [Tt] _lzma_'` and the like. flate2 chooses its backend at build time, so the two it is usually run with are two binaries: the default `miniz_oxide` (what most `Cargo.lock` files have) and `zlib-rs`, the fast one. (zlib-ng is benchmarked as a C library above.) zstd's one-shot path is `zstd::bulk`, as its docs recommend; with a known size, decompression passes it.
 
 Both Go and Rust competitors get native levels and are set to compress-utils' wire format where their API allows (zstd and LZ4 content size, LZ4 checksum, xz CRC64); compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. Decode-only libraries get their input from compress-utils, untimed, and records carry `decode_only: true`.
 

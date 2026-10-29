@@ -9,6 +9,8 @@ drivers/c/bench_baseline
 drivers/go/bench_go
 drivers/rust/target/
 drivers/rust/target-zlib-rs/
+drivers/rust/target-zstd/
+drivers/rust/target-xz2/
 
 # Run outputs. Commit baselines explicitly with `git add -f`.
 results/

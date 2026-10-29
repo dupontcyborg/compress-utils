@@ -20,16 +20,25 @@ path = "src/main.rs"
 # feature (the runner's `rust-flate2-zlib-rs` driver); without it flate2 uses its
 # default, miniz_oxide.
 zlib-rs = ["flate2/zlib-rs"]
+# The default binary is compress-utils plus the pure-Rust competitors. Competitor crates that
+# embed a C library we also ship (zstd-sys, lzma-sys) cannot share a binary with compress-utils:
+# the linker keeps one definition per symbol (ZSTD_*, lzma_*), so both would run the same C code.
+# Each is its own binary, built `--no-default-features --features <crate>` (see runner.py).
+default = ["ours"]
+ours = ["dep:compress-utils"]
+zstd-crate = ["dep:zstd"]
+# `static` makes lzma-sys build its bundled xz 5.2 instead of linking whatever pkg-config finds.
+xz2-crate = ["dep:xz2", "xz2/static"]
 
 [dependencies]
 brotli = "9.1.0"
 bzip2 = "0.6.1"
-compress-utils = { path = "../../.." }
+compress-utils = { path = "../../..", optional = true }
 flate2 = "1.1.10"
 lz4_flex = "0.14.0"
 snap = "1.1.2"
-xz2 = "0.1.7"
-zstd = "0.14.3"
+xz2 = { version = "0.1.7", optional = true }
+zstd = { version = "0.14.3", optional = true }
 
 # The driver measures release-mode throughput; make a bare `cargo build` wrong
 # to use rather than silently slow.

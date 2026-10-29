@@ -40,6 +40,7 @@ Keep this lean: fix a shortcoming only if it threatens a decision we are about t
 - **fflate streaming** is missing `sao` at levels 4 and up (see `docs/upstream-bug-candidates.md`), which no longer matters now that the corpus is three files, but check that the new files stream through it.
 - **lz4js** output is invalid on three inputs, so its compress numbers describe work other decoders cannot read.
 - **Go** runs against the stdlib, klauspost/compress, andybalholm/brotli, pierrec/lz4, ulikunitz/xz and dsnet/compress (archived); `DataDog/zstd` and `golang/snappy` are not included. **Rust** runs against flate2 (two backends), zstd, brotli, lz4_flex, snap, bzip2 and xz2; `ruzstd`, `lzma-rs`, `libdeflater` and the C `lz4` crate are not included.
+- **Earlier Rust zstd and xz rows are superseded.** Runs of 2026-10-29 and before linked compress-utils and the `zstd`/`xz2` crates into one binary, so the linker resolved `ZSTD_*` and `lzma_*` to one copy and "ours" ran the competitor's C code (Rust ours xz decompress matched xz2 at about 95 MB/s, against 148 MB/s alone). Those two competitors are now separate binaries; re-run the Rust stage before using any Rust zstd or xz comparison (bz2 was not affected: the `bzip2` crate is pure Rust and exports no C symbols).
 
 ## Process
 

@@ -18,7 +18,10 @@
 //! where their API allows. Each competitor's output is also decoded by compress-utils
 //! once per job, untimed, and the record carries the result as `interop`.
 //! compress-utils compiles its C core from source via its build script, so it runs the
-//! same codec code as the other drivers; only the language wrapper differs.
+//! same codec code as the other drivers; only the language wrapper differs. The competitor
+//! crates that embed their own copy of a C library we also ship (zstd, xz2) are built into
+//! separate binaries without compress-utils (Cargo features, see Cargo.toml), because the
+//! linker would otherwise resolve both to one definition of each C symbol.
 
 mod impls;
 
@@ -27,7 +30,9 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
-use impls::{Codec, ALGOS};
+use impls::Codec;
+#[cfg(feature = "ours")]
+use impls::ALGOS;
 
 fn env_usize(name: &str, fallback: usize) -> usize {
     env::var(name)
@@ -91,15 +96,34 @@ struct Job<'a> {
 
 impl Job<'_> {
     /// compress-utils' own one-shot compress, for decode-only inputs and interop checks.
+    #[cfg(feature = "ours")]
     fn cu_algo(&self) -> compress_utils::Algorithm {
         ALGOS.iter().find(|(n, _)| *n == self.algo).expect("known algo").1
     }
 
-    /// Can compress-utils decode this library's output? None for compress-utils itself.
+    /// Can compress-utils decode this library's output? None for compress-utils itself, and
+    /// in the builds without it (the competitors that cannot share a binary with it).
+    #[cfg(feature = "ours")]
     fn interop(&self, comp: &[u8], data: &[u8]) -> Option<bool> {
         (self.impl_name != "compress-utils").then(|| {
             compress_utils::decompress(self.cu_algo(), comp).is_ok_and(|d| d == data)
         })
+    }
+
+    #[cfg(not(feature = "ours"))]
+    fn interop(&self, _comp: &[u8], _data: &[u8]) -> Option<bool> {
+        None
+    }
+
+    /// Input for a decode-only library: compress-utils' output, untimed.
+    #[cfg(feature = "ours")]
+    fn cu_compress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
+        compress_utils::compress(self.cu_algo(), data, 9).map_err(io::Error::from)
+    }
+
+    #[cfg(not(feature = "ours"))]
+    fn cu_compress(&self, _data: &[u8]) -> io::Result<Vec<u8>> {
+        Err(io::Error::new(io::ErrorKind::Unsupported, "decode-only impl needs the `ours` build"))
     }
 
     fn record(
@@ -165,10 +189,7 @@ impl Job<'_> {
         let stream = mode == "stream";
         let (comp, c_t) = match &self.codec.compress {
             // Decode-only library: its input comes from compress-utils, untimed.
-            None => (
-                compress_utils::compress(self.cu_algo(), &data, 9).map_err(io::Error::from)?,
-                vec![0; self.samples],
-            ),
+            None => (self.cu_compress(&data)?, vec![0; self.samples]),
             Some(enc) => {
                 let enc = if stream { self.codec.cstream.as_ref().unwrap() } else { enc };
                 timed(self.samples, self.warmup, || enc(&data, self.level))?
@@ -195,10 +216,7 @@ impl Job<'_> {
         let msgs = read_msgset(path)?;
         let (comp, c_t): (Vec<Vec<u8>>, Vec<u128>) = match &self.codec.compress {
             None => (
-                msgs.iter()
-                    .map(|m| compress_utils::compress(self.cu_algo(), m, 9))
-                    .collect::<Result<_, _>>()
-                    .map_err(io::Error::from)?,
+                msgs.iter().map(|m| self.cu_compress(m)).collect::<io::Result<_>>()?,
                 vec![0; self.samples],
             ),
             Some(enc) => timed(self.samples, self.warmup, || {
@@ -313,7 +331,7 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map_or("compress-utils", String::as_str);
     let Some(im) = impls::load(impl_name) else {
-        eprintln!("bench-rust: unknown impl {impl_name:?} (known: {})", impls::NAMES.join(", "));
+        eprintln!("bench-rust: impl {impl_name:?} is not in this binary (it has: {}; the C-backed competitors are separate builds, see Cargo.toml)", impls::NAMES.join(", "));
         std::process::exit(2);
     };
     if args.iter().any(|a| a == "--info") {
