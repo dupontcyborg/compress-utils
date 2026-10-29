@@ -252,62 +252,8 @@ pub fn compress(algo: Algorithm, data: &[u8], level: i32) -> Result<Vec<u8>, Err
 }
 
 /// Decompress `data` produced by `algo`. When the wire format records the
-/// decompressed size it is recovered in a single pass; otherwise this falls
-/// back to the streaming decoder (as the C++/Python/Go bindings do).
-/// Raw LZ4 can use this incremental fallback without a capacity hint.
+/// decompressed size it is decoded straight into one right-sized allocation; otherwise the C core decodes into a buffer it grows (bounded by the same cap as the sized path) and the result is copied out of it once. Raw LZ4 can use this growing decode without a capacity hint.
 pub fn decompress(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
-    match decompress_one_shot(algo, data)? {
-        Some(out) => Ok(out),
-        // Wire format does not carry the size (zlib, gzip, brotli, bz2, xz,
-        // raw LZ4): stream-decompress the whole buffer, bounded by the same cap
-        // as the one-shot path.
-        None => {
-            use std::io::Read;
-            let mut r = Decompressor::new(data, algo)?;
-            // SAFETY: plain scalar getter.
-            r.set_max_output(unsafe { ffi::cu_get_max_decompressed_size() });
-            let mut out = Vec::new();
-            r.read_to_end(&mut out).map_err(stream::io_to_error)?;
-            Ok(out)
-        }
-    }
-}
-
-/// Decompress `data` into at most `capacity` bytes. The capacity is an upper
-/// bound on the output, allocated up front; the result holds only the bytes
-/// written. Skips the size probe and streaming fallback for every algorithm.
-pub fn decompress_with_capacity(
-    algo: Algorithm,
-    data: &[u8],
-    capacity: usize,
-) -> Result<Vec<u8>, Error> {
-    let mut out: Vec<u8> = Vec::new();
-    if out.try_reserve_exact(capacity).is_err() {
-        return Err(Error {
-            code: Status::Oom,
-            message: format!("compress-utils: cannot allocate {capacity} bytes of output"),
-        });
-    }
-    out.resize(capacity, 0);
-    let mut out_len = out.len();
-    // SAFETY: valid slices; out_len is in/out and starts at out's length.
-    let st = unsafe {
-        ffi::cu_decompress(
-            algo.to_raw(),
-            data.as_ptr(),
-            data.len(),
-            out.as_mut_ptr(),
-            &mut out_len,
-        )
-    };
-    check(st)?;
-    out.truncate(out_len);
-    Ok(out)
-}
-
-/// Attempt the size-hint + one-shot path. `Ok(None)` means the caller should
-/// fall back to streaming (size not recoverable from the wire format).
-fn decompress_one_shot(algo: Algorithm, data: &[u8]) -> Result<Option<Vec<u8>>, Error> {
     let mut hint: usize = 0;
     // SAFETY: valid slice, valid out pointer.
     let st = unsafe {
@@ -315,39 +261,97 @@ fn decompress_one_shot(algo: Algorithm, data: &[u8]) -> Result<Option<Vec<u8>>, 
     };
     match st {
         ffi::CU_OK => {
-            // Never blindly allocate the reported size: a malformed header can
-            // claim a bogus, enormous length (some codecs' size_hint does not
-            // fully validate), and `vec![0u8; hint]` would abort the process on
-            // OOM. Try to reserve; if that fails, fall back to streaming, which
-            // decodes incrementally and rejects the bad input via the
-            // no-progress guard.
+            // Never blindly allocate the reported size: a malformed header can claim a bogus, enormous length (some codecs' size_hint does not fully validate), and an infallible allocation would abort the process on OOM. If it can't be reserved, the core's growing decode takes over: it allocates only as real output appears, and rejects the bad input.
             let mut out: Vec<u8> = Vec::new();
-            if out.try_reserve_exact(hint).is_err() {
-                return Ok(None);
-            }
-            out.resize(hint, 0);
-            let mut out_len = out.len();
-            // SAFETY: as above; out sized to the reported hint.
-            let st2 = unsafe {
-                ffi::cu_decompress(
-                    algo.to_raw(),
-                    data.as_ptr(),
-                    data.len(),
-                    out.as_mut_ptr(),
-                    &mut out_len,
-                )
-            };
-            match st2 {
-                ffi::CU_OK => {
-                    out.truncate(out_len);
-                    Ok(Some(out))
+            if out.try_reserve_exact(hint).is_ok() {
+                match decode_into_spare(algo, data, &mut out, hint) {
+                    ffi::CU_OK => return Ok(out),
+                    // A hint that was short of the real size.
+                    ffi::CU_ERR_SIZE_UNKNOWN | ffi::CU_ERR_BUF_TOO_SMALL => {}
+                    other => return Err(error_from(other)),
                 }
-                ffi::CU_ERR_SIZE_UNKNOWN | ffi::CU_ERR_BUF_TOO_SMALL => Ok(None),
-                other => Err(error_from(other)),
             }
         }
-        ffi::CU_ERR_SIZE_UNKNOWN => Ok(None),
-        other => Err(error_from(other)),
+        ffi::CU_ERR_SIZE_UNKNOWN => {}
+        other => return Err(error_from(other)),
+    }
+    decompress_alloc(algo, data)
+}
+
+/// Decompress `data` into at most `capacity` bytes. The capacity is an upper
+/// bound on the output, allocated up front; the result holds only the bytes
+/// written. Skips the size probe and the growing decode for every algorithm.
+pub fn decompress_with_capacity(
+    algo: Algorithm,
+    data: &[u8],
+    capacity: usize,
+) -> Result<Vec<u8>, Error> {
+    let mut out: Vec<u8> = Vec::new();
+    if out.try_reserve_exact(capacity).is_err() {
+        return Err(oom(capacity));
+    }
+    check(decode_into_spare(algo, data, &mut out, capacity))?;
+    Ok(out)
+}
+
+/// Decodes `data` into the first `cap` bytes of `out`'s spare capacity, which are left uninitialized until the codec writes them, and sets `out`'s length to the bytes written on success. Returns the raw status; `out` stays empty on failure. `out` must be empty with at least `cap` bytes of capacity.
+fn decode_into_spare(
+    algo: Algorithm,
+    data: &[u8],
+    out: &mut Vec<u8>,
+    cap: usize,
+) -> std::os::raw::c_int {
+    debug_assert!(out.is_empty() && out.capacity() >= cap);
+    let mut out_len = cap;
+    // SAFETY: `data` is a valid slice; the spare capacity is valid for `cap` bytes of writes (an empty one yields a non-null dangling pointer, which the C side accepts for zero capacity); out_len is in/out.
+    let st = unsafe {
+        ffi::cu_decompress(
+            algo.to_raw(),
+            data.as_ptr(),
+            data.len(),
+            out.spare_capacity_mut().as_mut_ptr().cast::<u8>(),
+            &mut out_len,
+        )
+    };
+    if st == ffi::CU_OK {
+        assert!(
+            out_len <= cap,
+            "compress-utils: decoder reported more output than the buffer holds"
+        );
+        // SAFETY: the codec initialized the first out_len <= capacity bytes.
+        unsafe { out.set_len(out_len) };
+    }
+    st
+}
+
+/// Decodes into a buffer the C core allocates and grows (for a format that doesn't record its size), then copies it once into a `Vec`.
+fn decompress_alloc(algo: Algorithm, data: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut buf: *mut u8 = std::ptr::null_mut();
+    let mut len: usize = 0;
+    // SAFETY: valid slice; out pointers are valid. On success the core hands over a malloc'd buffer that is released with cu_buffer_free below.
+    let st = unsafe {
+        ffi::cu_decompress_alloc(algo.to_raw(), data.as_ptr(), data.len(), &mut buf, &mut len)
+    };
+    check(st)?;
+    let mut out: Vec<u8> = Vec::new();
+    let copied = out.try_reserve_exact(len).is_ok();
+    if copied {
+        // SAFETY: on success `buf` holds `len` initialized bytes.
+        out.extend_from_slice(unsafe { std::slice::from_raw_parts(buf, len) });
+    }
+    // SAFETY: `buf` came from cu_decompress_alloc and isn't used after this.
+    unsafe { ffi::cu_buffer_free(buf.cast()) };
+    if copied {
+        Ok(out)
+    } else {
+        Err(oom(len))
+    }
+}
+
+fn oom(bytes: usize) -> Error {
+    Error {
+        code: Status::Oom,
+        message: format!("compress-utils: cannot allocate {bytes} bytes of output"),
     }
 }
 
