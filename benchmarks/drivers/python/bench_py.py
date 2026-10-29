@@ -12,11 +12,10 @@ BENCH_SAMPLES / BENCH_WARMUP / BENCH_CHUNK, and answers `--info`.
 through the same timing loop, as a consumer would call it:
 
   oneshot  compress, then decompress without being told the size
-  msgset   one compress call per message, each decompressed with its known
-           size through the library's fastest path for that (compress-utils'
-           expected_size, zlib's bufsize, cramjam's output_len, ...)
+  msgset   one compress call per message, each decompressed without being told
+           its size
   stream   the input fed in BENCH_CHUNK pieces through the library's streaming
-           API; skipped when it has none (cramjam can't decompress chunked
+           API, decompressed output counted and discarded; skipped when it has none (cramjam can't decompress chunked
            input; the runner records nothing for that pair)
 
 Competitors run at native levels (the runner translates through levels.json,
@@ -54,12 +53,13 @@ CHUNK = int(os.environ.get("BENCH_CHUNK") or 64 * 1024)
 
 @dataclass
 class Codec:
-    """One implementation of one format. decompress(data, size) gets the
-    decompressed size when the caller knows it (msgset), else None."""
+    """One implementation of one format. decompress is never told the size.
+    dstream(data, keep) returns the output when keep, else only its byte count
+    (output discarded chunk by chunk)."""
     compress: Callable[[bytes, int], object]
-    decompress: Callable[[object, int | None], object]
+    decompress: Callable[[object], object]
     cstream: Callable[[bytes, int], object] | None = None
-    dstream: Callable[[object], object] | None = None
+    dstream: Callable[[object, bool], object] | None = None
     levels: tuple[int, int] | None = None  # native range; None = levels.json's
 
 
@@ -77,6 +77,26 @@ def _feed(obj, method: str, data, tail: str | None) -> bytes:
     return b"".join(parts)
 
 
+def _drain(obj, data, keep: bool, tail: str | None, method: str = "decompress"):
+    """Run `data` through obj.decompress in chunks. Returns the output when
+    `keep`, else its length with each chunk's output dropped as it arrives."""
+    step = getattr(obj, method)
+    parts, total = [], 0
+    for c in _chunks(data):
+        out = step(c)
+        if keep:
+            parts.append(out)
+        else:
+            total += len(out)
+    if tail:
+        out = getattr(obj, tail)()
+        if keep:
+            parts.append(out)
+        else:
+            total += len(out)
+    return b"".join(parts) if keep else total
+
+
 # --------------------------------------------------------------------------- #
 # Implementations
 # --------------------------------------------------------------------------- #
@@ -87,10 +107,9 @@ def impl_compress_utils() -> tuple[str, dict[str, Codec]]:
         a = getattr(cu.Algorithm, algo)
         return Codec(
             compress=lambda d, lvl: cu.compress(d, a, lvl),
-            decompress=lambda c, n: cu.decompress(c, a, expected_size=n) if n is not None
-            else cu.decompress(c, a),
+            decompress=lambda c: cu.decompress(c, a),
             cstream=lambda d, lvl: _feed(cu.CompressStream(a, lvl), "compress", d, "finish"),
-            dstream=lambda c: _feed(cu.DecompressStream(a), "decompress", c, "finish"),
+            dstream=lambda c, k: _drain(cu.DecompressStream(a), c, k, "finish"),
         )
     return cu.version(), {a: codec(a) for a in
                           ("zstd", "brotli", "zlib", "gzip", "deflate", "bz2", "lz4", "xz",
@@ -107,11 +126,10 @@ def impl_stdlib() -> tuple[str, dict[str, Codec]]:
     def zlib_codec(wbits: int) -> Codec:
         return Codec(
             compress=lambda d, lvl: zlib.compress(d, lvl, wbits=wbits),
-            decompress=lambda c, n: zlib.decompress(c, wbits=wbits, bufsize=n) if n
-            else zlib.decompress(c, wbits=wbits),
+            decompress=lambda c: zlib.decompress(c, wbits=wbits),
             cstream=lambda d, lvl: _feed(zlib.compressobj(lvl, zlib.DEFLATED, wbits),
                                          "compress", d, "flush"),
-            dstream=lambda c: _feed(zlib.decompressobj(wbits), "decompress", c, "flush"),
+            dstream=lambda c, k: _drain(zlib.decompressobj(wbits), c, k, "flush"),
         )
 
     codecs = {
@@ -120,24 +138,23 @@ def impl_stdlib() -> tuple[str, dict[str, Codec]]:
         "deflate": zlib_codec(-15),
         "bz2": Codec(
             compress=lambda d, lvl: bz2.compress(d, lvl),
-            decompress=lambda c, n: bz2.decompress(c),
+            decompress=lambda c: bz2.decompress(c),
             cstream=lambda d, lvl: _feed(bz2.BZ2Compressor(lvl), "compress", d, "flush"),
-            dstream=lambda c: _feed(bz2.BZ2Decompressor(), "decompress", c, None),
+            dstream=lambda c, k: _drain(bz2.BZ2Decompressor(), c, k, None),
         ),
         "xz": Codec(
             compress=lambda d, lvl: lzma.compress(d, lzma.FORMAT_XZ, lzma.CHECK_CRC64, lvl),
-            decompress=lambda c, n: lzma.decompress(c, lzma.FORMAT_XZ),
+            decompress=lambda c: lzma.decompress(c, lzma.FORMAT_XZ),
             cstream=lambda d, lvl: _feed(
                 lzma.LZMACompressor(lzma.FORMAT_XZ, lzma.CHECK_CRC64, lvl), "compress", d,
                 "flush"),
-            dstream=lambda c: _feed(lzma.LZMADecompressor(lzma.FORMAT_XZ), "decompress", c,
-                                    None),
+            dstream=lambda c, k: _drain(lzma.LZMADecompressor(lzma.FORMAT_XZ), c, k, None),
         ),
         "zstd": Codec(
             compress=lambda d, lvl: zstd.compress(d, lvl),
-            decompress=lambda c, n: zstd.decompress(c),
+            decompress=lambda c: zstd.decompress(c),
             cstream=lambda d, lvl: _feed(zstd.ZstdCompressor(lvl), "compress", d, "flush"),
-            dstream=lambda c: _feed(zstd.ZstdDecompressor(), "decompress", c, None),
+            dstream=lambda c, k: _drain(zstd.ZstdDecompressor(), c, k, None),
         ),
     }
     version = (f"python {platform.python_version()}, zlib {zlib.ZLIB_RUNTIME_VERSION}, "
@@ -155,7 +172,7 @@ def impl_cramjam() -> tuple[str, dict[str, Codec]]:
     def codec(mod, levels, **kw) -> Codec:
         return Codec(
             compress=lambda d, lvl: mod.compress(d, level=lvl, **kw),
-            decompress=lambda c, n: mod.decompress(c, output_len=n),
+            decompress=lambda c: mod.decompress(c),
             levels=levels,
         )
 
@@ -171,12 +188,12 @@ def impl_cramjam() -> tuple[str, dict[str, Codec]]:
         "xz": Codec(
             compress=lambda d, lvl: xz.compress(d, preset=lvl, format=xz.Format.XZ,
                                                 check=xz.Check.Crc64),
-            decompress=lambda c, n: xz.decompress(c, output_len=n),
+            decompress=lambda c: xz.decompress(c),
             levels=(0, 9),
         ),
         "snappy": Codec(
             compress=lambda d, lvl: cramjam.snappy.compress_raw(d),
-            decompress=lambda c, n: cramjam.snappy.decompress_raw(c, output_len=n),
+            decompress=lambda c: cramjam.snappy.decompress_raw(c),
         ),
     }
     from importlib.metadata import version
@@ -198,9 +215,9 @@ def impl_zstandard() -> tuple[str, dict[str, Codec]]:
 
     return zstandard.__version__, {"zstd": Codec(
         compress=lambda d, lvl: c(lvl).compress(d),
-        decompress=lambda b, n: dctx.decompress(b, max_output_size=n) if n else dctx.decompress(b),
+        decompress=lambda b: dctx.decompress(b),
         cstream=lambda d, lvl: _feed(c(lvl).compressobj(), "compress", d, "flush"),
-        dstream=lambda b: _feed(dctx.decompressobj(), "decompress", b, None),
+        dstream=lambda b, k: _drain(dctx.decompressobj(), b, k, None),
         levels=(1, 22),
     )}
 
@@ -210,9 +227,9 @@ def impl_brotli() -> tuple[str, dict[str, Codec]]:
 
     return brotli.version, {"brotli": Codec(
         compress=lambda d, lvl: brotli.compress(d, quality=lvl),
-        decompress=lambda c, n: brotli.decompress(c),
+        decompress=lambda c: brotli.decompress(c),
         cstream=lambda d, lvl: _feed(brotli.Compressor(quality=lvl), "process", d, "finish"),
-        dstream=lambda c: _feed(brotli.Decompressor(), "process", c, None),
+        dstream=lambda c, k: _drain(brotli.Decompressor(), c, k, None, "process"),
         levels=(0, 11),
     )}
 
@@ -225,9 +242,9 @@ def impl_lz4() -> tuple[str, dict[str, Codec]]:
     return lz4.__version__, {"lz4": Codec(
         compress=lambda d, lvl: f.compress(d, compression_level=lvl, content_checksum=True,
                                            store_size=True),
-        decompress=lambda c, n: f.decompress(c),
+        decompress=lambda c: f.decompress(c),
         cstream=lambda d, lvl: _lz4_stream(f, d, lvl),
-        dstream=lambda c: _feed(f.LZ4FrameDecompressor(), "decompress", c, None),
+        dstream=lambda c, k: _drain(f.LZ4FrameDecompressor(), c, k, None),
         levels=(0, 12),
     )}
 
@@ -296,7 +313,7 @@ def _record(impl: str, algo: str, level: int, mode: str, path: str, in_bytes: in
         "samples": SAMPLES, "warmup": WARMUP, "verified": verified,
     }
     if messages:
-        rec.update(messages=messages, decompress_size_known=True)
+        rec.update(messages=messages, decompress_size_known=False)
     if interop is not None:
         rec["interop"] = interop
     return rec
@@ -306,10 +323,11 @@ def run_job(impl: str, algo: str, codec: Codec, level: int, mode: str, path: str
     data = Path(path).read_bytes()
     if mode == "stream":
         comp, c_t = _timed(lambda: codec.cstream(data, level), SAMPLES)
-        dec, d_t = _timed(lambda: codec.dstream(comp), SAMPLES)
+        _, d_t = _timed(lambda: codec.dstream(comp, False), SAMPLES)
+        dec = codec.dstream(comp, True)  # untimed, for verification
     else:
         comp, c_t = _timed(lambda: codec.compress(data, level), SAMPLES)
-        dec, d_t = _timed(lambda: codec.decompress(comp, None), SAMPLES)
+        dec, d_t = _timed(lambda: codec.decompress(comp), SAMPLES)
     return _record(impl, algo, level, mode, path, len(data), len(memoryview(comp)), c_t, d_t,
                    bytes(dec) == data, _interop(impl, algo, comp, data))
 
@@ -320,10 +338,10 @@ def run_msgset_job(impl: str, algo: str, codec: Codec, level: int, path: str) ->
 
     def decode_all():
         for c, m in zip(comp, messages):
-            codec.decompress(c, len(m))
+            codec.decompress(c)
 
     _, d_t = _timed(decode_all, SAMPLES)
-    verified = all(bytes(codec.decompress(c, len(m))) == m for c, m in zip(comp, messages))
+    verified = all(bytes(codec.decompress(c)) == m for c, m in zip(comp, messages))
     interop = _interop(impl, algo, comp[0], messages[0]) if messages else None
     return _record(impl, algo, level, "msgset", path, sum(map(len, messages)),
                    sum(len(memoryview(c)) for c in comp), c_t, d_t, verified, interop,

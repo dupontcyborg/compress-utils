@@ -9,10 +9,9 @@
 //! the same timing loop, as a consumer would call it (src/impls.rs):
 //!
 //!   oneshot  compress, then decompress without being told the size
-//!   msgset   one compress call per message, each decompressed with its known size
-//!            through the library's fastest path for that
+//!   msgset   one compress call per message, each decompressed without being told its size
 //!   stream   the input fed in BENCH_CHUNK pieces through the library's streaming
-//!            API; skipped when it has none
+//!            API, decompressed output counted and discarded; skipped when it has none
 //!
 //! Competitors run at native levels (the runner translates through levels.json, or
 //! sweeps the range each codec declares) and are set to compress-utils' wire format
@@ -149,7 +148,7 @@ impl Job<'_> {
         )
         .expect("writing to a String cannot fail");
         if let Some(n) = messages {
-            write!(s, r#","messages":{n},"decompress_size_known":true"#).unwrap();
+            write!(s, r#","messages":{n},"decompress_size_known":false"#).unwrap();
         }
         if let Some(ok) = interop {
             write!(s, r#","interop":{ok}"#).unwrap();
@@ -175,13 +174,19 @@ impl Job<'_> {
                 timed(self.samples, self.warmup, || enc(&data, self.level))?
             }
         };
-        let (dec, d_t) = timed(self.samples, self.warmup, || {
-            if stream {
-                (self.codec.dstream.as_ref().unwrap())(&comp)
-            } else {
-                (self.codec.decompress)(&comp, None)
-            }
-        })?;
+        let (dec, d_t) = if stream {
+            let dstream = self.codec.dstream.as_ref().unwrap();
+            let (_, d_t) = timed(self.samples, self.warmup, || {
+                let mut sink = CountWriter(0);
+                dstream(&comp, &mut sink)?;
+                Ok(sink.0)
+            })?;
+            let mut dec = Vec::with_capacity(data.len()); // untimed, for verification
+            dstream(&comp, &mut dec)?;
+            (dec, d_t)
+        } else {
+            timed(self.samples, self.warmup, || (self.codec.decompress)(&comp))?
+        };
         Ok(self.record(mode, path, data.len(), comp.len(), &c_t, &d_t, dec == data,
                        self.interop(&comp, &data), None))
     }
@@ -201,13 +206,13 @@ impl Job<'_> {
             })?,
         };
         let ((), d_t) = timed(self.samples, self.warmup, || {
-            for (c, m) in comp.iter().zip(&msgs) {
-                (self.codec.decompress)(c, Some(m.len()))?;
+            for c in &comp {
+                (self.codec.decompress)(c)?;
             }
             Ok(())
         })?;
         let verified = comp.iter().zip(&msgs).all(|(c, m)| {
-            (self.codec.decompress)(c, Some(m.len())).is_ok_and(|d| d == *m)
+            (self.codec.decompress)(c).is_ok_and(|d| d == *m)
         });
         let interop = msgs.first().and_then(|m| self.interop(&comp[0], m));
         Ok(self.record(
@@ -221,6 +226,19 @@ impl Job<'_> {
             interop,
             Some(msgs.len()),
         ))
+    }
+}
+
+/// Counts bytes and discards them.
+struct CountWriter(usize);
+
+impl Write for CountWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

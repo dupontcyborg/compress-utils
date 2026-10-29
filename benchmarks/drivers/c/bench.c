@@ -27,7 +27,8 @@ static int cu_do_compress(const bench_codec_t* c, const uint8_t* in, size_t in_l
 static int cu_do_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                             uint8_t* out, size_t* out_len, const char** err) {
     cu_status_t s = cu_decompress((cu_algorithm_t)c->native_id, in, in_len, out, out_len);
-    if (s != CU_OK) { *err = cu_last_error(); return (int)s; }
+    if (s == CU_ERR_BUF_TOO_SMALL || s == CU_ERR_SIZE_UNKNOWN) return BENCH_NEED_MORE;
+    if (s != CU_OK) { *err = cu_last_error(); return 1; }
     return 0;
 }
 
@@ -81,7 +82,9 @@ static int cu_do_compress_stream(const bench_codec_t* c, const uint8_t* in, size
     return 0;
 }
 
-/* Streaming decompress: feed the compressed buffer in `chunk`-sized pieces. */
+/* Streaming decompress: feed the compressed buffer in `chunk`-sized pieces,
+ * decoding into the bounded window `out` (*out_len = its size) and handing each
+ * produced run to the sink. */
 static int cu_do_decompress_stream(const bench_codec_t* c, const uint8_t* in, size_t in_len,
                                    uint8_t* out, size_t* out_len, size_t chunk,
                                    const char** err) {
@@ -90,23 +93,26 @@ static int cu_do_decompress_stream(const bench_codec_t* c, const uint8_t* in, si
     cu_status_t st = cu_decompress_stream_create((cu_algorithm_t)c->native_id, &s);
     if (st != CU_OK) { *err = cu_last_error(); return (int)st; }
 
-    size_t cap = *out_len, pos = 0;
+    size_t win = *out_len, total = 0;
     for (size_t off = 0; off < in_len; off += chunk) {
         size_t n = in_len - off < chunk ? in_len - off : chunk;
-        size_t ol = cap - pos;
-        st = cu_decompress_stream_write(s, in + off, n, out + pos, &ol);
-        pos += ol;
+        size_t ol = win;
+        st = cu_decompress_stream_write(s, in + off, n, out, &ol);
+        bench_sink_write(out, ol);
+        total += ol;
         for (int guard = 0; st == CU_ERR_BUF_TOO_SMALL && guard < CU_DRAIN_MAX; guard++) {
-            ol = cap - pos;
-            st = cu_decompress_stream_write(s, NULL, 0, out + pos, &ol);
-            pos += ol;
+            ol = win;
+            st = cu_decompress_stream_write(s, NULL, 0, out, &ol);
+            bench_sink_write(out, ol);
+            total += ol;
         }
         if (st != CU_OK) { *err = cu_last_error(); cu_decompress_stream_destroy(s); return (int)st; }
     }
     for (int guard = 0; guard < CU_DRAIN_MAX; guard++) {
-        size_t ol = cap - pos;
-        st = cu_decompress_stream_finish(s, out + pos, &ol);
-        pos += ol;
+        size_t ol = win;
+        st = cu_decompress_stream_finish(s, out, &ol);
+        bench_sink_write(out, ol);
+        total += ol;
         if (st == CU_OK) break;
         if (st != CU_ERR_BUF_TOO_SMALL) {
             *err = cu_last_error();
@@ -120,13 +126,20 @@ static int cu_do_decompress_stream(const bench_codec_t* c, const uint8_t* in, si
         return (int)st;
     }
     cu_decompress_stream_destroy(s);
-    *out_len = pos;
+    *out_len = total;
     return 0;
+}
+
+/* The size the compressed bytes record, as the library reports it (the harness
+ * calls this, not cu_do_decompress). */
+static int cu_do_size_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len,
+                           size_t* out_size) {
+    return cu_decompress_size_hint((cu_algorithm_t)c->native_id, in, in_len, out_size) != CU_OK;
 }
 
 #define CU_CODEC(NAME, ENUM)                                              \
     { NAME, "compress-utils", (ENUM), cu_bound, cu_do_compress,           \
-      cu_do_decompress, cu_do_compress_stream, cu_do_decompress_stream }
+      cu_do_decompress, cu_do_compress_stream, cu_do_decompress_stream, 0, 0, cu_do_size_hint }
 
 static const bench_codec_t CODECS[] = {
     CU_CODEC("zstd", CU_ALGO_ZSTD),

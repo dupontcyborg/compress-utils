@@ -17,7 +17,11 @@
  *
  * Streaming (all three formats) feeds the input in chunk-sized pieces with
  * Z_NO_FLUSH, then finishes with Z_FINISH, into one bound-sized output buffer,
- * as c-baseline streams madler zlib.
+ * as c-baseline streams madler zlib. Streaming decompress drains a bounded
+ * window instead, into the harness's sink.
+ *
+ * Decompress returns BENCH_NEED_MORE when the output buffer is too small.
+ * zlib, gzip and raw deflate are all unknown-size: gzip's ISIZE is only the last member's size mod 2^32, a guess rather than a recorded size, so it is not used.
  */
 
 #ifndef BENCH_ZAPI_H
@@ -48,7 +52,9 @@ static int za_zlib_decompress(const bench_codec_t* c, const uint8_t* in, size_t 
                               uint8_t* out, size_t* out_len, const char** err) {
     (void)c;
     ZLEN dl = (ZLEN)*out_len;
-    if (ZAPI(uncompress)(out, &dl, in, (ZLEN)in_len) != Z_OK) { *err = "uncompress"; return 1; }
+    int r = ZAPI(uncompress)(out, &dl, in, (ZLEN)in_len);
+    if (r == Z_BUF_ERROR) return BENCH_NEED_MORE;
+    if (r != Z_OK) { *err = "uncompress"; return 1; }
     *out_len = (size_t)dl;
     return 0;
 }
@@ -83,8 +89,13 @@ static int za_inflate(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
     s.avail_out = (unsigned)*out_len;
     int r = ZAPI(inflate)(&s, Z_FINISH);
     *out_len = (size_t)s.total_out;
+    int full = s.avail_out == 0;
     ZAPI(inflateEnd)(&s);
-    if (r != Z_STREAM_END) { *err = "inflate"; return 1; }
+    if (r != Z_STREAM_END) {
+        if (full) return BENCH_NEED_MORE;  /* no room left (Z_BUF_ERROR or Z_OK, by library) */
+        *err = "inflate";
+        return 1;
+    }
     return 0;
 }
 
@@ -119,28 +130,38 @@ static int za_cstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
     return rc;
 }
 
+/* Decodes into the bounded window `out` (*out_len = its size), handing each
+ * produced run to the sink. Z_BUF_ERROR with nothing left to read just means
+ * the chunk is used up. */
 static int za_dstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
                       int wbits, size_t chunk, const char** err) {
     if (chunk == 0) chunk = 64 * 1024;
     ZSTREAM s;
     memset(&s, 0, sizeof(s));
     if (ZAPI(inflateInit2)(&s, wbits) != Z_OK) { *err = "inflateInit2"; return 1; }
-    size_t cap = *out_len;
-    s.next_out = out;
-    s.avail_out = (unsigned)cap;
+    size_t win = *out_len, total = 0;
     int rc = 0, done = 0;
     for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
         size_t n = in_len - off < chunk ? in_len - off : chunk;
         s.next_in = (void*)(uintptr_t)(in + off);
         s.avail_in = (unsigned)n;
-        while (s.avail_in > 0) {
+        do {
+            s.next_out = out;
+            s.avail_out = (unsigned)win;
             int r = ZAPI(inflate)(&s, Z_NO_FLUSH);
+            size_t got = win - s.avail_out;
+            bench_sink_write(out, got);
+            total += got;
             if (r == Z_STREAM_END) { done = 1; break; }
-            if (r != Z_OK) { *err = "inflate"; rc = 1; break; }
-        }
+            if (r != Z_OK && !(r == Z_BUF_ERROR && s.avail_in == 0)) {
+                *err = "inflate";
+                rc = 1;
+                break;
+            }
+        } while (s.avail_in > 0 || s.avail_out == 0);
     }
     if (!rc && !done) { *err = "inflate: truncated"; rc = 1; }
-    if (!rc) *out_len = cap - s.avail_out;
+    if (!rc) *out_len = total;
     ZAPI(inflateEnd)(&s);
     return rc;
 }

@@ -60,7 +60,9 @@ static const bench_codec_t CODECS[] = {
 
 /* ========================================================================= */
 #elif defined(ALT_LIBDEFLATE) || defined(ALT_LIBDEFLATE_PERCALL)
-/* One-shot only. A compressor per level and one decompressor, reused. Levels
+/* One-shot only. No format has a size hint (gzip's ISIZE is a guess, not used), so every
+ * one starts at the default capacity and double on LIBDEFLATE_INSUFFICIENT_SPACE.
+ * A compressor per level and one decompressor, reused. Levels
  * 1..12 (0 = store). The per-call variant allocates and frees them on every
  * call instead, as compress-utils sets up its codec on every call, to separate
  * libdeflate's codec speed from the setup it saves by reuse. */
@@ -116,6 +118,7 @@ static size_t ld_bound(const bench_codec_t* c, size_t n) {
         enum libdeflate_result r =                                                            \
             libdeflate_##NAME##_decompress(ld_dec, in, in_len, out, *out_len, &actual);       \
         LD_DONE_DECOMPRESS();                                                                 \
+        if (r == LIBDEFLATE_INSUFFICIENT_SPACE) return BENCH_NEED_MORE;                       \
         if (r != LIBDEFLATE_SUCCESS) {                                                        \
             *err = "libdeflate_" #NAME "_decompress";                                         \
             return 1;                                                                         \
@@ -140,6 +143,7 @@ static const bench_codec_t CODECS[] = {
  * created once and reused, as zstd recommends for many small inputs. The gap to
  * c-baseline is the setup a reusable context would save compress-utils. */
 #include "zstd.h"
+#include "zstd_errors.h"
 #define IMPL "libzstd-ctx"
 
 static ZSTD_CCtx* zc;
@@ -168,13 +172,26 @@ static int zx_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     (void)c;
     if (!zd) zd = ZSTD_createDCtx();
     size_t r = ZSTD_decompressDCtx(zd, out, *out_len, in, in_len);
-    if (ZSTD_isError(r)) { *err = ZSTD_getErrorName(r); return 1; }
+    if (ZSTD_isError(r)) {
+        if (ZSTD_getErrorCode(r) == ZSTD_error_dstSize_tooSmall) return BENCH_NEED_MORE;
+        *err = ZSTD_getErrorName(r);
+        return 1;
+    }
     *out_len = r;
     return 0;
 }
 
+/* The frame header's content size; unknown or an error counts as none. */
+static int zx_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len, size_t* out_size) {
+    (void)c;
+    unsigned long long n = ZSTD_getFrameContentSize(in, in_len);
+    if (n == ZSTD_CONTENTSIZE_UNKNOWN || n == ZSTD_CONTENTSIZE_ERROR) return 1;
+    *out_size = (size_t)n;
+    return 0;
+}
+
 static const bench_codec_t CODECS[] = {
-    {"zstd", IMPL, 0, zx_bound, zx_compress, zx_decompress, NULL, NULL, 0, 0},
+    {"zstd", IMPL, 0, zx_bound, zx_compress, zx_decompress, NULL, NULL, 0, 0, zx_hint},
 };
 
 /* ========================================================================= */
@@ -216,11 +233,12 @@ static int lf_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     (void)c;
     uint64_t memlimit = UINT64_MAX;
     size_t in_pos = 0, out_pos = 0;
-    if (lzma_stream_buffer_decode(&memlimit, 0, NULL, in, &in_pos, in_len, out, &out_pos,
-                                  *out_len) != LZMA_OK) {
-        *err = "lzma_stream_buffer_decode";
-        return 1;
-    }
+    lzma_ret r = lzma_stream_buffer_decode(&memlimit, 0, NULL, in, &in_pos, in_len, out, &out_pos,
+                                           *out_len);
+    /* LZMA_BUF_ERROR means the output was too small (the API resets out_pos on
+     * error, so it can't tell that from truncated input; ours never is). */
+    if (r == LZMA_BUF_ERROR) return BENCH_NEED_MORE;
+    if (r != LZMA_OK) { *err = "lzma_stream_buffer_decode"; return 1; }
     *out_len = out_pos;
     return 0;
 }
@@ -276,7 +294,9 @@ static int isal_decompress_fmt(const uint8_t* in, size_t in_len, uint8_t* out, s
     st.next_out = out;
     st.avail_out = (uint32_t)*out_len;
     st.crc_flag = crc_flag;
-    if (isal_inflate_stateless(&st) != ISAL_DECOMP_OK) { *err = "isal_inflate_stateless"; return 1; }
+    int r = isal_inflate_stateless(&st);
+    if (r == ISAL_OUT_OVERFLOW) return BENCH_NEED_MORE;
+    if (r != ISAL_DECOMP_OK) { *err = "isal_inflate_stateless"; return 1; }
     *out_len = st.total_out;
     return 0;
 }
@@ -317,18 +337,21 @@ static int isal_dstream_fmt(const uint8_t* in, size_t in_len, uint8_t* out, size
     struct inflate_state st;
     isal_inflate_init(&st);
     st.crc_flag = crc_flag;
-    st.next_out = out;
-    st.avail_out = (uint32_t)*out_len;
+    size_t win = *out_len, total = 0;
     for (size_t off = 0; off < in_len && st.block_state != ISAL_BLOCK_FINISH; off += chunk) {
         size_t n = in_len - off < chunk ? in_len - off : chunk;
         st.next_in = (uint8_t*)in + off;
         st.avail_in = (uint32_t)n;
-        while (st.avail_in > 0 && st.block_state != ISAL_BLOCK_FINISH) {
+        do {
+            st.next_out = out;
+            st.avail_out = (uint32_t)win;
             if (isal_inflate(&st) != ISAL_DECOMP_OK) { *err = "isal_inflate"; return 1; }
-        }
+            bench_sink_write(out, win - st.avail_out);
+            total += win - st.avail_out;
+        } while ((st.avail_in > 0 || st.avail_out == 0) && st.block_state != ISAL_BLOCK_FINISH);
     }
     if (st.block_state != ISAL_BLOCK_FINISH) { *err = "isal_inflate: truncated"; return 1; }
-    *out_len = st.total_out;
+    *out_len = total;
     return 0;
 }
 
@@ -405,11 +428,9 @@ static int bz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
                          size_t* out_len, const char** err) {
     (void)c;
     unsigned int dl = (unsigned int)*out_len;
-    if (BZ2_bzBuffToBuffDecompress((char*)out, &dl, (char*)in, (unsigned int)in_len, 0, 0) !=
-        BZ_OK) {
-        *err = "BZ2_bzBuffToBuffDecompress";
-        return 1;
-    }
+    int r = BZ2_bzBuffToBuffDecompress((char*)out, &dl, (char*)in, (unsigned int)in_len, 0, 0);
+    if (r == BZ_OUTBUFF_FULL) return BENCH_NEED_MORE;
+    if (r != BZ_OK) { *err = "BZ2_bzBuffToBuffDecompress"; return 1; }
     *out_len = dl;
     return 0;
 }
@@ -451,22 +472,24 @@ static int bz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, 
     bz_stream s;
     memset(&s, 0, sizeof(s));
     if (BZ2_bzDecompressInit(&s, 0, 0) != BZ_OK) { *err = "BZ2_bzDecompressInit"; return 1; }
-    size_t cap = *out_len;
-    s.next_out = (char*)out;
-    s.avail_out = (unsigned int)cap;
+    size_t win = *out_len, total = 0;
     int rc = 0, done = 0;
     for (size_t off = 0; off < in_len && !rc && !done; off += chunk) {
         size_t n = in_len - off < chunk ? in_len - off : chunk;
         s.next_in = (char*)(uintptr_t)(in + off);
         s.avail_in = (unsigned int)n;
-        while (s.avail_in > 0) {
+        do {
+            s.next_out = (char*)out;
+            s.avail_out = (unsigned int)win;
             int r = BZ2_bzDecompress(&s);
+            bench_sink_write(out, win - s.avail_out);
+            total += win - s.avail_out;
             if (r == BZ_STREAM_END) { done = 1; break; }
             if (r != BZ_OK) { *err = "BZ2_bzDecompress"; rc = 1; break; }
-        }
+        } while (s.avail_in > 0 || s.avail_out == 0);
     }
     if (!rc && !done) { *err = "BZ2_bzDecompress: truncated"; rc = 1; }
-    if (!rc) *out_len = cap - s.avail_out;
+    if (!rc) *out_len = total;
     BZ2_bzDecompressEnd(&s);
     return rc;
 }
@@ -561,6 +584,9 @@ static int xz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     SRes r = XzUnpacker_CodeFull(&u, out, &dl, in, &sl, CODER_FINISH_END, &status);
     int ok = r == SZ_OK && XzUnpacker_IsStreamWasFinished(&u);
     XzUnpacker_Free(&u);
+    /* No error code says "output too small": with FINISH_END, reaching the limit
+     * before the stream ends is reported as a data error. */
+    if (!ok && dl == *out_len) return BENCH_NEED_MORE;
     if (!ok) { *err = "XzUnpacker_CodeFull"; return 1; }
     *out_len = dl;
     return 0;
@@ -572,7 +598,9 @@ static int xz_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, 
     return xz_encode(in, in_len, out, out_len, level, chunk ? chunk : 64 * 1024, err);
 }
 
-/* Streaming decode: XzUnpacker_Code over chunk-sized input pieces. */
+/* Streaming decode: XzUnpacker_Code over chunk-sized input pieces, into the
+ * bounded window, each produced run going to the sink. FINISH_ANY: with more
+ * output to come, FINISH_END would treat reaching the window's end as an error. */
 static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
                       size_t* out_len, size_t chunk, const char** err) {
     (void)c;
@@ -580,30 +608,33 @@ static int xz_dstream(const bench_codec_t* c, const uint8_t* in, size_t in_len, 
     CXzUnpacker u;
     XzUnpacker_Construct(&u, &g_Alloc);
     XzUnpacker_Init(&u);
-    size_t cap = *out_len, opos = 0;
+    size_t win = *out_len, total = 0;
     int rc = 0;
     for (size_t off = 0; off < in_len && !rc; off += chunk) {
         size_t n = in_len - off < chunk ? in_len - off : chunk;
-        /* A call can stop early (at a block or stream boundary): keep feeding
-         * the rest of the chunk until it's consumed or nothing moves. */
-        for (size_t used = 0; used < n && !rc;) {
-            SizeT sl = n - used, dl = cap - opos;
+        /* A call can stop early (at a block or stream boundary, or a full
+         * window): keep going until the chunk is consumed and the window wasn't
+         * filled, or nothing moves. */
+        size_t used = 0;
+        SizeT dl;
+        do {
+            SizeT sl = n - used;
+            dl = win;
             ECoderStatus status;
-            /* FINISH_END: once the output is full, still read the stream's index
-             * and footer (the caller's buffer is exactly the decoded size). */
-            if (XzUnpacker_Code(&u, out + opos, &dl, in + off + used, &sl, off + n == in_len,
-                                CODER_FINISH_END, &status) != SZ_OK ||
-                (sl == 0 && dl == 0)) {
+            if (XzUnpacker_Code(&u, out, &dl, in + off + used, &sl, off + n == in_len,
+                                CODER_FINISH_ANY, &status) != SZ_OK ||
+                (sl == 0 && dl == 0 && used < n)) {
                 *err = "XzUnpacker_Code";
                 rc = 1;
             }
+            bench_sink_write(out, dl);
+            total += dl;
             used += sl;
-            opos += dl;
-        }
+        } while (!rc && (used < n || dl == win));
     }
     if (!rc && !XzUnpacker_IsStreamWasFinished(&u)) { *err = "xz: truncated"; rc = 1; }
     XzUnpacker_Free(&u);
-    if (!rc) *out_len = opos;
+    if (!rc) *out_len = total;
     return rc;
 }
 
@@ -637,15 +668,20 @@ static int sn_compress(const bench_codec_t* c, const uint8_t* in, size_t in_len,
 static int sn_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_len, uint8_t* out,
                          size_t* out_len, const char** err) {
     (void)c;
-    if (snappy_uncompress((const char*)in, in_len, (char*)out, out_len) != SNAPPY_OK) {
-        *err = "snappy_uncompress";
-        return 1;
-    }
+    snappy_status r = snappy_uncompress((const char*)in, in_len, (char*)out, out_len);
+    if (r == SNAPPY_BUFFER_TOO_SMALL) return BENCH_NEED_MORE;
+    if (r != SNAPPY_OK) { *err = "snappy_uncompress"; return 1; }
     return 0;
 }
 
+/* The length varint at the start of the stream. */
+static int sn_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len, size_t* out_size) {
+    (void)c;
+    return snappy_uncompressed_length((const char*)in, in_len, out_size) != SNAPPY_OK;
+}
+
 static const bench_codec_t CODECS[] = {
-    {"snappy", IMPL, 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0},
+    {"snappy", IMPL, 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0, sn_hint},
 };
 
 /* ========================================================================= */

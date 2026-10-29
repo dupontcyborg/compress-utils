@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # The ecosystem comparison, end to end, on this machine: compress-utils against the
-# alternatives in every binding. One large file (dickens, 10 MB of text) in one-shot and
-# streaming mode, and one small-message tier (dickens in 4 KB blocks), at all ten
-# compress-utils levels, each competitor at the native level ours maps to (levels.json).
+# alternatives in every binding, at all ten compress-utils levels, each competitor at the
+# native level ours maps to (levels.json). Five combinations: one-shot on dickens (10 MB of
+# text), xml (repetitive) and x-ray (hard to compress); streaming on dickens; and a
+# small-message tier (dickens in 4 KB blocks).
 #
 #   benchmarks/run_ecosystem.sh                    # every stage
 #   benchmarks/run_ecosystem.sh c python           # just these stages
@@ -33,15 +34,16 @@ if [ "$1" = "--list" ]; then echo "c python go rust js-node js-bun"; exit 0; fi
 STAGES=${*:-"c python go rust js-node js-bun"}
 mkdir -p "$OUT"
 
-# run NAME DRIVERS ALGOS LEVELS [runner args]: the large file at 1 sample, the small
-# messages at 3 (each sample is one pass over all 256 messages), one warmup each.
+# run NAME DRIVERS ALGOS LEVELS [runner args]: the large files at 1 sample, the small
+# messages at 3 (each sample is one pass over all 256 messages), one warmup each. The
+# extra files run one-shot only.
 run() {
     name=$1; drivers=$2; algos=$3; levels=$4; shift 4
-    for part in "ecosystem-large 1" "ecosystem-small 3"; do
-        tier=${part% *}; samples=${part#* }
+    for part in "ecosystem-large 1 oneshot,stream" "ecosystem-extra 1 oneshot" "ecosystem-small 3 oneshot,stream"; do
+        set -- $part "$@"; tier=$1; samples=$2; modes=$3; shift 3
         echo "[$(date +%H:%M)] $name: $tier" >&2
         python3 benchmarks/runner.py --drivers "$drivers" --algos "$algos" --levels "$levels" \
-            --modes oneshot,stream --corpus "$tier" --samples "$samples" "$@" \
+            --modes "$modes" --corpus "$tier" --samples "$samples" "$@" \
             > "$OUT/$name-$tier.log" 2>&1 || echo "[run_ecosystem] $name $tier FAILED, see $OUT/$name-$tier.log" >&2
     done
 }

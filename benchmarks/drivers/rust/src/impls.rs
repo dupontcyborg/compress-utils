@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 
 use compress_utils::{
-    compress, decompress, decompress_with_capacity, Algorithm, Compressor, Decompressor,
+    compress, decompress, Algorithm, Compressor, Decompressor,
 };
 
 /// Streaming and one-shot chunk size; set once by `main` from BENCH_CHUNK.
@@ -16,8 +16,10 @@ fn chunk() -> usize {
 }
 
 type CompressFn = Box<dyn Fn(&[u8], i32) -> io::Result<Vec<u8>>>;
-/// Gets the decompressed size when the caller knows it (message sets).
-type DecompressFn = Box<dyn Fn(&[u8], Option<usize>) -> io::Result<Vec<u8>>>;
+/// Never told the decompressed size.
+type DecompressFn = Box<dyn Fn(&[u8]) -> io::Result<Vec<u8>>>;
+/// Decodes through the streaming API into the writer, in reads of a fixed window.
+type DStreamFn = Box<dyn Fn(&[u8], &mut dyn Write) -> io::Result<()>>;
 
 /// One implementation of one format. A missing `compress` marks a decode-only
 /// library (the driver then produces its input with compress-utils, untimed).
@@ -25,7 +27,7 @@ pub struct Codec {
     pub compress: Option<CompressFn>,
     pub decompress: DecompressFn,
     pub cstream: Option<CompressFn>,
-    pub dstream: Option<Box<dyn Fn(&[u8]) -> io::Result<Vec<u8>>>>,
+    pub dstream: Option<DStreamFn>,
     /// Native level range; None = levels.json's.
     pub levels: Option<(i32, i32)>,
     pub levelless: bool,
@@ -66,11 +68,24 @@ fn write_chunked<W: Write>(w: &mut W, data: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-/// Reads a decoder to the end, into a buffer sized up front when the size is known.
-fn read_all<R: Read>(mut r: R, size: Option<usize>) -> io::Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(size.map_or(0, |n| n + 1));
+/// Reads a decoder to the end.
+fn read_all<R: Read>(mut r: R) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
     r.read_to_end(&mut out)?;
     Ok(out)
+}
+
+/// Reads a decoder to the end through one fixed window, handing each read to `w`.
+fn drain<R: Read>(mut r: R, w: &mut dyn Write) -> io::Result<()> {
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) => return Ok(()),
+            Ok(n) => w.write_all(&buf[..n])?,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 type MkDecoder = for<'a> fn(&'a [u8]) -> io::Result<Box<dyn Read + 'a>>;
@@ -100,9 +115,9 @@ where
     };
     Codec {
         compress: Some(enc(true)),
-        decompress: Box::new(move |c, size| read_all(mk_dec(c)?, size)),
+        decompress: Box::new(move |c| read_all(mk_dec(c)?)),
         cstream: Some(enc(false)),
-        dstream: Some(Box::new(move |c| read_all(mk_dec(c)?, None))),
+        dstream: Some(Box::new(move |c, w| drain(mk_dec(c)?, w))),
         levels: None,
         levelless: false,
     }
@@ -113,18 +128,15 @@ where
 fn compress_utils_impl() -> Impl {
     let codec = |algo: Algorithm| Codec {
         compress: Some(Box::new(move |d, l| compress(algo, d, l).map_err(io::Error::from))),
-        decompress: Box::new(move |c, size| match size {
-            Some(n) => decompress_with_capacity(algo, c, n).map_err(io::Error::from),
-            None => decompress(algo, c).map_err(io::Error::from),
-        }),
+        decompress: Box::new(move |c| decompress(algo, c).map_err(io::Error::from)),
         cstream: Some(Box::new(move |d, l| {
             let mut enc = Compressor::new(Vec::new(), algo, l).map_err(io::Error::from)?;
             write_chunked(&mut enc, d)?;
             enc.finish()
         })),
-        dstream: Some(Box::new(move |c| {
+        dstream: Some(Box::new(move |c, w| {
             let dec = Decompressor::new(c, algo).map_err(io::Error::from)?;
-            read_all(dec, None)
+            drain(dec, w)
         })),
         levels: None,
         levelless: false,
@@ -176,10 +188,7 @@ fn zstd_impl() -> Impl {
     );
     // One-shot uses the bulk API, as its docs recommend; frames carry the content size.
     c.compress = Some(Box::new(|d, l| zstd::bulk::compress(d, l)));
-    c.decompress = Box::new(|c, size| match size {
-        Some(n) => zstd::bulk::decompress(c, n),
-        None => zstd::stream::decode_all(c),
-    });
+    c.decompress = Box::new(|c| zstd::stream::decode_all(c));
     c.levels = Some((1, 22));
     Impl { version: "zstd crate 0.14 (libzstd 1.5.7)".into(), codecs: [("zstd", c)].into_iter().collect() }
 }
@@ -222,9 +231,9 @@ fn lz4_flex_impl() -> Impl {
     };
     let c = Codec {
         compress: Some(enc(true)),
-        decompress: Box::new(|c, size| read_all(FrameDecoder::new(c), size)),
+        decompress: Box::new(|c| read_all(FrameDecoder::new(c))),
         cstream: Some(enc(false)),
-        dstream: Some(Box::new(|c| read_all(FrameDecoder::new(c), None))),
+        dstream: Some(Box::new(|c, w| drain(FrameDecoder::new(c), w))),
         levels: None,
         levelless: true,
     };
@@ -238,7 +247,7 @@ fn snap_impl() -> Impl {
     // framing format, a different one, so no streaming.
     let c = Codec {
         compress: Some(Box::new(|d, _| snap::raw::Encoder::new().compress_vec(d).map_err(err))),
-        decompress: Box::new(|c, _| snap::raw::Decoder::new().decompress_vec(c).map_err(err)),
+        decompress: Box::new(|c| snap::raw::Decoder::new().decompress_vec(c).map_err(err)),
         cstream: None,
         dstream: None,
         levels: None,

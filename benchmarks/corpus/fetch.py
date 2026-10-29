@@ -228,6 +228,14 @@ def resolve_ecosystem_large() -> list[dict]:
                     "Silesia: dickens (ecosystem comparison, large)")]
 
 
+def resolve_ecosystem_extra() -> list[dict]:
+    """The two files that bracket dickens: Silesia's xml (5 MB, highly repetitive) and x-ray
+    (8 MB, hard to compress). One-shot only; they check that dickens' text results hold."""
+    return [_ensure(name, f"{SILESIA_BASE}/{name}.zip", "ecosystem-extra",
+                    f"Silesia: {name} (ecosystem comparison, extra)")
+            for name in ("xml", "x-ray")]
+
+
 def resolve_ecosystem_small() -> list[dict]:
     """The small-message side of the ecosystem comparison: dickens in 4 KB blocks."""
     src = resolve_ecosystem_large()[0]

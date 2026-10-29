@@ -9,10 +9,9 @@
 // the same timing loop, as a consumer would call it (impls.go):
 //
 //	oneshot  compress, then decompress without being told the size
-//	msgset   one compress call per message, each decompressed with its known size
-//	         through the library's fastest path for that
-//	stream   the input fed in BENCH_CHUNK pieces through the library's streaming API;
-//	         skipped when it has none
+//	msgset   one compress call per message, each decompressed without being told its size
+//	stream   the input fed in BENCH_CHUNK pieces through the library's streaming API,
+//	         decompressed output counted and discarded; skipped when it has none
 //
 // Competitors run at native levels (the runner translates through levels.json, or
 // sweeps the range each codec declares) and are set to compress-utils' wire format
@@ -181,11 +180,24 @@ func (j job) run(mode, path string) (map[string]any, error) {
 			return nil, err
 		}
 	}
-	dec := func() ([]byte, error) { return j.codec.Decompress(comp, -1) }
+	var out []byte
+	var dT []int64
 	if stream {
-		dec = func() ([]byte, error) { return j.codec.DStream(comp) }
+		_, dT, err = timed(func() (int, error) {
+			var cw countWriter
+			err := j.codec.DStream(comp, &cw)
+			return cw.n, err
+		})
+		if err == nil { // untimed, for verification
+			var buf bytes.Buffer
+			buf.Grow(len(data))
+			if err = j.codec.DStream(comp, &buf); err == nil {
+				out = buf.Bytes()
+			}
+		}
+	} else {
+		out, dT, err = timed(func() ([]byte, error) { return j.codec.Decompress(comp) })
 	}
-	out, dT, err := timed(dec)
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +256,8 @@ func (j job) runMsgset(path string) (map[string]any, error) {
 		}
 	}
 	_, dT, err := timed(func() (struct{}, error) {
-		for i, m := range msgs {
-			if _, err := j.codec.Decompress(comp[i], len(m)); err != nil {
+		for i := range msgs {
+			if _, err := j.codec.Decompress(comp[i]); err != nil {
 				return struct{}{}, err
 			}
 		}
@@ -258,7 +270,7 @@ func (j job) runMsgset(path string) (map[string]any, error) {
 	verified := true
 	inBytes, outBytes := 0, 0
 	for i, m := range msgs {
-		dec, err := j.codec.Decompress(comp[i], len(m))
+		dec, err := j.codec.Decompress(comp[i])
 		verified = verified && err == nil && bytes.Equal(dec, m)
 		inBytes += len(m)
 		outBytes += len(comp[i])
@@ -268,7 +280,7 @@ func (j job) runMsgset(path string) (map[string]any, error) {
 		c0, d0 = comp[0], msgs[0]
 	}
 	return j.record("msgset", path, inBytes, outBytes, cT, dT, verified, c0, d0,
-		map[string]any{"messages": len(msgs), "decompress_size_known": true}), nil
+		map[string]any{"messages": len(msgs), "decompress_size_known": false}), nil
 }
 
 func emit(obj map[string]any) {

@@ -13,10 +13,11 @@
  * on V8 and on JavaScriptCore. Records carry `runtime`.
  *
  *   oneshot  one compress call, then one decompress call
- *   msgset   one synchronous call per message, each decompressed with its known
- *            size through the library's fastest path for that
+ *   msgset   one synchronous call per message, each decompressed without being
+ *            told its size
  *   stream   the input fed in BENCH_CHUNK pieces through the library's
- *            streaming API; skipped for libraries without one
+ *            streaming API, decompressed output counted and discarded; skipped
+ *            for libraries without one
  *
  * Competitors are limited to what runs in browsers, edge runtimes and Deno as
  * well as Node and Bun: pure JavaScript and WASM libraries, plus CompressionStream,
@@ -131,13 +132,27 @@ function readMsgset(path) {
 
 /* ---- implementations -------------------------------------------------------------
  *
- * A codec: { compress(data, level), decompress(comp, size | null) }, synchronous;
- * optional async cstream(data, level) and dstream(comp); `levels` [lo, hi] when the
+ * A codec: { compress(data, level), decompress(comp) }, synchronous, never
+ * told the size; optional async cstream(data, level) and dstream(comp, keep), which
+ * returns the output when `keep`, else only its byte count; `levels` [lo, hi] when the
  * library declares a native range, `levelless` when the format has none; decodeOnly
  * { produce(data, level) } for libraries that only decompress. A codec without
  * `compress` is stream-only (CompressionStream). Level 0 is what the runner sends a
  * levelless codec.
  */
+
+/* Collects decoded chunks when `keep`, else counts and drops them. */
+function sink(keep) {
+    const parts = [];
+    let n = 0;
+    return {
+        add(chunk) {
+            if (keep) parts.push(chunk);
+            else n += chunk.length;
+        },
+        done: () => (keep ? concat(parts) : n),
+    };
+}
 
 async function implCompressUtils() {
     const pkg = JSON.parse(readFileSync(resolve(REPO, "bindings/wasm/package.json"), "utf8"));
@@ -153,7 +168,7 @@ async function implCompressUtils() {
         codecs[algo] = {
             async: false,
             compress: (d, level) => mod.compressSync(d, { level }),
-            decompress: (c, n) => mod.decompressSync(c, n == null ? {} : { expectedSize: n }),
+            decompress: (c) => mod.decompressSync(c),
             cstream: async (d, level) => {
                 const cs = await mod.createCompressStream({ level });
                 try {
@@ -164,12 +179,13 @@ async function implCompressUtils() {
                     cs.destroy();
                 }
             },
-            dstream: async (c) => {
+            dstream: async (c, keep) => {
                 const ds = await mod.createDecompressStream();
+                const out = sink(keep);
                 try {
-                    const parts = chunksOf(c).map((p) => ds.write(p));
-                    parts.push(ds.finish());
-                    return concat(parts);
+                    for (const p of chunksOf(c)) out.add(ds.write(p));
+                    out.add(ds.finish());
+                    return out.done();
                 } finally {
                     ds.destroy();
                 }
@@ -182,22 +198,22 @@ async function implCompressUtils() {
 
 async function implCompressionStream() {
     /* The browser standard: async, stream-only, no levels. */
-    const run = async (Ctor, format, data) => {
+    const run = async (Ctor, format, data, keep = true) => {
         const t = new Ctor(format);
         const w = t.writable.getWriter();
         const r = t.readable.getReader();
-        const out = [];
+        const out = sink(keep);
         const reading = (async () => {
             for (;;) {
                 const { done, value } = await r.read();
                 if (done) break;
-                out.push(value);
+                out.add(value);
             }
         })();
         for (const ch of chunksOf(data)) await w.write(ch);
         await w.close();
         await reading;
-        return concat(out);
+        return out.done();
     };
     const codecs = {};
     for (const [algo, format] of [["zlib", "deflate"], ["gzip", "gzip"], ["deflate", "deflate-raw"], ["brotli", "brotli"]]) {
@@ -209,7 +225,7 @@ async function implCompressionStream() {
         codecs[algo] = {
             levelless: true,
             cstream: (d) => run(CompressionStream, format, d),
-            dstream: (x) => run(DecompressionStream, format, x),
+            dstream: (x, keep) => run(DecompressionStream, format, x, keep),
         };
     }
     return { version: `${RUNTIME} ${process.versions.bun || process.versions.node} (web standard)`, codecs };
@@ -217,20 +233,20 @@ async function implCompressionStream() {
 
 async function implFflate() {
     const f = await import("fflate");
-    const push = (Stream, opts, data, final) => {
-        const parts = [];
+    const push = (Stream, opts, data, final, keep = true) => {
+        const out = sink(keep);
         const s = new Stream(opts);
-        s.ondata = (chunk) => parts.push(chunk); // the sync classes' signature: (chunk, final)
+        s.ondata = (chunk) => out.add(chunk); // the sync classes' signature: (chunk, final)
         const cs = chunksOf(data);
         cs.forEach((ch, i) => s.push(ch, final && i === cs.length - 1));
         if (!final) s.push(new Uint8Array(0), true);
-        return concat(parts);
+        return out.done();
     };
     const fam = (cSync, dSync, CStream, DStream) => ({
         compress: (d, level) => cSync(d, { level }),
-        decompress: (x, n) => (n ? dSync(x, { out: new Uint8Array(n) }) : dSync(x)),
+        decompress: (x) => dSync(x),
         cstream: (d, level) => push(CStream, { level }, d, false),
-        dstream: (x) => push(DStream, {}, x, true),
+        dstream: (x, keep) => push(DStream, {}, x, true, keep),
         levels: [0, 9],
     });
     return { version: libVersion("fflate"), codecs: {
@@ -249,11 +265,20 @@ async function implPako() {
         if (s.err) throw new Error(s.msg);
         return s.result;
     };
+    const dstream = (opts, x, keep) => {
+        const out = sink(keep);
+        const s = new p.Inflate(opts);
+        s.onData = (chunk) => out.add(chunk); // instead of pako's own accumulation
+        const cs = chunksOf(x);
+        cs.forEach((ch, i) => s.push(ch, i === cs.length - 1));
+        if (s.err) throw new Error(s.msg);
+        return out.done();
+    };
     const fam = (c, d, copts, dopts) => ({
         compress: (data, level) => c(data, { level }),
         decompress: (x) => d(x),
         cstream: (data, level) => stream(p.Deflate, { level, ...copts }, data),
-        dstream: (x) => stream(p.Inflate, dopts, x),
+        dstream: (x, keep) => dstream(dopts, x, keep),
         levels: [0, 9],
     });
     return { version: libVersion("pako"), codecs: {
@@ -292,12 +317,14 @@ async function implBrotliWasm() {
             s.free();
             return concat(parts);
         },
-        dstream: async (x) => {
+        dstream: async (x, keep) => {
             const s = new b.DecompressStream();
-            const parts = [];
-            for (const ch of chunksOf(x)) parts.push(...drain((i) => s.decompress(i, OUT), ch).parts);
+            const out = sink(keep);
+            for (const ch of chunksOf(x)) {
+                for (const part of drain((i) => s.decompress(i, OUT), ch).parts) out.add(part);
+            }
             s.free();
-            return concat(parts);
+            return out.done();
         },
         levels: [0, 11],
     } } };
@@ -319,13 +346,13 @@ async function implFzstd() {
     await z.init();
     return { version: libVersion("fzstd"), codecs: { zstd: {
         decodeOnly: { produce: (d, level) => z.compress(d, level) },
-        decompress: (x, n) => f.decompress(x, n ? new Uint8Array(n) : undefined),
-        dstream: async (x) => {
-            const parts = [];
-            const d = new f.Decompress((chunk) => parts.push(chunk));
+        decompress: (x) => f.decompress(x),
+        dstream: async (x, keep) => {
+            const out = sink(keep);
+            const d = new f.Decompress((chunk) => out.add(chunk));
             const cs = chunksOf(x);
             cs.forEach((ch, i) => d.push(ch, i === cs.length - 1));
-            return concat(parts);
+            return out.done();
         },
         levels: [1, 22],
     } } };
@@ -335,14 +362,20 @@ async function implXzDecompress() {
     const { XzReadableStream } = (await import("xz-decompress")).default; // a CJS bundle
     const xz = await loadModule("xz");
     await xz.preload();
-    const decode = async (x) => {
+    const decode = async (x, keep) => {
         const src = new ReadableStream({
             start(ctl) {
                 for (const ch of chunksOf(x)) ctl.enqueue(ch);
                 ctl.close();
             },
         });
-        return new Uint8Array(await new Response(new XzReadableStream(src)).arrayBuffer());
+        const reader = new XzReadableStream(src).getReader();
+        const out = sink(keep);
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) return out.done();
+            out.add(value);
+        }
     };
     return { version: libVersion("xz-decompress"), codecs: { xz: {
         // compress-utils' own xz makes the input; xz-decompress is async and stream-only.
@@ -357,7 +390,7 @@ async function implLz4js() {
     return { version: libVersion("lz4js"), codecs: { lz4: {
         levelless: true,
         compress: (d) => l.compress(d),
-        decompress: (x, n) => (n ? l.decompress(x, n) : l.decompress(x)),
+        decompress: (x) => l.decompress(x),
     } } };
 }
 
@@ -366,7 +399,7 @@ async function implSnappyjs() {
     return { version: libVersion("snappyjs"), codecs: { snappy: {
         levelless: true,
         compress: (d) => s.compress(d),
-        decompress: (x, n) => (n ? s.uncompress(x, n) : s.uncompress(x)),
+        decompress: (x) => s.uncompress(x),
     } } };
 }
 
@@ -461,8 +494,9 @@ async function runJob(impl, algo, codec, level, mode, path) {
         ({ out: comp, times: cT } = await timedAsync(
             () => (useStream ? codec.cstream(data, level) : codec.compress(data, level)), SAMPLES));
     }
-    const decode = useStream ? () => codec.dstream(comp) : () => codec.decompress(comp, null);
-    const { out: dec, times: dT } = await timedAsync(decode, SAMPLES);
+    const decode = useStream ? () => codec.dstream(comp, false) : () => codec.decompress(comp);
+    const { out, times: dT } = await timedAsync(decode, SAMPLES);
+    const dec = useStream ? await codec.dstream(comp, true) : out; // untimed, for verification
 
     const extra = {};
     if (decodeOnly) extra.decode_only = true;
@@ -486,11 +520,11 @@ async function runMsgsetJob(impl, algo, codec, level, path) {
         ({ out: comp, times: cT } = timedSync(() => msgs.map((m) => codec.compress(m, level)), SAMPLES));
     }
     const { times: dT } = timedSync(() => {
-        for (let i = 0; i < msgs.length; i++) codec.decompress(comp[i], msgs[i].length);
+        for (let i = 0; i < msgs.length; i++) codec.decompress(comp[i]);
     }, SAMPLES);
-    const verified = msgs.every((m, i) => bytesEqual(codec.decompress(comp[i], m.length), m));
+    const verified = msgs.every((m, i) => bytesEqual(codec.decompress(comp[i]), m));
 
-    const extra = { messages: msgs.length, decompress_size_known: true };
+    const extra = { messages: msgs.length, decompress_size_known: false };
     if (decodeOnly) extra.decode_only = true;
     const ok = msgs.length ? await interop(impl, algo, comp[0], msgs[0]) : null;
     if (ok !== null) extra.interop = ok;

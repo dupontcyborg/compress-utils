@@ -37,11 +37,20 @@ struct bench_codec;
 
 /* compress/decompress return 0 on success (with *out_len set to bytes
  * written) and non-zero on failure, optionally setting *err to a static
- * message. The *_stream variants take a chunk size (the input is fed in
- * chunk-sized pieces, exercising the streaming drain protocol) and may be
- * NULL if the driver doesn't implement streaming for that codec yet.
+ * message. decompress gets *out_len = the capacity of `out` and must return
+ * BENCH_NEED_MORE (not failure) when the buffer was too small and nothing else
+ * went wrong; bench_decompress_auto then retries with a larger one.
+ * decompress_stream is different: `out` is a bounded window (*out_len = its
+ * size) that the codec decodes into repeatedly, handing every produced run to
+ * bench_sink_write(); on return *out_len = total bytes produced. The *_stream
+ * variants take a chunk size (the input is fed in chunk-sized pieces,
+ * exercising the streaming drain protocol) and may be NULL if the driver
+ * doesn't implement streaming for that codec yet.
+ * size_hint is optional: it returns 0 and the decompressed size when the
+ * compressed bytes record it (frame header, …), non-zero otherwise.
  * native_id is impl-private scratch (the compress-utils driver stashes its
  * algorithm enum there; the native driver ignores it). */
+#define BENCH_NEED_MORE 2
 typedef struct bench_codec {
     const char* name; /* algorithm: "zstd", "brotli", … */
     const char* impl; /* implementation tag for the record */
@@ -60,6 +69,8 @@ typedef struct bench_codec {
      * runner can sweep it. Both 0 (the default when omitted): the range in
      * benchmarks/levels.json applies. */
     int level_min, level_max;
+    int (*size_hint)(const struct bench_codec*, const uint8_t* in, size_t in_len,
+                     size_t* out_size);
 } bench_codec_t;
 
 /* ---- timing -------------------------------------------------------------- */
@@ -136,16 +147,73 @@ static const bench_codec_t* bench_find(const bench_codec_t* codecs, size_t n,
     return NULL;
 }
 
+/* ---- decompress sizing --------------------------------------------------- */
+
+/* Whole-buffer decompress is never told the original size. The buffer starts at
+ * what the codec learns from the compressed bytes (size_hint), else
+ * max(64 KiB, 4 * in_len), and doubles on BENCH_NEED_MORE. Such APIs have to
+ * restart from scratch on a miss; that restart cost is intentionally part of
+ * the timed call. The physical buffer is the caller's and is kept between
+ * calls (grown only when needed), so malloc is not timed after the first pass. */
+typedef struct { uint8_t* p; size_t cap; } bench_dbuf_t;
+
+static uint64_t bench_retries; /* BENCH_NEED_MORE restarts so far */
+static uint64_t bench_misses;  /* decompress calls that had no usable size hint so far */
+static uint64_t bench_last_misses; /* misses during the last timed pass */
+
+#define BENCH_MIN_CAP ((size_t)64 * 1024)
+#define BENCH_HINT_MAX ((size_t)1 << 30)
+
+static int bench_decompress_auto(const bench_codec_t* codec, const uint8_t* in, size_t in_len,
+                                 bench_dbuf_t* buf, size_t* out_len, const char** err) {
+    size_t cap = 0;
+    if (!codec->size_hint || codec->size_hint(codec, in, in_len, &cap) || cap > BENCH_HINT_MAX) {
+        cap = 4 * in_len > BENCH_MIN_CAP ? 4 * in_len : BENCH_MIN_CAP;
+        bench_misses++;
+    }
+    for (;;) {
+        if (buf->cap < cap || !buf->p) {
+            free(buf->p);
+            buf->cap = cap ? cap : 1;
+            buf->p = (uint8_t*)malloc(buf->cap);
+            if (!buf->p) { buf->cap = 0; *err = "out of memory"; return 1; }
+        }
+        size_t n = cap;
+        int r = codec->decompress(codec, in, in_len, buf->p, &n, err);
+        if (!r) { *out_len = n; return 0; }
+        if (r != BENCH_NEED_MORE) return r;
+        if (cap > ((size_t)1 << 31)) { *err = "output exceeds 4 GiB"; return 1; }
+        bench_retries++;
+        cap *= 2;
+    }
+}
+
+
+/* Streaming decompress hands every produced run to the sink instead of keeping
+ * it. A timed pass only counts (it must not touch the bytes); the verification
+ * pass compares each run against the original. */
+typedef struct { const uint8_t* ref; size_t ref_len, pos; int ok, verify; } bench_sink_t;
+static bench_sink_t bench_sink;
+
+static inline void bench_sink_write(const uint8_t* p, size_t n) {
+    if (bench_sink.verify) {
+        if (n > bench_sink.ref_len - bench_sink.pos || memcmp(p, bench_sink.ref + bench_sink.pos, n)) {
+            bench_sink.ok = 0;
+        }
+    }
+    bench_sink.pos += n;
+}
+
 /* ---- result record ------------------------------------------------------ */
 
 /* Sorts the sample arrays and prints one NDJSON result. `messages` > 0 marks a
  * message-set record: the times are for the whole set, the byte counts its
- * totals, and decompression was given each message's size. */
+ * totals. `retries` is the BENCH_NEED_MORE restarts in one timed decompress pass. */
 static void bench_emit_result(const char* lang, const bench_codec_t* codec, int level,
                               const char* mode, size_t chunk, const char* path,
                               size_t in_bytes, size_t out_bytes, size_t messages,
                               uint64_t* c_t, uint64_t* d_t, size_t samples, size_t warmup,
-                              int verified) {
+                              int verified, uint64_t retries) {
     qsort(c_t, samples, sizeof(uint64_t), bench_cmp_u64);
     qsort(d_t, samples, sizeof(uint64_t), bench_cmp_u64);
     uint64_t c_med = bench_median_sorted(c_t, samples);
@@ -166,8 +234,14 @@ static void bench_emit_result(const char* lang, const bench_codec_t* codec, int 
     fprintf(o, "\"output_bytes\":%zu,", out_bytes);
     if (messages) {
         fprintf(o, "\"messages\":%zu,", messages);
-        fputs("\"decompress_size_known\":true,", o);
     }
+    /* Streaming never uses the hint (no total size up front). */
+    /* "codec" only when the hint was usable on every call of the last timed pass: a codec can
+     * have a hint function and still get nothing from it (zlib, brotli, a truncated frame). */
+    fputs(codec->size_hint && strcmp(mode, "stream") && bench_last_misses == 0
+              ? "\"decompress_size_hint\":\"codec\","
+              : "\"decompress_size_hint\":\"none\",", o);
+    fprintf(o, "\"decompress_retries\":%llu,", (unsigned long long)retries);
     fprintf(o, "\"compress_ns_median\":%llu,", (unsigned long long)c_med);
     fprintf(o, "\"compress_ns_mad\":%llu,", (unsigned long long)c_mad);
     fprintf(o, "\"compress_ns_min\":%llu,", (unsigned long long)c_t[0]);
@@ -201,12 +275,16 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
 
     size_t bound = codec->bound(codec, in_len);
     uint8_t* comp = (uint8_t*)malloc(bound ? bound : 1);
-    uint8_t* dec = (uint8_t*)malloc(in_len ? in_len : 1);
+    /* Streaming decodes into a bounded window; one-shot into dbuf (see
+     * bench_decompress_auto). */
+    size_t win_len = chunk > BENCH_MIN_CAP ? chunk : BENCH_MIN_CAP;
+    uint8_t* win = is_stream ? (uint8_t*)malloc(win_len) : NULL;
+    bench_dbuf_t dbuf = {NULL, 0};
     uint64_t* c_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     uint64_t* d_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
-    if (!comp || !dec || !c_t || !d_t) {
+    if (!comp || (is_stream && !win) || !c_t || !d_t) {
         fprintf(stderr, "bench: OOM sizing '%s'\n", path);
-        free(in); free(comp); free(dec); free(c_t); free(d_t);
+        free(in); free(comp); free(win); free(c_t); free(d_t);
         return 0;
     }
 
@@ -233,40 +311,56 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
         fprintf(stderr, "bench: compress(%s/%s L%d %s) failed: %s\n",
                 codec->name, codec->impl, level, is_stream ? "stream" : "oneshot",
                 err ? err : "?");
-        free(in); free(comp); free(dec); free(c_t); free(d_t);
+        free(in); free(comp); free(win); free(c_t); free(d_t);
         return 0;
     }
 
     size_t dec_len = 0;
+    uint64_t retries = 0;
+    bench_sink = (bench_sink_t){in, in_len, 0, 1, 0};
     for (size_t i = 0; i < warmup && !failed; i++) {
-        dec_len = in_len;
+        dec_len = win_len;
+        bench_sink.pos = 0;
         failed = is_stream
-            ? codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err)
-            : codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
+            ? codec->decompress_stream(codec, comp, comp_len, win, &dec_len, chunk, &err)
+            : bench_decompress_auto(codec, comp, comp_len, &dbuf, &dec_len, &err);
     }
     for (size_t i = 0; i < samples && !failed; i++) {
-        dec_len = in_len;
+        dec_len = win_len;
+        bench_sink.pos = 0;
+        uint64_t r0 = bench_retries, m0 = bench_misses;
         uint64_t t0 = bench_now_ns();
         failed = is_stream
-            ? codec->decompress_stream(codec, comp, comp_len, dec, &dec_len, chunk, &err)
-            : codec->decompress(codec, comp, comp_len, dec, &dec_len, &err);
+            ? codec->decompress_stream(codec, comp, comp_len, win, &dec_len, chunk, &err)
+            : bench_decompress_auto(codec, comp, comp_len, &dbuf, &dec_len, &err);
         uint64_t t1 = bench_now_ns();
         d_t[i] = t1 - t0;
+        retries = bench_retries - r0;
+        bench_last_misses = bench_misses - m0;
+    }
+    int verified = 0;
+    if (!failed && is_stream) {
+        /* One extra untimed decode, comparing each produced run to the input. */
+        dec_len = win_len;
+        bench_sink = (bench_sink_t){in, in_len, 0, 1, 1};
+        failed = codec->decompress_stream(codec, comp, comp_len, win, &dec_len, chunk, &err);
+        verified = !failed && bench_sink.ok && bench_sink.pos == in_len && dec_len == in_len;
+    } else if (!failed) {
+        verified = (dec_len == in_len) && (in_len == 0 || memcmp(in, dbuf.p, in_len) == 0);
     }
     if (failed) {
         fprintf(stderr, "bench: decompress(%s/%s L%d %s) failed: %s\n",
                 codec->name, codec->impl, level, is_stream ? "stream" : "oneshot",
                 err ? err : "?");
-        free(in); free(comp); free(dec); free(c_t); free(d_t);
+        free(in); free(comp); free(win); free(dbuf.p); free(c_t); free(d_t);
         return 0;
     }
 
-    int verified = (dec_len == in_len) && (in_len == 0 || memcmp(in, dec, in_len) == 0);
     bench_emit_result(lang, codec, level, is_stream ? "stream" : "oneshot",
                       is_stream ? chunk : 0, path, in_len, comp_len, 0, c_t, d_t,
-                      samples, warmup, verified);
+                      samples, warmup, verified, retries);
 
-    free(in); free(comp); free(dec); free(c_t); free(d_t);
+    free(in); free(comp); free(win); free(dbuf.p); free(c_t); free(d_t);
     return 1;
 }
 
@@ -303,7 +397,8 @@ static uint8_t* bench_read_msgset(const char* path, size_t* n, size_t** offs, si
 }
 
 /* Times compressing every message of a set with its own one-shot call, then
- * decompressing each into a buffer of its known size. Returns 1 = result
+ * decompressing each (sized by bench_decompress_auto, one physical buffer kept
+ * across messages). Returns 1 = result
  * emitted, 0 = failure. Verification runs after timing, untimed. */
 static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, int level,
                                 const char* path, size_t samples, size_t warmup) {
@@ -315,7 +410,7 @@ static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, in
     }
 
     /* Each message gets its own bound-sized slot in one compressed arena. */
-    size_t in_total = 0, arena = 0, max_len = 0;
+    size_t in_total = 0, arena = 0;
     size_t* coffs = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
     size_t* caps = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
     size_t* clens = (size_t*)malloc((n ? n : 1) * sizeof(size_t));
@@ -324,13 +419,12 @@ static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, in
         caps[i] = codec->bound(codec, lens[i]);
         arena += caps[i];
         in_total += lens[i];
-        if (lens[i] > max_len) max_len = lens[i];
     }
     uint8_t* comp = (uint8_t*)malloc(arena ? arena : 1);
-    uint8_t* dec = (uint8_t*)malloc(max_len ? max_len : 1);
+    bench_dbuf_t dbuf = {NULL, 0};
     uint64_t* c_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     uint64_t* d_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
-    int ok = coffs && caps && clens && comp && dec && c_t && d_t;
+    int ok = coffs && caps && clens && comp && c_t && d_t;
     if (!ok) fprintf(stderr, "bench: OOM sizing '%s'\n", path);
 
     const char* err = NULL;
@@ -349,14 +443,20 @@ static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, in
                 codec->name, codec->impl, level, err ? err : "?");
     }
     int compressed = ok;
+    uint64_t retries = 0;
     for (size_t r = 0; ok && r < warmup + samples; r++) {
+        uint64_t r0 = bench_retries, m0 = bench_misses;
         uint64_t t0 = bench_now_ns();
         for (size_t i = 0; ok && i < n; i++) {
-            size_t dec_len = lens[i];
-            ok = !codec->decompress(codec, comp + coffs[i], clens[i], dec, &dec_len, &err);
+            size_t dec_len = 0;
+            ok = !bench_decompress_auto(codec, comp + coffs[i], clens[i], &dbuf, &dec_len, &err);
         }
         uint64_t t1 = bench_now_ns();
-        if (r >= warmup) d_t[r - warmup] = t1 - t0;
+        if (r >= warmup) {
+            d_t[r - warmup] = t1 - t0;
+            retries = bench_retries - r0;
+            bench_last_misses = bench_misses - m0;
+        }
     }
     if (!ok && compressed) {
         fprintf(stderr, "bench: decompress(%s/%s L%d msgset) failed: %s\n",
@@ -367,18 +467,19 @@ static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, in
         int verified = 1;
         size_t out_total = 0;
         for (size_t i = 0; i < n; i++) {
-            size_t dec_len = lens[i];
+            size_t dec_len = 0;
             verified = verified &&
-                       !codec->decompress(codec, comp + coffs[i], clens[i], dec, &dec_len, &err) &&
-                       dec_len == lens[i] && (!dec_len || !memcmp(dec, buf + offs[i], dec_len));
+                       !bench_decompress_auto(codec, comp + coffs[i], clens[i], &dbuf, &dec_len,
+                                              &err) &&
+                       dec_len == lens[i] && (!dec_len || !memcmp(dbuf.p, buf + offs[i], dec_len));
             out_total += clens[i];
         }
         bench_emit_result(lang, codec, level, "msgset", 0, path, in_total, out_total, n,
-                          c_t, d_t, samples, warmup, verified);
+                          c_t, d_t, samples, warmup, verified, retries);
     }
 
     free(buf); free(offs); free(lens); free(coffs); free(caps); free(clens);
-    free(comp); free(dec); free(c_t); free(d_t);
+    free(comp); free(dbuf.p); free(c_t); free(d_t);
     return ok;
 }
 

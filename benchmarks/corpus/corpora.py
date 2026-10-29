@@ -14,8 +14,9 @@ Tiers:
                     (derived from silesia-mini).
   silesia-blocks    all four block sizes.
   ecosystem-large   dickens (10 MB of text): the one large file of the ecosystem comparison.
+  ecosystem-extra   xml (repetitive) and x-ray (hard to compress): one-shot checks on dickens.
   ecosystem-small   dickens in 4 KB blocks, as a message set: its one small-message tier.
-  ecosystem         both of the above.
+  ecosystem         all three of the above.
   all               every tier above.
 
 A dataset with kind="msgset" holds many small messages (see msgset.py); the
@@ -43,6 +44,7 @@ TIER_RESOLVERS = {
     "canterbury-large": fetch.resolve_canterbury_large,
     "github-users": fetch.resolve_github_users,
     "ecosystem-large": fetch.resolve_ecosystem_large,
+    "ecosystem-extra": fetch.resolve_ecosystem_extra,
     "ecosystem-small": fetch.resolve_ecosystem_small,
     **{f"silesia-blocks-{label}": (lambda label=label: fetch.resolve_silesia_blocks(label))
        for label in fetch.BLOCK_SIZES},
@@ -50,7 +52,7 @@ TIER_RESOLVERS = {
 # Groups: expand to several tiers.
 TIER_GROUPS = {
     "silesia-blocks": [f"silesia-blocks-{label}" for label in fetch.BLOCK_SIZES],
-    "ecosystem": ["ecosystem-large", "ecosystem-small"],
+    "ecosystem": ["ecosystem-large", "ecosystem-extra", "ecosystem-small"],
 }
 TIERS = list(TIER_RESOLVERS)
 

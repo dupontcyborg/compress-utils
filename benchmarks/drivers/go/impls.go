@@ -21,14 +21,15 @@ import (
 	cu "github.com/dupontcyborg/compress-utils/bindings/go"
 )
 
-// Codec is one implementation of one format. Decompress gets the decompressed size
-// when the caller knows it (msgset), else -1. A nil Compress marks a decode-only
-// library: the driver produces its input with compress-utils, untimed.
+// Codec is one implementation of one format. Decompress is never told the size.
+// DStream decodes through the library's streaming API into w, in reads of at most
+// `chunk` bytes. A nil Compress marks a decode-only library: the driver produces its
+// input with compress-utils, untimed.
 type Codec struct {
 	Compress   func(data []byte, level int) ([]byte, error)
-	Decompress func(comp []byte, size int) ([]byte, error)
+	Decompress func(comp []byte) ([]byte, error)
 	CStream    func(data []byte, level int) ([]byte, error)
-	DStream    func(comp []byte) ([]byte, error)
+	DStream    func(comp []byte, w io.Writer) error
 	Levels     *[2]int // native range; nil = levels.json's
 	Levelless  bool
 }
@@ -96,15 +97,21 @@ func writeAll(mk func(io.Writer) (io.WriteCloser, error), data []byte, whole boo
 	return buf.Bytes(), nil
 }
 
-// readAll decompresses through a reader, sized when the size is known (a caller
-// that knows the size allocates once).
-func readAll(r io.Reader, size int) ([]byte, error) {
-	if size < 0 {
-		return io.ReadAll(r)
+// countWriter counts bytes and discards them.
+type countWriter struct{ n int }
+
+func (c *countWriter) Write(p []byte) (int, error) { c.n += len(p); return len(p), nil }
+
+// drainBuf is the reused read window of drain.
+var drainBuf []byte
+
+// drain reads r to the end into w through one reused window.
+func drain(w io.Writer, r io.Reader) error {
+	if drainBuf == nil {
+		drainBuf = make([]byte, chunk)
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, size+bytes.MinRead))
-	_, err := buf.ReadFrom(r)
-	return buf.Bytes(), err
+	_, err := io.CopyBuffer(w, r, drainBuf)
+	return err
 }
 
 // streamCodec builds a Codec from a writer constructor and a reader constructor.
@@ -117,18 +124,24 @@ func streamCodec(mkW func(io.Writer, int) (io.WriteCloser, error),
 			return writeAll(func(w io.Writer) (io.WriteCloser, error) { return mkW(w, lvl) }, d, whole)
 		}
 	}
-	dec := func(c []byte, size int) ([]byte, error) {
+	dstream := func(c []byte, w io.Writer) error {
 		r, err := mkR(bytes.NewReader(c))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return readAll(r, size)
+		return drain(w, r)
 	}
 	return Codec{
-		Compress:   enc(true),
-		Decompress: dec,
-		CStream:    enc(false),
-		DStream:    func(c []byte) ([]byte, error) { return dec(c, -1) },
+		Compress: enc(true),
+		Decompress: func(c []byte) ([]byte, error) {
+			r, err := mkR(bytes.NewReader(c))
+			if err != nil {
+				return nil, err
+			}
+			return io.ReadAll(r)
+		},
+		CStream: enc(false),
+		DStream: dstream,
 	}
 }
 
@@ -137,23 +150,18 @@ func streamCodec(mkW func(io.Writer, int) (io.WriteCloser, error),
 func implCompressUtils() *impl {
 	codec := func(algo cu.Algorithm) Codec {
 		return Codec{
-			Compress: func(d []byte, lvl int) ([]byte, error) { return cu.Compress(algo, d, lvl) },
-			Decompress: func(c []byte, size int) ([]byte, error) {
-				if size >= 0 {
-					return cu.DecompressWithCapacity(algo, c, size)
-				}
-				return cu.Decompress(algo, c)
-			},
+			Compress:   func(d []byte, lvl int) ([]byte, error) { return cu.Compress(algo, d, lvl) },
+			Decompress: func(c []byte) ([]byte, error) { return cu.Decompress(algo, c) },
 			CStream: func(d []byte, lvl int) ([]byte, error) {
 				return writeAll(func(w io.Writer) (io.WriteCloser, error) { return cu.NewWriter(w, algo, lvl) }, d, false)
 			},
-			DStream: func(c []byte) ([]byte, error) {
+			DStream: func(c []byte, w io.Writer) error {
 				r, err := cu.NewReader(bytes.NewReader(c), algo)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				defer r.Close()
-				return io.ReadAll(r)
+				return drain(w, r)
 			},
 		}
 	}
@@ -174,10 +182,10 @@ func implStdlib() *impl {
 		func(w io.Writer, lvl int) (io.WriteCloser, error) { return gzip.NewWriterLevel(w, lvl) },
 		func(r io.Reader) (io.Reader, error) { return gzip.NewReader(r) })
 	// compress/bzip2 only decompresses.
-	bz := Codec{Decompress: func(c []byte, size int) ([]byte, error) {
-		return readAll(bzip2.NewReader(bytes.NewReader(c)), size)
-	}, DStream: func(c []byte) ([]byte, error) {
+	bz := Codec{Decompress: func(c []byte) ([]byte, error) {
 		return io.ReadAll(bzip2.NewReader(bytes.NewReader(c)))
+	}, DStream: func(c []byte, w io.Writer) error {
+		return drain(w, bzip2.NewReader(bytes.NewReader(c)))
 	}}
 	return &impl{version: goVersion(), codecs: map[string]Codec{"zlib": zl, "gzip": gz, "bz2": bz}}
 }
@@ -215,14 +223,8 @@ func implKlauspost() *impl {
 		panic(err)
 	}
 	zs := Codec{
-		Compress: func(d []byte, lvl int) ([]byte, error) { return enc(lvl).EncodeAll(d, nil), nil },
-		Decompress: func(c []byte, size int) ([]byte, error) {
-			var dst []byte
-			if size >= 0 {
-				dst = make([]byte, 0, size)
-			}
-			return dec.DecodeAll(c, dst)
-		},
+		Compress:   func(d []byte, lvl int) ([]byte, error) { return enc(lvl).EncodeAll(d, nil), nil },
+		Decompress: func(c []byte) ([]byte, error) { return dec.DecodeAll(c, nil) },
 		CStream: func(d []byte, lvl int) ([]byte, error) {
 			e := enc(lvl)
 			var buf bytes.Buffer
@@ -235,13 +237,13 @@ func implKlauspost() *impl {
 			}
 			return buf.Bytes(), nil
 		},
-		DStream: func(c []byte) ([]byte, error) {
+		DStream: func(c []byte, w io.Writer) error {
 			d, err := kzstd.NewReader(bytes.NewReader(c), kzstd.WithDecoderConcurrency(1))
 			if err != nil {
-				return nil, err
+				return err
 			}
 			defer d.Close()
-			return io.ReadAll(d)
+			return drain(w, d)
 		},
 		Levels: &[2]int{1, 22},
 	}
@@ -249,15 +251,9 @@ func implKlauspost() *impl {
 	// Raw snappy blocks (compress-utils' format); the library's stream form is the
 	// framing format, a different one, so no streaming.
 	sn := Codec{
-		Compress: func(d []byte, _ int) ([]byte, error) { return ksnappy.Encode(nil, d), nil },
-		Decompress: func(c []byte, size int) ([]byte, error) {
-			var dst []byte
-			if size >= 0 {
-				dst = make([]byte, size)
-			}
-			return ksnappy.Decode(dst, c)
-		},
-		Levelless: true,
+		Compress:   func(d []byte, _ int) ([]byte, error) { return ksnappy.Encode(nil, d), nil },
+		Decompress: func(c []byte) ([]byte, error) { return ksnappy.Decode(nil, c) },
+		Levelless:  true,
 	}
 	return &impl{version: "klauspost/compress " + modVersion("github.com/klauspost/compress"),
 		codecs: map[string]Codec{"zlib": zl, "gzip": gz, "zstd": zs, "snappy": sn}}
@@ -297,17 +293,26 @@ func implLz4() *impl {
 			}, d, withSize)
 		}
 	}
-	dec := func(c []byte, size int) ([]byte, error) {
+	reader := func(c []byte) (io.Reader, error) {
 		zr := lz4.NewReader(bytes.NewReader(c))
-		if err := zr.Apply(lz4.ConcurrencyOption(1)); err != nil {
-			return nil, err
-		}
-		return readAll(zr, size)
+		return zr, zr.Apply(lz4.ConcurrencyOption(1))
 	}
 	return &impl{version: "pierrec/lz4 " + modVersion("github.com/pierrec/lz4/v4"), codecs: map[string]Codec{
-		"lz4": {Compress: enc(true), Decompress: dec, CStream: enc(false),
-			DStream: func(c []byte) ([]byte, error) { return dec(c, -1) },
-			Levels:  &[2]int{0, 9}}}}
+		"lz4": {Compress: enc(true), CStream: enc(false), Levels: &[2]int{0, 9},
+			Decompress: func(c []byte) ([]byte, error) {
+				r, err := reader(c)
+				if err != nil {
+					return nil, err
+				}
+				return io.ReadAll(r)
+			},
+			DStream: func(c []byte, w io.Writer) error {
+				r, err := reader(c)
+				if err != nil {
+					return err
+				}
+				return drain(w, r)
+			}}}}
 }
 
 // ---- ulikunitz/xz ----------------------------------------------------------------
