@@ -35,6 +35,11 @@
 
 struct bench_codec;
 
+/* The output buffer of a one-shot decompress. `cap` is the capacity the decoder
+ * may use now; `alloc` is the physical size, kept between calls (so malloc is
+ * not timed after the first pass) and always >= cap. */
+typedef struct { uint8_t* p; size_t cap; size_t alloc; } bench_dbuf_t;
+
 /* compress/decompress return 0 on success (with *out_len set to bytes
  * written) and non-zero on failure, optionally setting *err to a static
  * message. decompress gets *out_len = the capacity of `out` and must return
@@ -46,6 +51,13 @@ struct bench_codec;
  * variants take a chunk size (the input is fed in chunk-sized pieces,
  * exercising the streaming drain protocol) and may be NULL if the driver
  * doesn't implement streaming for that codec yet.
+ * decompress_grow is optional (the last field), for libraries with a streaming
+ * API: a real caller that doesn't know the size loops, growing the buffer and
+ * continuing the decode. It decodes into buf->p (buf->cap bytes now); when the
+ * library needs more output space it calls bench_dbuf_grow (doubles the
+ * capacity, keeps the bytes produced, counts a retry) and continues, with no
+ * restart. bench_decompress_auto uses it when there is no size hint, or when a
+ * hint turned out too small; codecs without it restart from scratch.
  * size_hint is optional: it returns 0 and the decompressed size when the
  * compressed bytes record it (frame header, …), non-zero otherwise.
  * native_id is impl-private scratch (the compress-utils driver stashes its
@@ -71,6 +83,8 @@ typedef struct bench_codec {
     int level_min, level_max;
     int (*size_hint)(const struct bench_codec*, const uint8_t* in, size_t in_len,
                      size_t* out_size);
+    int (*decompress_grow)(const struct bench_codec*, const uint8_t* in, size_t in_len,
+                           bench_dbuf_t* buf, size_t* out_len, const char** err);
 } bench_codec_t;
 
 /* ---- timing -------------------------------------------------------------- */
@@ -149,42 +163,78 @@ static const bench_codec_t* bench_find(const bench_codec_t* codecs, size_t n,
 
 /* ---- decompress sizing --------------------------------------------------- */
 
-/* Whole-buffer decompress is never told the original size. The buffer starts at
- * what the codec learns from the compressed bytes (size_hint), else
- * max(64 KiB, 4 * in_len), and doubles on BENCH_NEED_MORE. Such APIs have to
- * restart from scratch on a miss; that restart cost is intentionally part of
- * the timed call. The physical buffer is the caller's and is kept between
- * calls (grown only when needed), so malloc is not timed after the first pass. */
-typedef struct { uint8_t* p; size_t cap; } bench_dbuf_t;
+/* Decompress is never told the original size. The buffer starts at what the
+ * codec learns from the compressed bytes (size_hint), else 3 * in_len (at least
+ * 1 byte), and doubles when the library needs more room. Whole-buffer-only
+ * libraries restart from scratch on a miss; libraries with a streaming API
+ * (decompress_grow) continue where they stopped. Either way the cost is
+ * intentionally part of the timed call. The physical buffer is the caller's and
+ * is kept between calls (grown only when needed), so malloc is not timed after
+ * the first pass; growth after that only moves the logical capacity. */
 
-static uint64_t bench_retries; /* BENCH_NEED_MORE restarts so far */
+static uint64_t bench_retries; /* times the starting capacity was too small so far (restarts and growth steps) */
 static uint64_t bench_misses;  /* decompress calls that had no usable size hint so far */
 static uint64_t bench_last_misses; /* misses during the last timed pass */
 
-#define BENCH_MIN_CAP ((size_t)64 * 1024)
 #define BENCH_HINT_MAX ((size_t)1 << 30)
+#define BENCH_WIN_MIN ((size_t)64 * 1024) /* smallest streaming output window */
+
+/* Sets the usable capacity to `cap`, reallocating (bytes already there are kept) only
+ * if the physical buffer is smaller. */
+static int bench_dbuf_reserve(bench_dbuf_t* buf, size_t cap, const char** err) {
+    if (buf->alloc < cap || !buf->p) {
+        uint8_t* p = (uint8_t*)realloc(buf->p, cap);
+        if (!p) { *err = "out of memory"; return 1; }
+        buf->p = p;
+        buf->alloc = cap;
+    }
+    buf->cap = cap;
+    return 0;
+}
+
+/* Doubles the capacity (the 4 GiB give-up applies) and counts a retry. */
+static int bench_dbuf_grow(bench_dbuf_t* buf, const char** err) {
+    if (buf->cap > ((size_t)1 << 31)) { *err = "output exceeds 4 GiB"; return 1; }
+    bench_retries++;
+    return bench_dbuf_reserve(buf, buf->cap * 2, err);
+}
+
+/* The starting capacity is this many times the compressed size (default 3); BENCH_START_MULT
+ * overrides it to see how much a result depends on the guess. */
+static size_t bench_start_mult(void) {
+    static size_t m;
+    if (!m) {
+        const char* v = getenv("BENCH_START_MULT");
+        long n = v ? strtol(v, NULL, 10) : 0;
+        m = n > 0 ? (size_t)n : 3;
+    }
+    return m;
+}
 
 static int bench_decompress_auto(const bench_codec_t* codec, const uint8_t* in, size_t in_len,
                                  bench_dbuf_t* buf, size_t* out_len, const char** err) {
     size_t cap = 0;
-    if (!codec->size_hint || codec->size_hint(codec, in, in_len, &cap) || cap > BENCH_HINT_MAX) {
-        cap = 4 * in_len > BENCH_MIN_CAP ? 4 * in_len : BENCH_MIN_CAP;
+    int hinted = codec->size_hint && !codec->size_hint(codec, in, in_len, &cap) &&
+                 cap <= BENCH_HINT_MAX;
+    if (!hinted) {
+        cap = bench_start_mult() * in_len;
         bench_misses++;
     }
+    if (!cap) cap = 1;
+    if (bench_dbuf_reserve(buf, cap, err)) return 1;
+    if (!hinted && codec->decompress_grow) {
+        return codec->decompress_grow(codec, in, in_len, buf, out_len, err);
+    }
     for (;;) {
-        if (buf->cap < cap || !buf->p) {
-            free(buf->p);
-            buf->cap = cap ? cap : 1;
-            buf->p = (uint8_t*)malloc(buf->cap);
-            if (!buf->p) { buf->cap = 0; *err = "out of memory"; return 1; }
-        }
-        size_t n = cap;
+        size_t n = buf->cap;
         int r = codec->decompress(codec, in, in_len, buf->p, &n, err);
         if (!r) { *out_len = n; return 0; }
         if (r != BENCH_NEED_MORE) return r;
-        if (cap > ((size_t)1 << 31)) { *err = "output exceeds 4 GiB"; return 1; }
-        bench_retries++;
-        cap *= 2;
+        if (bench_dbuf_grow(buf, err)) return 1;
+        /* A hint that was too small: carry on with the growing decode. */
+        if (codec->decompress_grow) {
+            return codec->decompress_grow(codec, in, in_len, buf, out_len, err);
+        }
     }
 }
 
@@ -208,7 +258,7 @@ static inline void bench_sink_write(const uint8_t* p, size_t n) {
 
 /* Sorts the sample arrays and prints one NDJSON result. `messages` > 0 marks a
  * message-set record: the times are for the whole set, the byte counts its
- * totals. `retries` is the BENCH_NEED_MORE restarts in one timed decompress pass. */
+ * totals. `retries` is the times the starting capacity was too small (restarts or growth steps) in one timed decompress pass. */
 static void bench_emit_result(const char* lang, const bench_codec_t* codec, int level,
                               const char* mode, size_t chunk, const char* path,
                               size_t in_bytes, size_t out_bytes, size_t messages,
@@ -277,9 +327,9 @@ static int bench_run_job(const char* lang, const bench_codec_t* codec, int level
     uint8_t* comp = (uint8_t*)malloc(bound ? bound : 1);
     /* Streaming decodes into a bounded window; one-shot into dbuf (see
      * bench_decompress_auto). */
-    size_t win_len = chunk > BENCH_MIN_CAP ? chunk : BENCH_MIN_CAP;
+    size_t win_len = chunk > BENCH_WIN_MIN ? chunk : BENCH_WIN_MIN;
     uint8_t* win = is_stream ? (uint8_t*)malloc(win_len) : NULL;
-    bench_dbuf_t dbuf = {NULL, 0};
+    bench_dbuf_t dbuf = {NULL, 0, 0};
     uint64_t* c_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     uint64_t* d_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     if (!comp || (is_stream && !win) || !c_t || !d_t) {
@@ -421,7 +471,7 @@ static int bench_run_msgset_job(const char* lang, const bench_codec_t* codec, in
         in_total += lens[i];
     }
     uint8_t* comp = (uint8_t*)malloc(arena ? arena : 1);
-    bench_dbuf_t dbuf = {NULL, 0};
+    bench_dbuf_t dbuf = {NULL, 0, 0};
     uint64_t* c_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     uint64_t* d_t = (uint64_t*)malloc((samples ? samples : 1) * sizeof(uint64_t));
     int ok = coffs && caps && clens && comp && c_t && d_t;

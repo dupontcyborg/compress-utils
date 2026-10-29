@@ -81,6 +81,35 @@ static int z_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len, size
     return 0;
 }
 
+/* No frame size (a streamed frame): decode with the streaming API, growing the output and
+ * continuing, as an unknown-size caller does. A hinted frame uses z_decompress. */
+static int z_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len, bench_dbuf_t* buf,
+                  size_t* out_len, const char** err) {
+    (void)c;
+    ZSTD_DCtx* z = ZSTD_createDCtx();
+    if (!z) { *err = "ZSTD_createDCtx"; return 1; }
+    ZSTD_inBuffer ib = {in, in_len, 0};
+    ZSTD_outBuffer ob = {buf->p, buf->cap, 0};
+    int rc = 0;
+    for (;;) {
+        size_t r = ZSTD_decompressStream(z, &ob, &ib);
+        if (ZSTD_isError(r)) { *err = ZSTD_getErrorName(r); rc = 1; break; }
+        if (r == 0) break;  /* frame complete */
+        if (ob.pos == ob.size) {
+            if (bench_dbuf_grow(buf, err)) { rc = 1; break; }
+            ob.dst = buf->p;
+            ob.size = buf->cap;
+        } else if (ib.pos == ib.size) {
+            *err = "zstd: truncated";
+            rc = 1;
+            break;
+        }
+    }
+    ZSTD_freeDCtx(z);
+    if (!rc) *out_len = ob.pos;
+    return rc;
+}
+
 /* ---- brotli -------------------------------------------------------------- */
 
 static size_t br_bound(const bench_codec_t* c, size_t n) {
@@ -117,6 +146,35 @@ static int br_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     if (r != BROTLI_DECODER_RESULT_SUCCESS) { *err = "BrotliDecoderDecompressStream failed"; return 1; }
     *out_len = *out_len - avail_out;
     return 0;
+}
+
+static int br_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len, bench_dbuf_t* buf,
+                   size_t* out_len, const char** err) {
+    (void)c;
+    BrotliDecoderState* d = BrotliDecoderCreateInstance(NULL, NULL, NULL);
+    if (!d) { *err = "BrotliDecoderCreateInstance"; return 1; }
+    size_t avail_in = in_len, pos = 0;
+    const uint8_t* next_in = in;
+    int rc = 0;
+    for (;;) {
+        size_t avail_out = buf->cap - pos;
+        uint8_t* next_out = buf->p + pos;
+        BrotliDecoderResult r = BrotliDecoderDecompressStream(d, &avail_in, &next_in, &avail_out,
+                                                              &next_out, NULL);
+        pos = (size_t)(next_out - buf->p);
+        if (r == BROTLI_DECODER_RESULT_SUCCESS) break;
+        if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+            if (bench_dbuf_grow(buf, err)) { rc = 1; break; }
+            continue;
+        }
+        *err = r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT ? "brotli: truncated"
+                                                           : "BrotliDecoderDecompressStream failed";
+        rc = 1;
+        break;
+    }
+    BrotliDecoderDestroyInstance(d);
+    if (!rc) *out_len = pos;
+    return rc;
 }
 
 /* ---- zlib ---------------------------------------------------------------- */
@@ -169,6 +227,38 @@ static int bz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     if (r != BZ_OK) { *err = "BZ2 decompress failed"; return 1; }
     *out_len = cap;
     return 0;
+}
+
+static int bz_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len, bench_dbuf_t* buf,
+                   size_t* out_len, const char** err) {
+    (void)c;
+    bz_stream s;
+    memset(&s, 0, sizeof(s));
+    if (BZ2_bzDecompressInit(&s, 0, 0) != BZ_OK) { *err = "bzDecompressInit"; return 1; }
+    s.next_in = (char*)(uintptr_t)in;
+    s.avail_in = (unsigned int)in_len;
+    size_t pos = 0;
+    int rc = 0;
+    for (;;) {
+        size_t room = buf->cap - pos;
+        s.next_out = (char*)buf->p + pos;
+        s.avail_out = room < 0x40000000u ? (unsigned int)room : 0x40000000u;
+        unsigned int before = s.avail_out;
+        int r = BZ2_bzDecompress(&s);
+        pos += before - s.avail_out;
+        if (r == BZ_STREAM_END) break;
+        if (r != BZ_OK) { *err = "bzDecompress"; rc = 1; break; }
+        if (s.avail_out == 0) {
+            if (pos == buf->cap && bench_dbuf_grow(buf, err)) { rc = 1; break; }
+        } else if (s.avail_in == 0) {
+            *err = "bzDecompress: truncated";
+            rc = 1;
+            break;
+        }
+    }
+    BZ2_bzDecompressEnd(&s);
+    if (!rc) *out_len = pos;
+    return rc;
 }
 
 /* ---- lz4 (frame format) -------------------------------------------------- */
@@ -229,6 +319,36 @@ static int l4_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     return rc;
 }
 
+/* No content size in the header: the same loop, growing the output and continuing. */
+static int l4_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len, bench_dbuf_t* buf,
+                   size_t* out_len, const char** err) {
+    (void)c;
+    LZ4F_dctx* dctx = NULL;
+    size_t r = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
+    if (LZ4F_isError(r)) { *err = LZ4F_getErrorName(r); return 1; }
+    size_t pos = 0, in_pos = 0;
+    int rc = 0;
+    for (;;) {
+        size_t dst = buf->cap - pos;
+        size_t src = in_len - in_pos;
+        size_t hint = LZ4F_decompress(dctx, buf->p + pos, &dst, in + in_pos, &src, NULL);
+        if (LZ4F_isError(hint)) { *err = LZ4F_getErrorName(hint); rc = 1; break; }
+        pos += dst;
+        in_pos += src;
+        if (hint == 0) break;  /* frame complete */
+        if (pos == buf->cap) {
+            if (bench_dbuf_grow(buf, err)) { rc = 1; break; }
+        } else if (dst == 0 && src == 0) {
+            *err = "LZ4F truncated";
+            rc = 1;
+            break;
+        }
+    }
+    LZ4F_freeDecompressionContext(dctx);
+    if (!rc) *out_len = pos;
+    return rc;
+}
+
 /* The frame header's content size flag; the library reads it from the header. */
 static int l4_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len, size_t* out_size) {
     (void)c;
@@ -274,6 +394,36 @@ static int xz_decompress(const bench_codec_t* c, const uint8_t* in, size_t in_le
     if (r != LZMA_OK) { *err = "lzma decode failed"; return 1; }
     *out_len = out_pos;
     return 0;
+}
+
+/* lzma_code over all the input, growing the output and continuing. */
+static int xz_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len, bench_dbuf_t* buf,
+                   size_t* out_len, const char** err) {
+    (void)c;
+    lzma_stream s = LZMA_STREAM_INIT;
+    if (lzma_stream_decoder(&s, UINT64_MAX, 0) != LZMA_OK) { *err = "lzma decoder"; return 1; }
+    s.next_in = in;
+    s.avail_in = in_len;
+    size_t pos = 0;
+    int rc = 0;
+    for (;;) {
+        s.next_out = buf->p + pos;
+        s.avail_out = buf->cap - pos;
+        lzma_ret r = lzma_code(&s, LZMA_RUN);
+        pos = buf->cap - s.avail_out;
+        if (r == LZMA_STREAM_END) break;
+        if (r != LZMA_OK && r != LZMA_BUF_ERROR) { *err = "lzma decode"; rc = 1; break; }
+        if (s.avail_out == 0) {
+            if (bench_dbuf_grow(buf, err)) { rc = 1; break; }
+        } else if (s.avail_in == 0 || r == LZMA_BUF_ERROR) {
+            *err = "lzma: truncated";
+            rc = 1;
+            break;
+        }
+    }
+    lzma_end(&s);
+    if (!rc) *out_len = pos;
+    return rc;
 }
 
 /* ---- streaming --------------------------------------------------------------
@@ -659,12 +809,18 @@ static int sn_hint(const bench_codec_t* c, const uint8_t* in, size_t in_len, siz
 /* ---- registry ------------------------------------------------------------ */
 
 static const bench_codec_t CODECS[] = {
-    {"zstd", "libzstd", 0, z_bound, z_compress, z_decompress, z_cstream, z_dstream, 0, 0, z_hint},
-    {"brotli", "libbrotli", 0, br_bound, br_compress, br_decompress, br_cstream, br_dstream},
-    {"zlib", "zlib", 0, zl_bound, zl_compress, zl_decompress, zl_cstream, zl_dstream},
-    {"bz2", "libbz2", 0, bz_bound, bz_compress, bz_decompress, bz_cstream, bz_dstream},
-    {"lz4", "liblz4", 0, l4_bound, l4_compress, l4_decompress, l4_cstream, l4_dstream, 0, 0, l4_hint},
-    {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream},
+    {"zstd", "libzstd", 0, z_bound, z_compress, z_decompress, z_cstream, z_dstream, 0, 0, z_hint,
+     z_grow},
+    {"brotli", "libbrotli", 0, br_bound, br_compress, br_decompress, br_cstream, br_dstream, 0, 0,
+     NULL, br_grow},
+    {"zlib", "zlib", 0, zl_bound, zl_compress, zl_decompress, zl_cstream, zl_dstream, 0, 0, NULL,
+     za_zlib_grow},
+    {"bz2", "libbz2", 0, bz_bound, bz_compress, bz_decompress, bz_cstream, bz_dstream, 0, 0, NULL,
+     bz_grow},
+    {"lz4", "liblz4", 0, l4_bound, l4_compress, l4_decompress, l4_cstream, l4_dstream, 0, 0,
+     l4_hint, l4_grow},
+    {"xz", "liblzma", 0, xz_bound, xz_compress, xz_decompress, xz_cstream, xz_dstream, 0, 0, NULL,
+     xz_grow},
     ZA_GZIP("zlib", 0, 0),
     ZA_DEFLATE("zlib", 0, 0),
     {"snappy", "snappy-core", 0, sn_bound, sn_compress, sn_decompress, NULL, NULL, 0, 0, sn_hint},

@@ -21,6 +21,7 @@
  * window instead, into the harness's sink.
  *
  * Decompress returns BENCH_NEED_MORE when the output buffer is too small.
+ * decompress_grow (za_inflate_grow) is the streaming alternative a real unknown-size caller uses: all the input is fed to inflate() and the output buffer grows and the decode continues whenever it fills. Define ZA_NO_GROW for a library that stays on the restart path (miniz).
  * zlib, gzip and raw deflate are all unknown-size: gzip's ISIZE is only the last member's size mod 2^32, a guess rather than a recorded size, so it is not used.
  */
 
@@ -98,6 +99,41 @@ static int za_inflate(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
     }
     return 0;
 }
+
+#ifndef ZA_NO_GROW
+/* inflate() over all the input, growing the output buffer (bench_dbuf_grow) and
+ * continuing whenever it fills, with no restart. */
+static int za_inflate_grow(bench_dbuf_t* buf, const uint8_t* in, size_t in_len, size_t* out_len,
+                           int wbits, const char** err) {
+    ZSTREAM s;
+    memset(&s, 0, sizeof(s));
+    if (ZAPI(inflateInit2)(&s, wbits) != Z_OK) { *err = "inflateInit2"; return 1; }
+    s.next_in = (void*)in;
+    s.avail_in = (unsigned)in_len;
+    size_t pos = 0;
+    int rc = 0;
+    for (;;) {
+        size_t room = buf->cap - pos;
+        s.next_out = buf->p + pos;
+        s.avail_out = room < 0x40000000u ? (unsigned)room : 0x40000000u;
+        unsigned before = s.avail_out;
+        int r = ZAPI(inflate)(&s, Z_NO_FLUSH);
+        pos += before - s.avail_out;
+        if (r == Z_STREAM_END) break;
+        if (r != Z_OK && r != Z_BUF_ERROR) { *err = "inflate"; rc = 1; break; }
+        if (s.avail_out == 0) {
+            if (pos == buf->cap && bench_dbuf_grow(buf, err)) { rc = 1; break; }
+        } else if (s.avail_in == 0 || r == Z_BUF_ERROR) {
+            *err = "inflate: truncated";
+            rc = 1;
+            break;
+        }
+    }
+    ZAPI(inflateEnd)(&s);
+    if (!rc) *out_len = pos;
+    return rc;
+}
+#endif
 
 static int za_cstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* out_len,
                       int level, int wbits, size_t chunk, const char** err) {
@@ -180,6 +216,20 @@ static int za_dstream(const uint8_t* in, size_t in_len, uint8_t* out, size_t* ou
         (void)c;                                                                              \
         return za_inflate(in, in_len, out, out_len, WBITS, err);                              \
     }
+#ifndef ZA_NO_GROW
+#define ZA_GROW(NAME, WBITS)                                                                  \
+    static int za_##NAME##_grow(const bench_codec_t* c, const uint8_t* in, size_t in_len,     \
+                                bench_dbuf_t* buf, size_t* out_len, const char** err) {       \
+        (void)c;                                                                              \
+        return za_inflate_grow(buf, in, in_len, out_len, WBITS, err);                         \
+    }
+ZA_GROW(zlib, 15)
+ZA_GROW(gzip, 31)
+ZA_GROW(deflate, -15)
+#define ZA_GROWFN(NAME) za_##NAME##_grow
+#else
+#define ZA_GROWFN(NAME) NULL
+#endif
 #define ZA_STREAMS(NAME, WBITS)                                                               \
     static int za_##NAME##_cstream(const bench_codec_t* c, const uint8_t* in, size_t in_len,  \
                                    uint8_t* out, size_t* out_len, int level, size_t chunk,    \
@@ -203,12 +253,12 @@ ZA_STREAMS(deflate, -15)
  * levels.json's). */
 #define ZA_ZLIB(IMPL, LO, HI)                                                                  \
     {"zlib", IMPL, 0, za_bound, za_zlib_compress, za_zlib_decompress, za_zlib_cstream,         \
-     za_zlib_dstream, LO, HI}
+     za_zlib_dstream, LO, HI, NULL, ZA_GROWFN(zlib)}
 #define ZA_GZIP(IMPL, LO, HI)                                                                  \
     {"gzip", IMPL, 0, za_bound, za_gzip_compress, za_gzip_decompress, za_gzip_cstream,         \
-     za_gzip_dstream, LO, HI}
+     za_gzip_dstream, LO, HI, NULL, ZA_GROWFN(gzip)}
 #define ZA_DEFLATE(IMPL, LO, HI)                                                               \
     {"deflate", IMPL, 0, za_bound, za_deflate_compress, za_deflate_decompress,                 \
-     za_deflate_cstream, za_deflate_dstream, LO, HI}
+     za_deflate_cstream, za_deflate_dstream, LO, HI, NULL, ZA_GROWFN(deflate)}
 
 #endif /* BENCH_ZAPI_H */
