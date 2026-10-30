@@ -5,7 +5,7 @@
 [![WASM build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_wasm.yml?label=wasm)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_wasm.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-One API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, in every JavaScript runtime, with decompression ahead of or on par with every other JavaScript and WASM library we tested. Tree-shakeable per-algorithm imports with TypeScript types included, all backed by one C core compiled to WebAssembly.
+One portable API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, in every JavaScript runtime, with decompression ahead of or on par with every other JavaScript and WASM library we tested. Tree-shakeable per-algorithm imports with TypeScript types included, all backed by one C core compiled to WebAssembly.
 
 ## Installation
 

@@ -1,4 +1,4 @@
-# compress-utils (Rust)
+# compress-utils
 
 [![crates.io](https://img.shields.io/crates/v/compress-utils.svg)](https://crates.io/crates/compress-utils)
 [![docs.rs](https://img.shields.io/docsrs/compress-utils)](https://docs.rs/compress-utils)

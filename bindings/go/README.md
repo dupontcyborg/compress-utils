@@ -1,4 +1,4 @@
-# compress-utils (Go)
+# compress-utils
 
 [![Go module version](https://img.shields.io/github/v/tag/dupontcyborg/compress-utils?sort=semver&label=version)](https://github.com/dupontcyborg/compress-utils/tags)
 [![Go Reference](https://pkg.go.dev/badge/github.com/dupontcyborg/compress-utils/bindings/go.svg)](https://pkg.go.dev/github.com/dupontcyborg/compress-utils/bindings/go)

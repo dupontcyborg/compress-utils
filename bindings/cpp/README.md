@@ -1,4 +1,4 @@
-# compress-utils (C++)
+# compress-utils
 
 [![Release](https://img.shields.io/github/v/release/dupontcyborg/compress-utils)](https://github.com/dupontcyborg/compress-utils/releases)
 [![C/C++ build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml?label=c%2Fc%2B%2B)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_c_cpp.yml)
