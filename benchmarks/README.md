@@ -16,37 +16,11 @@ Status: **C, C-native baseline, WASM (Node), Python, Go, and Rust drivers
 implemented** — all one-shot, streaming and message sets. Corpora: `smoke`
 (synthetic), `silesia`, `silesia-mini`, `enwik8`, `canterbury`,
 `canterbury-large`, `github-users` and `silesia-blocks-*`. Ecosystem-library
-baselines (JS/Python native libs) are not done yet — see TODO.md.
+baselines for every binding are in `drivers/` and summarised in [docs/benchmarks/](../docs/benchmarks/README.md).
 
-## Language comparison
+## Published results
 
-![throughput by language and algorithm](assets/lang-comparison.png)
-
-All eight codecs across the five language bindings, measured back-to-back in
-one interleaved run (Silesia-mini, level 6, one-shot). Every binding drives the
-same C core, so compression **ratio is byte-identical** across languages — only
-throughput differs. Relative to native C (higher = closer to the ceiling):
-
-- **Rust ≈ native C**, 0.95–1.00× compress and 0.87–1.04× decompress. The one
-  outlier is **snappy compress at 0.73×**: safe Rust cannot hand out an
-  uninitialized output buffer, so the one-shot path zeroes `compress_bound`
-  bytes before the call. That memset is noise next to xz, but on the fastest
-  codec it is a large slice of the total.
-- **Python ≈ native C**, 0.89–1.07× compress and 0.74–0.98× decompress. The
-  binding is the C core via pybind11; overhead only shows on the fastest
-  decoders (zlib/gzip).
-- **Go pays for cgo**, 0.60–0.99× compress and 0.39–0.95× decompress. The
-  per-call transition plus `runtime.LockOSThread` is a fixed cost, so it is
-  invisible on xz and dominant on snappy compress and zlib/gzip decode.
-- **WASM is the slowest across the board**, 0.60–0.84× compress and 0.50–1.00×
-  decompress. zstd/brotli decode are the worst cases (they lean on native SIMD);
-  lz4 decode is free (memory-bound, so the sandbox costs nothing).
-
-Ratios at or slightly above 1.00× are measurement noise — those bindings run
-literally the same codec code as the C driver.
-
-Regenerate with `python3 benchmarks/plot_langs.py` after a 5-way run
-(`--drivers c,wasm,python,go,rust`).
+The charts and tables for compress-utils against the ecosystem, per language binding, are in [docs/benchmarks/](../docs/benchmarks/README.md), generated from the runs by `benchmarks/publish.py` (see Publishing below).
 
 ## Quick start
 
@@ -156,8 +130,6 @@ benchmarks/
   check_levels.py    verifies levels.json against the library (via c-baseline)
   runner.py          builds a driver, runs the matrix, writes results
   report.py          tables, plots, regression diff
-  plot_langs.py      cross-language comparison chart for this README
-  assets/            tracked chart(s) embedded above
   results/           output JSON + plots (gitignored; commit baselines explicitly)
 ```
 
