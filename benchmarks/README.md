@@ -9,43 +9,18 @@ and algorithm. Three jobs:
 2. **Per-language** — compare the same algorithm across C / Python / JS / Rust …
    on one corpus with one metric definition.
 3. **Vs. ecosystem** — compare against each language's native alternatives
-   (`node:zlib`, Python `zstandard`, the Rust `zstd` crate, …) on the same
+   (Python `zstandard`, Go `klauspost/compress`, the Rust `zstd` crate, …) on the same
    inputs. _(Baseline drivers land alongside the language drivers.)_
 
 Status: **C, C-native baseline, WASM (Node), Python, Go, and Rust drivers
-implemented** — all one-shot + streaming. Corpora: `smoke` (synthetic),
-`silesia`, `silesia-mini`, `enwik8`. Ecosystem-library baselines (JS/Python
-native libs) are not done yet — see TODO.md.
+implemented** — all one-shot, streaming and message sets. Corpora: `smoke`
+(synthetic), `silesia`, `silesia-mini`, `enwik8`, `canterbury`,
+`canterbury-large`, `github-users` and `silesia-blocks-*`. Ecosystem-library
+baselines for every binding are in `drivers/` and summarised in [docs/benchmarks/](../docs/benchmarks/README.md).
 
-## Language comparison
+## Published results
 
-![throughput by language and algorithm](assets/lang-comparison.png)
-
-All eight codecs across the five language bindings, measured back-to-back in
-one interleaved run (Silesia-mini, level 6, one-shot). Every binding drives the
-same C core, so compression **ratio is byte-identical** across languages — only
-throughput differs. Relative to native C (higher = closer to the ceiling):
-
-- **Rust ≈ native C**, 0.95–1.00× compress and 0.87–1.04× decompress. The one
-  outlier is **snappy compress at 0.73×**: safe Rust cannot hand out an
-  uninitialized output buffer, so the one-shot path zeroes `compress_bound`
-  bytes before the call. That memset is noise next to xz, but on the fastest
-  codec it is a large slice of the total.
-- **Python ≈ native C**, 0.89–1.07× compress and 0.74–0.98× decompress. The
-  binding is the C core via pybind11; overhead only shows on the fastest
-  decoders (zlib/gzip).
-- **Go pays for cgo**, 0.60–0.99× compress and 0.39–0.95× decompress. The
-  per-call transition plus `runtime.LockOSThread` is a fixed cost, so it is
-  invisible on xz and dominant on snappy compress and zlib/gzip decode.
-- **WASM is the slowest across the board**, 0.60–0.84× compress and 0.50–1.00×
-  decompress. zstd/brotli decode are the worst cases (they lean on native SIMD);
-  lz4 decode is free (memory-bound, so the sandbox costs nothing).
-
-Ratios at or slightly above 1.00× are measurement noise — those bindings run
-literally the same codec code as the C driver.
-
-Regenerate with `python3 benchmarks/plot_langs.py` after a 5-way run
-(`--drivers c,wasm,python,go,rust`).
+The charts and tables for compress-utils against the ecosystem, per language binding, are in [docs/benchmarks/](../docs/benchmarks/README.md), generated from the runs by `benchmarks/publish.py` (see Publishing below).
 
 ## Quick start
 
@@ -84,6 +59,13 @@ python3 benchmarks/runner.py --corpus silesia          # standard real-world cor
 python3 benchmarks/runner.py --corpus smoke,enwik8     # merge tiers
 ```
 
+Small messages: message-set tiers run one one-shot call per message, timed over
+the whole set (see [Message sets](#message-sets)):
+
+```sh
+python3 benchmarks/runner.py --corpus github-users,silesia-blocks
+```
+
 Benchmark streaming as well as one-shot (default `oneshot`):
 
 ```sh
@@ -96,6 +78,21 @@ Regression diff between two runs (same machine):
 python3 benchmarks/report.py new.json --baseline results/baseline-c.json
 ```
 
+## Publishing
+
+The published pages (`docs/benchmarks/`), the charts in them and the benchmark block of each README are generated from the ecosystem sweep by `publish.py`; none of them is edited by hand. To refresh after a new run:
+
+```sh
+benchmarks/run_ecosystem.sh                          # on each machine; memory: python3 benchmarks/memory.py
+# copy each machine's run directory (the *ecosystem*.json files and one *memory*.json) next to each other, then:
+python3 -m venv benchmarks/.venv-publish && benchmarks/.venv-publish/bin/pip install -r benchmarks/requirements-publish.txt
+benchmarks/.venv-publish/bin/python benchmarks/publish.py all --runs c8g=<c8g run dir> c8i=<c8i run dir>
+git diff --stat                                      # review: summary, pages, README blocks, PNGs
+python3 benchmarks/publish.py --check                # pages and README blocks match the summary (stdlib only)
+```
+
+`summarize` (stdlib only) writes `benchmarks/published/summary.json` and `meta.json` from the run directories; `render` turns them into PNGs, markdown pages and the text between the `<!-- bench:start -->` and `<!-- bench:end -->` markers in the READMEs. The raw run JSON is not committed (attach it to a GitHub release); the summary holds everything the pages use. The machine names in `--runs` (`c8g`, `c8i`) are labelled in `publish.py`.
+
 ## Layout
 
 ```
@@ -103,7 +100,8 @@ benchmarks/
   corpus/
     corpora.py       tier registry + resolve() — the runner's entry point
     generate.py      synthetic 'smoke' tier (fixed seed → reproducible)
-    fetch.py         fetched tiers: silesia, enwik8 (download + extract + verify)
+    fetch.py         fetched tiers (download + extract + verify) and derived block tiers
+    msgset.py        message-set file format (many small messages in one file)
     manifest.json    synthetic per-file sha256 (tracked)
     fetched.lock.json  sha256 lock for fetched corpora, trust-on-first-use (tracked)
     data/            generated/extracted inputs (gitignored)
@@ -111,18 +109,27 @@ benchmarks/
   drivers/
     c/bench_harness.h  shared C harness: timing, stats, NDJSON, job loop
     c/bench.c          compress-utils driver (wraps the cu_* ABI)
-    c/bench_baseline.c  baseline: raw libzstd/libbrotli/… linked directly
+    c/bench_baseline.c  baseline: raw libzstd/libbrotli/… linked directly (the
+                        vendored codecs, from build/algorithms/)
+    c/bench_alt.c       alternative C libraries, one binary per library
+    c/bench_zapi.h      zlib/gzip/deflate codecs over any zlib-API library
     wasm/bench_wasm.mjs   compress-utils WASM package via Node (records module size)
     python/bench_py.py    compress-utils Python binding
-    go/bench_go.go        compress-utils Go binding (cgo; `go build`)
-    rust/                 compress-utils Rust binding — a sibling crate with a
-                          path dependency, so the published manifest stays clean
+    go/                   compress-utils Go binding and the Go competitors — its own
+                          module (cgo; `go build`), so the competitors stay out of the
+                          root go.mod
+    rust/                 compress-utils Rust binding and the Rust competitors — a
+                          sibling crate with a path dependency, so the published
+                          manifest stays clean
   lib/
     bench_common.py  run metadata, result schema, throughput math
+  deps/deps.py       fetch + build the alternative C libraries (benchmark-only)
+  size/size.py       binary size of each C library (probe.c linked statically)
+  size/js_size.py    JS bundle size and cold start of each JS/WASM library
+  levels.json        compress-utils level → each codec's native level
+  check_levels.py    verifies levels.json against the library (via c-baseline)
   runner.py          builds a driver, runs the matrix, writes results
   report.py          tables, plots, regression diff
-  plot_langs.py      cross-language comparison chart for this README
-  assets/            tracked chart(s) embedded above
   results/           output JSON + plots (gitignored; commit baselines explicitly)
 ```
 
@@ -134,7 +141,14 @@ Selected with `--corpus` (comma-separated; `all` = every tier):
 |-----------|-----------------------------------------------------|--------|------|
 | `smoke`   | 4 synthetic datasets (text/json/binary/random)      | generated, fixed seed | ~6 MB |
 | `silesia` | the standard 12-file real-world corpus              | fetched (per-file zips) | ~211 MB |
+| `silesia-mini` | 6 Silesia files: dickens, samba, x-ray, osdb, sao, xml | fetched | ~70 MB |
 | `enwik8`  | 100 MB Wikipedia text — the standard ratio benchmark | fetched | 100 MB |
+| `canterbury` | the 11-file Canterbury corpus, 3.7 KB to 1 MB per file | fetched (pfalcon/canterbury-corpus mirror, pinned) | 2.8 MB |
+| `canterbury-large` | E.coli, bible.txt, world192.txt | fetched (same mirror) | 11 MB |
+| `github-users` | zstd's dictionary sample set: 9,114 JSON records of ~820 bytes, one message set | fetched (facebook/zstd v1.1.3 release) | 7.5 MB |
+| `silesia-blocks-1k`, `-4k`, `-16k`, `-64k` | each `silesia-mini` file cut into blocks of that size, 1 MiB of evenly spaced blocks per file, one message set per file | derived from `silesia-mini` | 6 MB each |
+
+`silesia-blocks` selects all four block sizes. The Canterbury corpora come from a mirror because corpus.canterbury.ac.nz refuses scripted downloads; the files match the mirror's SHA1SUMs.
 
 `smoke` is the default and the **only tier suited to CI**: deterministic, no
 network, fast. The fetched tiers are for on-demand local runs (slower, larger).
@@ -145,6 +159,20 @@ first download records each file's sha256 into `fetched.lock.json` (tracked),
 and every later run verifies against it — a changed upstream download fails
 loudly. Downloads cache under `corpus/cache/`; payloads extract to
 `corpus/data/` (both gitignored). Delete `data/<id>` to force a re-fetch.
+
+## Message sets
+
+Timing one call on a 1 KB message is mostly timer noise, so small-message tiers are stored as **message sets**: one file of length-prefixed records (`u32` little-endian length, then the bytes; see `corpus/msgset.py`). The runner sends their jobs in `msgset` mode, and each sample compresses every message with its own one-shot call, then decompresses each one. The times cover the whole set, and records carry `messages` so the report can show the cost per message (`compress_ns_per_msg`, `decompress_ns_per_msg`). Decompression is given no size: each implementation uses what the compressed bytes record (zstd, lz4 and snappy sizes, gzip's ISIZE, our own size hint) or its library's unknown-size API; in C, without a hint the buffer starts at `3 x input` (no minimum) and doubles when too small: whole-buffer-only libraries (libdeflate, miniz, google-snappy, snappy-core) restart the decode, libraries with a streaming API grow the buffer and continue it, and records carry `decompress_size_hint` (`codec` or `none`) and `decompress_retries` (times the starting size was too small). The WASM driver uses the synchronous API for message sets, after `preload()`.
+
+`report.py` adds per-message columns to the table and, for the block tiers, plots throughput and ratio against message size (`msgsize-<file>-L<level>.png`).
+
+## Levels
+
+`levels.json` maps compress-utils' level 1..10 to each codec's native level, as the wrappers in `src/algorithms/` do. Drivers for native libraries (listed in `NATIVE_LEVEL_DRIVERS` in `runner.py`) receive the native level instead of ours, and every record carries both `level` (compress-utils) and `native_level`. `check_levels.py` verifies the file: the native-library C baseline at the mapped levels must produce byte-identical output to compress-utils at every level.
+
+```sh
+python3 benchmarks/check_levels.py     # needs a normal build first
+```
 
 ## Metric definitions
 
@@ -184,7 +212,8 @@ all-or-nothing.
 Every language driver is a process that:
 
 - reads **one job per line** from stdin: `<algo> <level> [<mode>] <path>` where
-  `mode` is `oneshot` (default if omitted) or `stream`; `path` may contain spaces
+  `mode` is `oneshot` (default if omitted), `stream` or `msgset` (`path` is a
+  message set); `path` may contain spaces
 - writes **one NDJSON object per job** to stdout, in input order
 - honors env `BENCH_SAMPLES` (default 5), `BENCH_WARMUP` (default 1),
   `BENCH_CHUNK` (stream chunk size, default 65536)
@@ -225,7 +254,7 @@ stream mode gets a full cu-vs-native overlay.
 ## Comparing against ecosystem baselines (goal 3)
 
 A "baseline" is the language's native alternative for an algorithm — Python
-`zstandard`, `node:zlib`, the Rust `zstd` crate, raw `libzstd` in C. These are
+`zstandard`, Go `klauspost/compress`, the Rust `zstd` crate, raw `libzstd` in C. These are
 **in-process library calls in a sibling driver**, _not_ CLI subprocesses:
 
 - **CLI is for interop/correctness**, which `tests/interop/cli_crosscheck.py`
@@ -240,8 +269,131 @@ A "baseline" is the language's native alternative for an algorithm — Python
 
 Each record carries an `impl` field distinguishing our binding from the
 baseline for the same `(lang, algo)`; it defaults to `"compress-utils"` and a
-baseline driver sets e.g. `"zstandard"` or `"node:zlib"`. `report.py` overlays
+baseline driver sets e.g. `"zstandard"` or `"cramjam"`. `report.py` overlays
 implementations on the Pareto plot (color = algorithm, line style = impl) and
 keys regressions on it. For C specifically, the baseline is raw upstream
 `libzstd`/`libbrotli`/… — it measures the binding's **wrapper overhead** and
 sets the throughput ceiling.
+
+### C: alternative libraries
+
+Beyond `c-baseline` (the codecs we vendor, called directly), C has other implementations of the same formats. `deps/deps.py` fetches and builds them, benchmark-only and never shipped: each pinned to a release, its source archive locked by sha256 on first download (`deps/deps.lock.json`, tracked), built in release mode with its own build system.
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `c-zlib-ng` | zlib-ng 2.3.3 (native `zng_` API) | zlib, gzip, deflate |
+| `c-libdeflate` | libdeflate 1.26 (one-shot only, levels 1–12) | zlib, gzip, deflate |
+| `c-isa-l` | Intel ISA-L 2.32.1 igzip (levels 0–3) | zlib, gzip, deflate |
+| `c-zlib-rs` | zlib-rs 0.6.8 (Rust, zlib C ABI) | zlib, gzip, deflate |
+| `c-miniz` | miniz 3.1.2 (levels 1–10) | zlib, deflate |
+| `c-libbz2-rs` | libbzip2-rs 0.2.5 (Rust, libbzip2 C ABI) | bz2 |
+| `c-lzma-sdk` | 7-Zip LZMA SDK 26.05, single-threaded | xz |
+| `c-google-snappy` | Google snappy 1.3.1 (C++, via its C API) | snappy |
+
+All are one binary built from `drivers/c/bench_alt.c` with `-DALT_<NAME>`, linking only that library (zlib-rs and zlib export the same symbols). zstd, LZ4 and Brotli have no mainstream alternative C implementation, so for them `c-baseline` is the whole comparison. Chromium's zlib fork is left out (no standalone build outside Chromium's GN), as is Cloudflare's (archived).
+
+```sh
+python3 benchmarks/deps/deps.py --list        # what's available
+python3 benchmarks/runner.py --drivers c,c-baseline,c-zlib-ng,c-libdeflate --algos zlib --sweep
+```
+
+Each driver uses its library's documented one-shot API, and its streaming API where it has one (libdeflate and raw snappy have none), fed in `--chunk`-sized pieces like the other drivers; run both with `--modes oneshot,stream`. A library whose one-shot API takes a reusable context or work buffer (libdeflate's compressor, ISA-L's level buffer) gets one per level, reused across calls, as its documentation intends; compress-utils has no reusable context, so it pays its setup on every call, which shows on small messages.
+
+**Sweeps.** Libraries number their levels differently (libdeflate 1–12, ISA-L 0–3, the LZMA SDK's levels pick different dictionaries than xz's presets), so comparing "level 6" across them means little. `--sweep` runs every native-library driver over its whole level range (declared in `--info`, else `levels.json`'s `range`) and compress-utils over all ten levels, and the Pareto plots then show each implementation's full ratio/speed curve. Without `--sweep`, native drivers get compress-utils' levels translated through `levels.json` and sit out levels outside their range.
+
+### Python: competitors
+
+All Python drivers run `drivers/python/bench_py.py` on one interpreter: a Python 3.14 venv (`drivers/python/.venv`, the first version with `compression.zstd`) that the runner creates on first use with the pinned competitors in `drivers/python/requirements.txt`, plus compress-utils' binding built from this checkout for it (an incremental CMake build in `drivers/python/build`). `--impl` selects the implementation; the runner's keys are:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `python` | compress-utils | all |
+| `python-stdlib` | `zlib`, `bz2`, `lzma`, `compression.zstd` | zlib, gzip, deflate, bz2, xz, zstd |
+| `python-cramjam` | cramjam 2.14.0 | all; no streaming (its decompressor can't take chunked input) |
+| `python-zstandard` | zstandard 0.25.0 | zstd |
+| `python-brotli` | brotli 1.2.1 | brotli |
+| `python-lz4` | lz4 4.4.5 (`lz4.frame`) | lz4 |
+
+Competitors get native levels and are set to compress-utils' wire format where their API allows (zstd content size, LZ4 content size + checksum, xz CRC64). compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. The exact run behind the published numbers is in `docs/ecosystem-benchmarks.md`.
+
+### JavaScript: competitors
+
+`drivers/wasm/bench_wasm.mjs` benchmarks compress-utils' WASM package and the portable JavaScript/WASM libraries it competes with, on Node and on Bun (`--js-runtime node|bun`), so the same code is measured on V8 and on JavaScriptCore. This is a portable benchmark: competitors are limited to what also runs in browsers, edge runtimes and Deno, which is pure JavaScript and WASM libraries plus `CompressionStream`, the browser standard. Native code (`node:zlib`, Node addons) is out, since it is not comparable to a WASM build and not available where the package is meant to run. Competitors install from `drivers/wasm/package.json` (pinned, `npm ci`) on first use. The runner uses the first `node` and `bun` on `PATH`; set `BENCH_NODE` / `BENCH_BUN` to pick a binary (the version is recorded in every result, and e.g. brotli in `CompressionStream` needs Node 24.7 or newer).
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `wasm` | compress-utils (WASM) | all |
+| `js-compression-stream` | `CompressionStream` (stream-only, no levels) | zlib, gzip, deflate (brotli where supported) |
+| `js-fflate` | fflate 0.8.3 | zlib, gzip, deflate |
+| `js-pako` | pako 3.0.2 | zlib, gzip, deflate |
+| `js-brotli-wasm` | brotli-wasm 3.0.1 | brotli |
+| `js-zstd-wasm` | @bokuweb/zstd-wasm 0.0.27 (no streaming) | zstd |
+| `js-fzstd` | fzstd 0.1.1 (decode only) | zstd |
+| `js-xz-decompress` | xz-decompress 0.2.3 (decode only, stream-only) | xz |
+| `js-lz4js` | lz4js 0.2.0 (no levels, no streaming, frames without content size or checksum) | lz4 |
+| `js-snappyjs` | snappyjs 0.7.0 (no levels, no streaming) | snappy |
+
+Decode-only libraries get their input from another library, untimed, and records carry `decode_only: true` with compress timings of 0. Formats without levels run once per input, not once per level (`levelless` in `--info`). Message sets use each library's synchronous API (compress-utils' `compressSync`/`decompressSync` after `preload()`), and records carry `runtime`.
+
+Two Bun quirks the driver works around, both of which end a process silently with exit code 0: it exits if the entry module finishes evaluating while a WebAssembly compile is pending (hence a top-level `await main()`), and `process.stdin` (and `node:readline` over it) ends after two jobs while the parent still has the pipe open (hence reading fd 0 synchronously).
+
+`size/js_size.py` measures what each library costs a page: minified browser bundle size (JS plus any WASM binary, and the gzip of both) and cold start (a fresh process imports the library and does one 1 KB round trip; median of 5 minus an empty process; Node and Bun). Cold start is a few milliseconds and noisy; treat it as an order of magnitude.
+
+```sh
+python3 benchmarks/size/js_size.py
+```
+
+### Go: competitors
+
+`drivers/go` is its own module (`bench-go`) that replaces `github.com/dupontcyborg/compress-utils` with this checkout, so the competitors never touch the root `go.mod` that consumers get, and the binding still compiles its C core through cgo. One binary, `--impl` selects the implementation; the runner's keys are:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `go` | compress-utils | all |
+| `go-stdlib` | `compress/zlib`, `compress/gzip`, `compress/bzip2` (decode only) | zlib, gzip, bz2 |
+| `go-klauspost` | klauspost/compress 1.20 (`zstd`, `zlib`, `gzip`, `snappy`) | zstd, zlib, gzip, snappy (raw blocks, no levels, no streaming) |
+| `go-brotli` | andybalholm/brotli 1.2 | brotli |
+| `go-lz4` | pierrec/lz4 4.1 (levels 0-9) | lz4 |
+| `go-xz` | ulikunitz/xz 0.5 (pure Go, no levels) | xz |
+| `go-bzip2` | dsnet/compress 0.0.1 (archived, but the only pure-Go bzip2 encoder) | bz2 |
+
+klauspost's zstd runs its single-threaded encoder and decoder with a context per level, reused (its documented usage), and its levels are the `EncoderLevelFromZstd` mapping of zstd's. Go's standard-library codecs have only streaming APIs, so one-shot there writes the input in a single call and streaming writes it in chunks. The Go and Rust bindings have no `deflate` format.
+
+### Rust: competitors
+
+`drivers/rust` is a sibling crate (`bench-rust`, path dependency on the binding; its `Cargo.lock` pins the competitors). `--impl` selects the implementation; most share one binary, the ones noted below do not:
+
+| Driver | Library | Formats |
+|--------|---------|---------|
+| `rust` | compress-utils | all |
+| `rust-flate2` | flate2 1.1, default `miniz_oxide` backend | zlib, gzip |
+| `rust-flate2-zlib-rs` | flate2 1.1 with its `zlib-rs` backend (a second binary, built with `--features zlib-rs`) | zlib, gzip |
+| `rust-zstd` | zstd 0.14 (libzstd 1.5.7, bundled; its own binary) | zstd |
+| `rust-brotli` | brotli 9 (the Rust port) | brotli |
+| `rust-lz4_flex` | lz4_flex 0.14, frame format (no levels) | lz4 |
+| `rust-snap` | snap 1.1, raw blocks (no levels, no streaming) | snappy |
+| `rust-bzip2` | bzip2 0.6 (libbz2-rs-sys, pure Rust) | bz2 |
+| `rust-xz2` | xz2 0.1 (bundled liblzma 5.2, built static; its own binary) | xz |
+
+A crate that embeds a C library we also ship cannot share a binary with compress-utils: the linker keeps one definition of each C symbol (`ZSTD_*`, `lzma_*`), so both would run the same C code and the comparison would be void. `rust-zstd` and `rust-xz2` are therefore built without compress-utils (`--no-default-features --features zstd-crate|xz2-crate`, target dirs `target-zstd` and `target-xz2`; `runner.py` `RUST_SEPARATE`), and their records carry no `interop`. To add a competitor that bundles C, put it behind its own optional feature and add it to `RUST_SEPARATE`; pure-Rust crates (flate2, brotli, lz4_flex, snap, bzip2 via libbz2-rs-sys) are safe in the main binary. Check with `nm target*/release/bench_rust | grep -c ' [Tt] _lzma_'` and the like. flate2 chooses its backend at build time, so the two it is usually run with are two binaries: the default `miniz_oxide` (what most `Cargo.lock` files have) and `zlib-rs`, the fast one. (zlib-ng is benchmarked as a C library above.) zstd's one-shot path is `zstd::bulk`, as its docs recommend; with a known size, decompression passes it.
+
+Both Go and Rust competitors get native levels and are set to compress-utils' wire format where their API allows (zstd and LZ4 content size, LZ4 checksum, xz CRC64); compress-utils decodes each competitor's output once per job, untimed, and records the result as `interop`. Decode-only libraries get their input from compress-utils, untimed, and records carry `decode_only: true`.
+
+### Binary size
+
+`size/size.py` measures what each library adds to a stripped, statically linked, dead-stripped program that uses one format, compressing and decompressing or decompressing only (`size/probe.c`), against an empty program. compress-utils is built the way a size-conscious user would: a static archive with only that codec, and `-DCU_OMIT_COMPRESS` for decode-only; a separate row is the default all-codec archive. All libraries are release builds as their projects ship them (not rebuilt with `-Os`).
+
+```sh
+python3 benchmarks/size/size.py               # table + results/size-<stamp>.json
+```
+
+### Memory
+
+`memory.py` measures how much memory one compress and one decompress need, for the C drivers only and on Linux only (it reads `/proc/self/status` and resets the high-water mark through `/proc/self/clear_refs`; elsewhere it prints a note and exits 0). Per driver, algorithm and level it runs three jobs, each in a fresh driver process so an earlier job cannot hide a peak through heap reuse: one-shot on dickens (`mem`), streaming on dickens with 64 KiB chunks and window (`memstream`), and one-shot on the first 4 KiB of dickens (the fixed cost of one call). The job (`bench_run_mem_job` in `bench_harness.h`) mallocs the output buffers without touching them, then records VmRSS, resets VmHWM, makes the one call and reads VmHWM; the delta is the peak. The `*_overhead_kb` fields subtract what the call had to write (the compressed bytes; the decompressed bytes one-shot, one window streaming), leaving dictionary, hash tables and per-context state. RSS counts touched pages only, so a large dictionary the codec never fills is invisible. Between the phases `malloc_trim(0)` returns heap the compressor freed (glibc only), so it does not hide what the decompressor needs.
+
+```sh
+python3 benchmarks/memory.py                                              # 12 C drivers, 9 algos, levels 1,6,10
+python3 benchmarks/memory.py --drivers c,c-baseline --algos xz --levels 1,6
+```
+
+Cost: a full default run is about 2.2 one-shot passes of the ecosystem run's C drivers over dickens, roughly 5 minutes on a c8i.xlarge and 6 on a c8g.xlarge. That is an estimate from the speed numbers in `results/ec2`, not a measured run. Results go to `results/<stamp>-memory-<drivers>-<sha>.json` (records carry the driver key, `input_id`, the compress-utils `level` and the `native_level` sent).

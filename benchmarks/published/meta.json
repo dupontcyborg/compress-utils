@@ -1,0 +1,96 @@
+{
+  "all_stages_same_commit": true,
+  "commit": "c3ae4b7",
+  "commit_label": "c3ae4b7 plus driver fixes",
+  "competitor_versions": {
+    "c": "0.11.2",
+    "c-baseline": "baseline",
+    "c-google-snappy": "1.3.1",
+    "c-isa-l": "2.32.1",
+    "c-libbz2-rs": "0.2.5",
+    "c-libdeflate": "1.26",
+    "c-libdeflate-percall": "1.26",
+    "c-liblzma-fitdict": "vendored",
+    "c-libzstd-ctx": "vendored",
+    "c-lzma-sdk": "26.05",
+    "c-miniz": "3.1.2",
+    "c-zlib-ng": "2.3.3",
+    "c-zlib-rs": "0.6.8",
+    "go": "0.11.2",
+    "go-brotli": "andybalholm/brotli v1.2.7",
+    "go-bzip2": "dsnet/compress v0.0.1",
+    "go-klauspost": "klauspost/compress v1.20.3",
+    "go-lz4": "pierrec/lz4 v4.1.33",
+    "go-stdlib": "go1.26.8",
+    "go-xz": "ulikunitz/xz v0.5.17",
+    "js-brotli-wasm": "3.0.1",
+    "js-compression-stream": "bun 1.3.10 (web standard)",
+    "js-fflate": "0.8.3",
+    "js-fzstd": "0.1.1",
+    "js-lz4js": "0.2.0",
+    "js-pako": "3.0.2",
+    "js-snappyjs": "0.7.0",
+    "js-xz-decompress": "0.2.3",
+    "js-zstd-wasm": "0.0.27",
+    "python": "0.11.2",
+    "python-brotli": "1.2.1",
+    "python-cramjam": "2.14.0",
+    "python-lz4": "4.4.5",
+    "python-stdlib": "python 3.14.4, zlib 1.3.1, zstd 1.5.7",
+    "python-zstandard": "0.25.0",
+    "rust": "0.11.2",
+    "rust-brotli": "brotli crate 9",
+    "rust-bzip2": "bzip2 crate 0.6 (libbz2-rs-sys)",
+    "rust-flate2": "flate2 1.1 (miniz_oxide)",
+    "rust-flate2-zlib-rs": "flate2 1.1 (zlib-rs)",
+    "rust-lz4_flex": "lz4_flex 0.14",
+    "rust-snap": "snap 1.1",
+    "rust-xz2": "xz2 crate 0.1 (bundled liblzma 5.2)",
+    "rust-zstd": "zstd crate 0.14 (libzstd 1.5.7)",
+    "wasm": "0.11.2 (bun 1.3.10)"
+  },
+  "date": "2026-10-29",
+  "input_bytes": {
+    "dickens": 10192446,
+    "dickens.4k": 1048576,
+    "x-ray": 8474240,
+    "xml": 5345280
+  },
+  "machines": {
+    "c8g": {
+      "arch": "aarch64",
+      "cpu": "unknown",
+      "long": "AWS c8g.xlarge (Graviton4, arm64)",
+      "os": "Linux 7.0.0-1014-aws",
+      "short": "c8g (Graviton4)"
+    },
+    "c8i": {
+      "arch": "x86_64",
+      "cpu": "Intel(R) Xeon(R) 6975P-C",
+      "long": "AWS c8i.xlarge (Intel Xeon 6975P-C, x86-64)",
+      "os": "Linux 7.0.0-1014-aws",
+      "short": "c8i (Xeon 6975P-C)"
+    }
+  },
+  "policy": {
+    "bun_levels": [
+      1,
+      6,
+      10
+    ],
+    "comparable_ratio_band": 0.05,
+    "decompress_buffer_growth": "doubles on a miss",
+    "decompress_output_size_given": false,
+    "decompress_start_multiple_of_input": 3,
+    "level_match_tolerance": 0.02,
+    "levels": 10,
+    "message_bytes": 4096,
+    "stream_chunk_bytes": 65536,
+    "tie_band": 0.1
+  },
+  "samples_by_tier": {
+    "ecosystem-extra": 1,
+    "ecosystem-large": 1,
+    "ecosystem-small": 3
+  }
+}

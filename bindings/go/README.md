@@ -5,7 +5,7 @@
 [![Go build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_go.yml?label=go)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_go.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified Go interface for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
+One API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, with gzip and zlib faster than the Go standard library at every level, compressing and decompressing. Builds from bundled C sources with just a C compiler, no system libraries, all backed by one C core.
 
 ## Installation
 
@@ -13,9 +13,7 @@ Unified Go interface for eight compression algorithms — Zstandard, Brotli, zli
 go get github.com/dupontcyborg/compress-utils/bindings/go
 ```
 
-This binding uses **cgo** and compiles the bundled C sources from source, with no prebuilt library and no network beyond the module fetch. You need only a **C compiler** (`gcc` or `clang`), which cgo requires anyway, and `CGO_ENABLED=1` (the default on native builds). The first build compiles the codecs and is then cached by the Go build cache.
-
-Windows is supported by the C core, but the Go binding's cgo build there needs a mingw toolchain. CI currently covers Linux and macOS.
+Needs Go 1.21 or later, `CGO_ENABLED=1` (the default on native builds) and a C compiler (`gcc` or `clang`); the bundled C sources are compiled on first build and cached by the Go build cache. Tested on Linux, macOS and Windows (MinGW-w64 gcc).
 
 ## Quick start
 
@@ -29,6 +27,23 @@ restored,   err := cu.Decompress(cu.Zstd, compressed)
 ```
 
 `Decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and otherwise has the C core grow the output buffer as it decodes (copied once into the result), so you don't need to know which is which.
+
+## Performance
+
+<!-- bench:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-go-dark.png">
+  <img src="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-go-light.png" alt="Compression ratio against throughput in MB/s on a log axis for compress-utils for Go and andybalholm/brotli, dsnet/compress, Go stdlib, klauspost/compress, pierrec/lz4 and ulikunitz/xz, one row per algorithm (zstd, brotli, zlib, xz, lz4, snappy, bz2) with compress on the left and decompress on the right, dickens one-shot on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29" width="830">
+</picture>
+
+compress-utils for Go against other Go compression libraries: speed against compression ratio.
+
+Measured on AWS c8g.xlarge (Graviton4), dickens (10.2 MB of text), one-shot, 2026-10-29.
+
+Full results [here](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/go.md).
+<!-- bench:end -->
+
+Each call crosses the cgo boundary, which adds a small fixed cost per call; see the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/go-advanced.md#cgo-and-thread-pinning).
 
 ## Supported algorithms
 
@@ -54,13 +69,11 @@ Wire formats match the other compress-utils bindings and the reference tools (fo
 
 ### Raw blocks and output capacity
 
-Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. `DecompressWithCapacity` takes an upper bound on the output and returns only the bytes actually decoded:
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size, so `DecompressWithCapacity` takes an upper bound on the output and returns only the bytes actually decoded. More in the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/go-advanced.md#raw-blocks-and-output-capacity).
 
 ```go
 page, err := cu.DecompressWithCapacity(cu.Lz4Raw, block, uncompressedPageSize)
 ```
-
-Without a capacity, `Decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Streaming (io.Reader / io.Writer)
 
@@ -78,18 +91,7 @@ defer r.Close()
 io.Copy(dst, r)
 ```
 
-### Stopping at the end of a stream
-
-By default a `Reader` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (another message on a connection, the next record in a file), call `Multistream(false)` before the first `Read`, as with `compress/gzip`. `Read` then returns `io.EOF` at the end of the first frame, member or stream, and `Unused()` returns the bytes the `Reader` read from its source past that end:
-
-```go
-r, _ := cu.NewReader(conn, cu.Zstd)
-r.Multistream(false)
-msg, _ := io.ReadAll(r)                                  // the first message only
-next := io.MultiReader(bytes.NewReader(r.Unused()), conn) // carry on from where it ended
-```
-
-Unlike `gzip.Reader`, which avoids reading past the end by pulling one byte at a time through an `io.ByteReader`, this `Reader` reads its source in chunks and hands the extra bytes back through `Unused()`, so always continue from `Unused()` before the source. `Multistream` panics if called after `Read`. `Lz4Raw` (which has no end marker) and `Lzo` don't support it, and their first `Read` returns an `*Error` with `Code` `ErrUnsupported`. Snappy emits nothing until its whole block has arrived.
+To stop at the end of one frame, member or stream and get back the bytes after it, call `Multistream(false)`; see [stopping at the end of a stream](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/go-advanced.md#stopping-at-the-end-of-a-stream).
 
 ## Compression levels
 
@@ -97,7 +99,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 
 ## Errors and limits
 
-Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `SetMaxDecompressedSize`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```go
 cu.Version()                              // e.g. "0.11.2"
@@ -111,12 +113,6 @@ if errors.As(err, &e) { _ = e.Code }
 ## Concurrency
 
 The one-shot `Compress` and `Decompress` functions are safe to call from any number of goroutines. A `Writer` or `Reader` is not safe for concurrent use, so use one stream per goroutine.
-
-Each call pins its goroutine to an OS thread for its duration, because the C core reports error details through thread-local state. The pin is released when the call returns.
-
-## Performance
-
-Overhead versus native C is **0.60–0.99× on compress and 0.39–0.95× on decompress**. Every call crosses the cgo boundary and pins the goroutine to its thread, which is a fixed cost. It disappears on slow codecs such as xz and shows up on the fastest paths: Snappy compress and zlib/gzip decode. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
 ## License
 

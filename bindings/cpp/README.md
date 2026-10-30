@@ -4,20 +4,18 @@
 [![C/C++ build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml?label=c%2Fc%2B%2B)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_c_cpp.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified C++ interface for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
-
-The binding is a **header-only** RAII wrapper (`bindings/cpp/include/compress_utils.hpp`) over the C ABI in [`include/compress_utils.h`](https://github.com/dupontcyborg/compress-utils/blob/main/include/compress_utils.h). There is no separate C++ library to build: include the header and link the C library. It requires **C++20** (for `std::span`).
+A single-header C++20 wrapper for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, over one C core that you build and link. Performance on par with the reference zstd, brotli, LZ4, xz and bzip2 libraries.
 
 ## Installation
 
-Build the C library and consume this header. With CMake, link the interface target:
+Build the C library and consume the header. With CMake, link the interface target:
 
 ```cmake
 add_subdirectory(compress-utils)          # provides compress_utils + compress_utils_cpp
 target_link_libraries(your_app PRIVATE compress_utils_cpp)
 ```
 
-`compress_utils_cpp` is an `INTERFACE` target: it adds the include path, links the `compress_utils` C library, and requires C++20. If you build outside CMake, add `bindings/cpp/include` and `include/` to your include path and link `-lcompress_utils`.
+`compress_utils_cpp` is an `INTERFACE` target that adds the include path, links the C library and requires C++20 (for `std::span`); outside CMake, add `bindings/cpp/include` and `include/` to your include path and link `-lcompress_utils`. Built and tested in CI on Linux, macOS and Windows; the C ABI it wraps is [`include/compress_utils.h`](https://github.com/dupontcyborg/compress-utils/blob/main/include/compress_utils.h).
 
 ## Quick start
 
@@ -41,6 +39,21 @@ std::vector<std::uint8_t> restored   = cu::decompress(cu::Algorithm::Zstd, compr
 std::span<const std::uint8_t> view(ptr, size);
 auto compressed = cu::compress(cu::Algorithm::Zstd, view);
 ```
+
+## Performance
+
+<!-- bench:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-c-dark.png">
+  <img src="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-c-light.png" alt="Compression ratio against throughput in MB/s on a log axis for compress-utils (C core) and google-snappy, ISA-L, libbrotli, libbz2, libbz2-rs, libdeflate, liblz4, liblzma, libzstd, LZMA SDK, miniz, zlib, zlib-ng and zlib-rs, one row per algorithm (zstd, brotli, zlib, xz, lz4, snappy, bz2) with compress on the left and decompress on the right, dickens one-shot on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29" width="830">
+</picture>
+
+compress-utils' C core against native C libraries: speed against compression ratio.
+
+Measured on AWS c8g.xlarge (Graviton4), dickens (10.2 MB of text), one-shot, 2026-10-29.
+
+Full results [here](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/c.md).
+<!-- bench:end -->
 
 ## Supported algorithms
 
@@ -66,13 +79,11 @@ auto compressed = cu::compress(cu::Algorithm::Zstd, view);
 
 ### Raw blocks and output capacity
 
-Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass an output capacity, an upper bound on the output, and the result holds only the bytes actually decoded:
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size, so pass an output capacity, an upper bound on the output; the result holds only the bytes actually decoded. More in the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/cpp-advanced.md#raw-blocks-and-output-capacity).
 
 ```cpp
 auto page = cu::decompress(cu::Algorithm::Lz4Raw, block, uncompressed_page_size);
 ```
-
-Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Streaming
 
@@ -100,21 +111,8 @@ Notes:
 
 - Always call `finish()` to flush trailing data. `DecompressStream::finish()` also verifies the input ended on a frame boundary, and throws `cu::Error` with `CU_ERR_TRUNCATED` otherwise.
 - Streams are movable but not copyable, and they free their C handle on destruction.
-- Snappy's raw block format isn't incrementally codable, so its streams buffer the whole input and encode on `finish()`. Output stays byte-identical to the one-shot path, but memory scales with input size.
-
-### Stopping at the end of a stream
-
-By default a `DecompressStream` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (the next message on a socket, another record in the same file), construct it with `cu::StreamMode::Single`. Decoding stops at the end of the first frame, member or stream, `eof()` turns true, and `unused()` returns the input that came after the end:
-
-```cpp
-cu::DecompressStream ds(cu::Algorithm::Zstd, cu::StreamMode::Single);
-auto message = ds.write(received);   // decodes up to the end of the first frame
-if (ds.eof()) {
-    auto next = ds.unused();         // the bytes after it; valid until the next call on ds
-}
-```
-
-After `eof()`, `write()` with more data throws `cu::Error` with `CU_ERR_STREAM_FINISHED` without consuming it, while an empty `write()` and `finish()` return nothing. Raw LZ4 (which has no end marker) and LZO don't support it, and throw `CU_ERR_UNSUPPORTED_ALGO`. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `cu::set_max_decompressed_size` (as set when the stream was created) with `CU_ERR_SIZE_LIMIT`. From C, create the stream with `cu_decompress_stream_create_ex(algo, CU_DSTREAM_SINGLE, &stream)` and query it with `cu_decompress_stream_eof` and `cu_decompress_stream_unused`; `include/compress_utils.h` documents the exact protocol.
+- Snappy's raw block format isn't incrementally codable, so its streams buffer the whole input and encode on `finish()`; memory scales with input size.
+- To stop at the end of one frame and get the bytes after it, construct the stream with `cu::StreamMode::Single`; see [stopping at the end of a stream](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/cpp-advanced.md#stopping-at-the-end-of-a-stream).
 
 ## Compression levels
 
@@ -122,9 +120,9 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 
 ## Errors and limits
 
-Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `cu::set_max_decompressed_size`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
-Every failure throws `cu::Error` (derived from `std::runtime_error`). It carries the underlying C status code via `.code()`:
+Every failure throws `cu::Error` (derived from `std::runtime_error`), which carries the underlying C status code via `.code()`:
 
 ```cpp
 try {
@@ -148,10 +146,6 @@ ds.set_max_output(256 * 1024 * 1024);
 ## Concurrency
 
 The one-shot `cu::compress` and `cu::decompress` functions, and `cu::set_max_decompressed_size`, are thread-safe. A `CompressStream` or `DecompressStream` is not thread-safe, so use one stream per thread. Error details are reported through thread-local state, so a `cu::Error` always describes the failing call on the thread that caught it.
-
-## Performance
-
-Matches native C: the binding is header-only and calls straight into the C core, so there is no binding overhead to measure. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
 
 ## License
 

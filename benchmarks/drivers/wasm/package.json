@@ -1,0 +1,19 @@
+{
+  "name": "compress-utils-bench-js",
+  "private": true,
+  "description": "Benchmark-only portable JavaScript/WASM competitors for the ecosystem comparison (pinned). No native addons: everything here runs in browsers, edge runtimes, Deno, Bun and Node.",
+  "type": "module",
+  "dependencies": {
+    "@bokuweb/zstd-wasm": "0.0.27",
+    "brotli-wasm": "3.0.1",
+    "fflate": "0.8.3",
+    "fzstd": "0.1.1",
+    "lz4js": "0.2.0",
+    "pako": "3.0.2",
+    "snappyjs": "0.7.0",
+    "xz-decompress": "0.2.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

@@ -100,6 +100,7 @@ class RunMeta:
     chunk: int = 64 * 1024
     samples: int = 5
     warmup: int = 1
+    sweep: bool = False  # native-level drivers ran their whole level range
     machine: dict = field(default_factory=machine_fingerprint)
 
 
@@ -130,8 +131,12 @@ def decompress_mbps(rec: dict) -> float:
 def enrich(rec: dict) -> dict:
     """Attach derived fields to a raw driver record (non-destructive).
 
+    A record with decode_only (a library that can't compress) has compress_ns 0 and
+    an output size from another library: its compress_mbps is 0 and its ratio is not
+    its own. Anything comparing compress speed or ratio must skip those records.
+
     `impl` distinguishes our binding from an ecosystem baseline for the same
-    (lang, algo) — e.g. "compress-utils" vs "node:zlib" vs "zstandard". A
+    (lang, algo) — e.g. "compress-utils" vs "klauspost" vs "zstandard". A
     driver that benchmarks a native alternative sets it; ours defaults here so
     existing drivers need no change."""
     r = dict(rec)
@@ -140,7 +145,39 @@ def enrich(rec: dict) -> dict:
     r["ratio"] = ratio(rec)
     r["compress_mbps"] = compress_mbps(rec)
     r["decompress_mbps"] = decompress_mbps(rec)
+    # Message sets: the times cover every message; also give the cost of one.
+    if rec.get("messages"):
+        r["compress_ns_per_msg"] = rec["compress_ns_median"] / rec["messages"]
+        r["decompress_ns_per_msg"] = rec["decompress_ns_median"] / rec["messages"]
     return r
+
+
+# --------------------------------------------------------------------------- #
+# Level map. levels.json maps compress-utils' 1..10 to each codec's native
+# level. Baseline drivers (native libraries) receive the native level.
+# --------------------------------------------------------------------------- #
+
+LEVELS_FILE = BENCH_ROOT / "levels.json"
+_levels: dict | None = None
+
+
+def _level_map() -> dict:
+    global _levels
+    if _levels is None:
+        _levels = json.loads(LEVELS_FILE.read_text())
+    return _levels
+
+
+def native_level(algo: str, level: int) -> int | None:
+    """The native level compress-utils uses for `level`, or None for a codec
+    without levels (snappy) or one levels.json doesn't know."""
+    native = (_level_map().get(algo) or {}).get("native")
+    return native[level - 1] if native and 1 <= level <= len(native) else None
+
+
+def level_range(algo: str) -> list[int] | None:
+    """The codec's own [min, max] level range from levels.json, or None."""
+    return (_level_map().get(algo) or {}).get("range")
 
 
 # --------------------------------------------------------------------------- #

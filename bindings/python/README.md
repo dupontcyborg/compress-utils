@@ -6,7 +6,7 @@
 [![Python build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_python.yml?label=python)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_python.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified Python interface for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
+One API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, with performance on par with the dedicated Python packages for each format. Self-contained wheels with no system libraries, free-threaded Python supported, all backed by one C core.
 
 ## Installation
 
@@ -14,7 +14,7 @@ Unified Python interface for eight compression algorithms — Zstandard, Brotli,
 pip install compress-utils
 ```
 
-The wheel is self-contained: no system codec libraries are required at runtime. Type stubs (`.pyi`) and a `py.typed` marker ship with the wheel, so `mypy`, `pyright`, and IDE autocomplete work out of the box.
+Self-contained wheels (no system codec libraries) with PEP 561 type stubs, for CPython 3.11–3.15 including free-threaded 3.14t and 3.15t, on Linux (manylinux, x86-64 and aarch64), macOS (Apple silicon) and Windows (x86-64); other platforms such as musl Linux, Intel macOS and Windows on Arm build from the source distribution, which needs a C and C++ toolchain.
 
 ## Quick start
 
@@ -33,6 +33,21 @@ Algorithm names accept both lowercase strings (`"zstd"`, `"brotli"`, …) and th
 ```python
 cu.compress(data, cu.Algorithm.zstd, level=5)
 ```
+
+## Performance
+
+<!-- bench:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-python-dark.png">
+  <img src="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-python-light.png" alt="Compression ratio against throughput in MB/s on a log axis for compress-utils for Python and brotli (PyPI), cramjam, lz4 (PyPI), Python stdlib and zstandard, one row per algorithm (zstd, brotli, zlib, xz, lz4, snappy, bz2) with compress on the left and decompress on the right, dickens one-shot on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29" width="830">
+</picture>
+
+compress-utils for Python against other Python compression libraries: speed against compression ratio.
+
+Measured on AWS c8g.xlarge (Graviton4), dickens (10.2 MB of text), one-shot, 2026-10-29.
+
+Full results [here](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/python.md).
+<!-- bench:end -->
 
 ## Supported algorithms
 
@@ -58,13 +73,11 @@ cu.compress(data, cu.Algorithm.zstd, level=5)
 
 ### Raw blocks and `expected_size`
 
-Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. Pass `expected_size`, an upper bound on the output, and the result holds only the bytes actually decoded:
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size, so pass `expected_size`, an upper bound on the output; the result holds only the bytes actually decoded. More in the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/python-advanced.md#raw-blocks-and-expected_size).
 
 ```python
 page = cu.decompress(block, "lz4_raw", expected_size=uncompressed_page_size)
 ```
-
-Without `expected_size`, `lz4_raw` blocks are decoded with the incremental stream decoder, which is slower, so pass it when you know the size. Every other algorithm accepts it too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Streaming
 
@@ -82,24 +95,7 @@ ds = DecompressStream("zstd")
 restored = ds.decompress(compressed) + ds.finish()
 ```
 
-Streaming uses chunked buffers with an internal drain protocol, and output is yielded in 64 KB pages, so streaming a multi-GB file does not hold the whole compressed result in memory. For applications that round-trip many small payloads with the same algorithm, prefer the functional API over creating a new `CompressStream` per payload.
-
-### Stopping at the end of a stream
-
-By default a `DecompressStream` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream. When a compressed stream is followed by other data (the next message on a socket, another record in the same file), pass `single_stream=True`. Decoding stops at the end of the first frame, member or stream, `eof` turns `True`, and `unused_data` holds the input that came after the end, as with the standard library's `bz2.BZ2Decompressor`, `lzma.LZMADecompressor` and `compression.zstd.ZstdDecompressor`:
-
-```python
-ds = DecompressStream("zstd", single_stream=True)
-message = b""
-while not ds.eof:
-    chunk = f.read(65536)
-    if not chunk:
-        ds.finish()                         # raises CompressError: the stream was cut short
-    message += ds.decompress(chunk)
-f.seek(-len(ds.unused_data), io.SEEK_CUR)   # give back what was read past the end
-```
-
-After the end, `decompress()` with more data raises `EndOfStreamError`, a subclass of both `CompressError` and `EOFError`, without consuming it. The standard library's decompressor objects stop at the first stream by default, but here it's opt-in, because `DecompressStream` has decoded concatenated frames as one stream since v0.10. `lz4_raw` (which has no end marker) and `lzo` don't support it. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `set_max_decompressed_size` (as set when the stream was created).
+Streaming does not hold the whole result in memory, so a multi-GB file is fine. To stop at the end of one frame or member and get the bytes after it, pass `single_stream=True`; see [stopping at the end of a stream](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/python-advanced.md#stopping-at-the-end-of-a-stream).
 
 ## Compression levels
 
@@ -107,7 +103,7 @@ Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The bin
 
 ## Errors and limits
 
-Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `set_max_decompressed_size`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```python
 cu.version()                                  # e.g. "0.11.2"
@@ -121,31 +117,13 @@ except cu.CompressError as e:
     print(e)
 ```
 
-### Type checking
-
-The package ships PEP 561 type information:
-
-```python
-import compress_utils as cu
-reveal_type(cu.compress)           # → (data: Buffer, algorithm: object, level: int = 5) -> bytes
-reveal_type(cu.Algorithm.zstd)     # → Algorithm
-```
-
-Stubs are regenerated from the compiled module at build time (via `pybind11-stubgen`), so they cannot drift from the binding signatures.
+The package ships PEP 561 type stubs; [type checking](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/python-advanced.md#type-checking) shows what they report.
 
 ## Concurrency
 
-Wheels are also published for free-threaded Python 3.14 and 3.15 (`python3.14t`, `python3.15t`), where the module runs without the GIL and calls on different threads run in parallel whatever their size.
+Wheels for free-threaded Python 3.14 and 3.15 (`python3.14t`, `python3.15t`) run without the GIL, so calls on different threads run in parallel. On regular Python, large calls (256 KiB or more of input) release the GIL so other threads keep running; when streaming, feed chunks of 256 KiB or more.
 
-On regular Python, calls with at least 256 KiB of input (or of recorded output, for formats that store their size) release the GIL, so other Python threads keep running and several threads can compress or decompress in parallel. Smaller calls keep the GIL, since getting it back can cost more than the call itself. When streaming, feed chunks of 256 KiB or more to get this.
-
-A `CompressStream` or `DecompressStream` can be shared between threads: calls on one stream run one at a time. Don't resize a `bytearray` while it's being passed to a call; Python raises `BufferError` if you try.
-
-While another thread runs pure Python, each call that released the GIL can wait up to the interpreter's switch interval (5 ms by default) to get it back, as with the standard library's `zlib`. Larger chunks (1 MiB or more) make that wait a small share of each call, and `sys.setswitchinterval(0.0005)` shortens it.
-
-## Performance
-
-Overhead versus native C is **0.89–1.07× on compress and 0.74–0.98× on decompress**. The binding is the C core via pybind11, so overhead only shows on the fastest decoders (zlib and gzip). Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart, and [Concurrency](#concurrency) for when calls release the GIL.
+A `CompressStream` or `DecompressStream` can be shared between threads: calls on one stream run one at a time. More in the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/python-advanced.md#concurrency-details).
 
 ## License
 

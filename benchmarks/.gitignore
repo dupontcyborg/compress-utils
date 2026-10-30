@@ -8,7 +8,28 @@ drivers/c/bench
 drivers/c/bench_baseline
 drivers/go/bench_go
 drivers/rust/target/
-drivers/rust/Cargo.lock
+drivers/rust/target-zlib-rs/
+drivers/rust/target-zstd/
+drivers/rust/target-xz2/
 
 # Run outputs. Commit baselines explicitly with `git add -f`.
 results/
+
+# Benchmark-only alternative libraries (deps/deps.py). Pinned by deps/deps.lock.json (tracked).
+deps/cache/
+deps/src/
+deps/out/
+drivers/c/bench_alt_*
+
+# Binary-size probes and per-codec compress-utils builds (size/size.py).
+size/build/
+
+# Python benchmark interpreter (runner.py python_env) and its binding build.
+drivers/python/.venv/
+drivers/python/build/
+
+# JavaScript competitors (drivers/wasm/package.json; pinned by package-lock.json, tracked).
+drivers/wasm/node_modules/
+
+# Publishing venv (matplotlib for charts; see publish.py)
+.venv-publish/

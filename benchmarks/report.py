@@ -20,6 +20,16 @@ import bench_common as bc  # noqa: E402
 
 PLOTS_DIR = bc.RESULTS_DIR / "plots"
 
+
+def level_label(r: dict) -> str:
+    """The compress-utils level, or "n<native>" for a native-sweep record."""
+    return str(r["level"]) if r.get("level") is not None else f"n{r.get('native_level')}"
+
+
+def level_key(r: dict) -> tuple:
+    return (r["level"] if r.get("level") is not None else -1,
+            r["native_level"] if r.get("native_level") is not None else -1)
+
 # Regression thresholds. Ratio is near-deterministic so we're strict; speed is
 # noisy on shared hardware so we only flag large moves.
 RATIO_DROP_PCT = 1.0
@@ -36,10 +46,13 @@ def print_table(data: dict) -> None:
     recs = sorted(
         data["records"],
         key=lambda r: (r["input_id"], r["algo"], r.get("impl", ""), r.get("mode", ""),
-                       r["level"]),
+                       level_key(r), r.get("lang", "")),
     )
+    multi_lang = len({r.get("lang") for r in recs}) > 1
     multi_impl = len({r.get("impl", "compress-utils") for r in recs}) > 1
     multi_mode = len({r.get("mode", "oneshot") for r in recs}) > 1
+    has_msgs = any(r.get("messages") for r in recs)
+    iw = max([8, *(len(r["input_id"]) for r in recs)])
     drivers = ", ".join(f"{d['key']} v{d['version']}" for d in meta.get("drivers", []))
     print(f"\n  {drivers}  "
           f"@ {meta['git_sha']}{'*' if meta.get('git_dirty') else ''}  "
@@ -49,9 +62,11 @@ def print_table(data: dict) -> None:
           f"{meta['samples']} samples + {meta['warmup']} warmup\n")
 
     impl_col = f"{'impl':16} " if multi_impl else ""
+    lang_col = f"{'lang':6} " if multi_lang else ""
     mode_col = f"{'mode':8} " if multi_mode else ""
-    hdr = (f"  {'input':8} {'algo':7} {impl_col}{mode_col}{'lvl':>3} "
-           f"{'ratio':>7} {'c MB/s':>9} {'d MB/s':>9}  {'ok':>2}")
+    msg_col = f" {'c µs/msg':>9} {'d µs/msg':>9}" if has_msgs else ""
+    hdr = (f"  {'input':{iw}} {'algo':7} {lang_col}{impl_col}{mode_col}{'lvl':>3} "
+           f"{'ratio':>7} {'c MB/s':>9} {'d MB/s':>9}{msg_col}  {'ok':>2}")
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
     cur = None
@@ -62,10 +77,22 @@ def print_table(data: dict) -> None:
             cur = r["input_id"]
         ok = "✓" if r.get("verified") else "✗"
         impl_cell = f"{r.get('impl', 'compress-utils'):16} " if multi_impl else ""
+        lang_cell = f"{r.get('lang', ''):6} " if multi_lang else ""
         mode_cell = f"{r.get('mode', 'oneshot'):8} " if multi_mode else ""
+        msg_cell = ""
+        if has_msgs:
+            msg_cell = (f" {r['compress_ns_per_msg'] / 1e3:>9.2f} {r['decompress_ns_per_msg'] / 1e3:>9.2f}"
+                        if r.get("messages") else f" {'':>9} {'':>9}")
+        # A decode-only library has no compress step: its input came from another
+        # library, so its compress time (0) and ratio say nothing about it.
+        ratio_cell = f"{'-':>7}" if r.get("decode_only") else f"{r['ratio']:>7.3f}"
+        cmbps_cell = f"{'-':>9}" if r.get("decode_only") else f"{r['compress_mbps']:>9.1f}"
+        if r.get("decode_only") and r.get("messages"):
+            msg_cell = f" {'-':>9} {r['decompress_ns_per_msg'] / 1e3:>9.2f}"
         print(
-            f"  {r['input_id']:8} {r['algo']:7} {impl_cell}{mode_cell}{r['level']:>3} "
-            f"{r['ratio']:>7.3f} {r['compress_mbps']:>9.1f} {r['decompress_mbps']:>9.1f}  {ok:>2}"
+            f"  {r['input_id']:{iw}} {r['algo']:7} {lang_cell}{impl_cell}{mode_cell}{level_label(r):>3} "
+            f"{ratio_cell} {cmbps_cell} {r['decompress_mbps']:>9.1f}"
+            f"{msg_cell}  {ok:>2}"
         )
     print()
 
@@ -86,15 +113,20 @@ def make_plots(data: dict) -> None:
         return
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    recs = data["records"]
+    # Decode-only libraries have no compress time or ratio of their own; every chart
+    # here is a compress-side chart (ratio and/or compress speed), so leave them out.
+    recs = [r for r in data["records"] if not r.get("decode_only")]
     inputs = sorted({r["input_id"] for r in recs})
     algos = sorted({r["algo"] for r in recs})
     cmap = {a: c for a, c in zip(algos, plt.cm.tab10.colors)}
     # Color encodes algorithm; line style encodes the (impl, mode) series, so a
     # native baseline or a streaming variant overlays its counterpart in the
     # same hue.
+    multi_lang = len({r.get("lang") for r in recs}) > 1
+
     def series_of(r: dict) -> tuple:
-        return (r.get("impl", "compress-utils"), r.get("mode", "oneshot"))
+        return (r.get("impl", "compress-utils"), r.get("mode", "oneshot"),
+                r.get("lang", "") if multi_lang else "")
 
     series = sorted({series_of(r) for r in recs})
     styles = ["-o", "--s", ":^", "-.D", "--o", ":s"]
@@ -102,37 +134,49 @@ def make_plots(data: dict) -> None:
     multi_series = len(series) > 1
 
     def series_label(s: tuple) -> str:
-        impl, mode = s
-        parts = [impl] if impl != "compress-utils" else []
-        if mode != "oneshot":
+        impl, mode, lang = s
+        parts = [lang] if lang else []
+        parts.append(impl if impl != "compress-utils" else "compress-utils")
+        if mode not in ("oneshot", "msgset"):
             parts.append(mode)
-        return f"{parts[0]}" if len(parts) == 1 else "/".join(parts)
+        return "/".join(parts)
 
     # 1) Pareto frontier per input: ratio (x) vs compress speed (y), points are
-    #    levels, one line per (algo, impl, mode). "Which codec wins where."
+    #    levels in level order, one line per (algo, impl, mode, lang). "Which
+    #    codec wins where." Color encodes the algorithm, or the implementation
+    #    when the chart has only one algorithm (an ecosystem comparison).
     for inp in inputs:
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for algo in algos:
-            for s in series:
-                pts = sorted(
-                    (r for r in recs if r["input_id"] == inp and r["algo"] == algo
-                     and series_of(r) == s),
-                    key=lambda r: r["ratio"],
-                )
+        inp_recs = [r for r in recs if r["input_id"] == inp]
+        inp_algos = sorted({r["algo"] for r in inp_recs})
+        by_impl = len(inp_algos) == 1
+        inp_series = sorted({series_of(r) for r in inp_recs})
+        series_color = {s: c for s, c in zip(inp_series, plt.cm.tab10.colors + plt.cm.Dark2.colors)}
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        for algo in inp_algos:
+            for s in inp_series:
+                pts = sorted((r for r in inp_recs if r["algo"] == algo and series_of(r) == s),
+                             key=level_key)
                 if not pts:
                     continue
                 xs = [p["ratio"] for p in pts]
                 ys = [p["compress_mbps"] for p in pts]
-                sl = series_label(s)
-                label = f"{algo} ({sl})" if (multi_series and sl) else algo
-                ax.plot(xs, ys, series_style[s], color=cmap[algo], label=label, markersize=4)
+                sl = series_label(s) or "compress-utils"
+                if by_impl:
+                    label = sl
+                    style, color = ("-o" if s[0] == "compress-utils" else "--o"), series_color[s]
+                else:
+                    label = f"{algo} ({sl})" if multi_series else algo
+                    style, color = series_style[s], cmap[algo]
+                lw = 2.2 if s[0] == "compress-utils" else 1.2
+                ax.plot(xs, ys, style, color=color, label=label, markersize=4, linewidth=lw)
                 for p in pts:
-                    ax.annotate(str(p["level"]), (p["ratio"], p["compress_mbps"]),
+                    ax.annotate(level_label(p), (p["ratio"], p["compress_mbps"]),
                                 fontsize=6, alpha=0.6)
         ax.set_xlabel("compression ratio →")
         ax.set_ylabel("compress MB/s →")
         ax.set_yscale("log")
-        ax.set_title(f"ratio vs compress speed — {inp}")
+        title = f"ratio vs compress speed — {inp}"
+        ax.set_title(f"{inp_algos[0]}: {title}" if by_impl else title)
         ax.legend(fontsize=8)
         ax.grid(True, which="both", alpha=0.2)
         out = PLOTS_DIR / f"pareto-{inp}.png"
@@ -144,9 +188,10 @@ def make_plots(data: dict) -> None:
     # 2) Throughput bars per input at the median level present. Restrict to one
     #    series (prefer compress-utils one-shot) so bars don't double up when
     #    multiple impls/modes are present.
-    levels = sorted({r["level"] for r in recs})
-    mid = levels[len(levels) // 2]
-    bar_series = ("compress-utils", "oneshot") if ("compress-utils", "oneshot") in series else series[0]
+    levels = sorted({r["level"] for r in recs if r.get("level") is not None})
+    mid = levels[len(levels) // 2] if levels else None
+    preferred = [x for x in series if x[0] == "compress-utils" and x[1] in ("oneshot", "msgset")]
+    bar_series = preferred[0] if preferred else series[0]
     for inp in inputs:
         sub = [r for r in recs if r["input_id"] == inp and r["level"] == mid
                and series_of(r) == bar_series]
@@ -173,6 +218,62 @@ def make_plots(data: dict) -> None:
         plt.close(fig)
         print(f"[report] wrote {out}")
 
+    # 3) Message size: throughput and ratio against message size.
+    plot_message_sizes(recs, plt)
+
+
+def plot_message_sizes(recs: list[dict], plt) -> None:
+    """For message sets cut from one source at several block sizes (the
+    silesia-blocks tiers, ids like "dickens.4k"), plot compress throughput and
+    ratio against message size, one line per (algo, impl) at the middle level
+    present. Shows what small messages cost each codec."""
+    import re
+
+    blocks = [r for r in recs if r.get("messages") and re.fullmatch(r".+\.\d+k", r["input_id"])
+              and r.get("level") is not None]
+    sources = sorted({r["input_id"].rsplit(".", 1)[0] for r in blocks})
+    levels = sorted({r["level"] for r in blocks})
+    if not sources or not levels:
+        return
+    mid = levels[len(levels) // 2]
+    algos = sorted({r["algo"] for r in blocks})
+    impls = sorted({(r.get("impl", "compress-utils"), r.get("lang", "")) for r in blocks})
+    cmap = {a: c for a, c in zip(algos, plt.cm.tab10.colors)}
+    styles = ["-o", "--s", ":^", "-.D"]
+    for src in sources:
+        fig, (ax_speed, ax_ratio) = plt.subplots(1, 2, figsize=(11, 4.5))
+        for algo in algos:
+            for i, impl in enumerate(impls):
+                pts = sorted((r for r in blocks
+                              if r["input_id"].rsplit(".", 1)[0] == src and r["algo"] == algo
+                              and (r.get("impl", "compress-utils"), r.get("lang", "")) == impl
+                              and r["level"] == mid),
+                             key=lambda r: r["input_bytes"] / r["messages"])
+                if not pts:
+                    continue
+                xs = [r["input_bytes"] / r["messages"] for r in pts]
+                name = impl[1] if impl[0] == "compress-utils" else f"{impl[1]}/{impl[0]}"
+                label = algo if len(impls) == 1 else f"{algo} ({name})"
+                style = styles[i % len(styles)]
+                ax_speed.plot(xs, [r["compress_mbps"] for r in pts], style, color=cmap[algo],
+                              label=label, markersize=4)
+                ax_ratio.plot(xs, [r["ratio"] for r in pts], style, color=cmap[algo],
+                              label=label, markersize=4)
+        for ax in (ax_speed, ax_ratio):
+            ax.set_xscale("log", base=2)
+            ax.set_xlabel("message size (bytes)")
+            ax.grid(True, which="both", alpha=0.2)
+        ax_speed.set_yscale("log")
+        ax_speed.set_ylabel("compress MB/s →")
+        ax_ratio.set_ylabel("compression ratio →")
+        ax_speed.legend(fontsize=8)
+        fig.suptitle(f"cost of small messages — {src}, level {mid}")
+        out = PLOTS_DIR / f"msgsize-{src}-L{mid}.png"
+        fig.tight_layout()
+        fig.savefig(out, dpi=120)
+        plt.close(fig)
+        print(f"[report] wrote {out}")
+
 
 # --------------------------------------------------------------------------- #
 # Regression
@@ -181,7 +282,7 @@ def make_plots(data: dict) -> None:
 
 def key(r: dict) -> tuple:
     return (r["input_id"], r["algo"], r.get("impl", "compress-utils"),
-            r.get("mode", "oneshot"), r["level"])
+            r.get("mode", "oneshot"), r.get("lang", ""), level_key(r))
 
 
 def regress(new: dict, base: dict) -> int:
@@ -197,14 +298,15 @@ def regress(new: dict, base: dict) -> int:
 
     print(f"\n  regression: {bm['git_sha']} → {nm['git_sha']}")
     print(f"  flag if ratio ↓ >{RATIO_DROP_PCT}% or speed ↓ >{SPEED_DROP_PCT}%\n")
-    hdr = f"  {'input':8} {'algo':7} {'lvl':>3} {'Δratio%':>9} {'Δc%':>8} {'Δd%':>8}  flag"
+    iw = max([8, *(len(r["input_id"]) for r in new["records"])])
+    hdr = f"  {'input':{iw}} {'algo':7} {'lvl':>3} {'Δratio%':>9} {'Δc%':>8} {'Δd%':>8}  flag"
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
 
     regressions = 0
     for r in sorted(new["records"], key=key):
         b = bidx.get(key(r))
-        if not b:
+        if not b or r.get("decode_only"):
             continue
 
         def pct(new_v, old_v):
@@ -224,7 +326,7 @@ def regress(new: dict, base: dict) -> int:
         if flags:
             regressions += 1
         print(
-            f"  {r['input_id']:8} {r['algo']:7} {r['level']:>3} "
+            f"  {r['input_id']:{iw}} {r['algo']:7} {level_label(r):>3} "
             f"{dr:>+9.2f} {dc:>+8.1f} {dd:>+8.1f}  {','.join(flags)}"
         )
 

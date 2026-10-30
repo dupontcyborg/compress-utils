@@ -116,11 +116,20 @@ None of this makes a hostile input free: under the default cap, one call can sti
 
 ## Benchmarks
 
-![throughput by language and algorithm](benchmarks/assets/lang-comparison.png)
+<!-- bench:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-root-dark.png">
+  <img src="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-root-light.png" alt="Compression ratio against throughput in MB/s on a log axis for compress-utils through its C, Python, Go, Rust and WASM (Node) bindings, one row per algorithm (zstd, brotli, zlib / gzip / deflate, xz, lz4, snappy, bz2) with compress left and decompress right, dickens one-shot on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29" width="830">
+</picture>
 
-All eight codecs across the C, JS/TS, Python, Go, and Rust bindings, measured back-to-back in one interleaved run. Every binding drives the same C core, so compression ratio is byte-identical across languages — only throughput differs, and C, Rust, and Python land on top of each other.
+compress-utils through each language binding: speed against compression ratio, one line per binding, each running through levels 1 to 10.
 
-Full methodology, per-corpus Pareto plots, and how to reproduce are in [benchmarks/README.md](benchmarks/README.md).
+Measured on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29, commit c3ae4b7 plus driver fixes; dickens (10.2 MB of text), one-shot.
+
+Full results, with competing libraries, other inputs and machines: [benchmark index](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/README.md); what each binding costs relative to the C core: [bindings page](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/bindings.md).
+<!-- bench:end -->
+
+Every binding drives the same C core, so compression ratio is byte-identical across languages and only throughput differs.
 
 ## Building from source
 

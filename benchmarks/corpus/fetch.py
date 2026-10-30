@@ -1,5 +1,6 @@
 """
-Fetched real-world corpora: Silesia and enwik8.
+Fetched real-world corpora: Silesia, enwik8, Canterbury, Large Canterbury and
+zstd's github-users sample set, plus message sets derived from them.
 
 These are too large to vendor (Silesia ~211 MB, enwik8 100 MB), so they're
 downloaded once into a gitignored cache and extracted into data/. Integrity is
@@ -11,15 +12,27 @@ Sources:
   - enwik8  : mattmahoney.net (the canonical text-compression benchmark).
   - Silesia : per-file zips from the MiloszKrajewski/SilesiaCorpus mirror, so a
               subset can be fetched without pulling the whole corpus.
+  - Canterbury and Large Canterbury : per-file from the pfalcon/canterbury-corpus
+              mirror, pinned to a commit. corpus.canterbury.ac.nz sits behind a
+              bot block that refuses scripted downloads.
+  - github-users : zstd's dictionary-training sample set (~9K JSON records of
+              ~1 KB from the GitHub API), a release asset on facebook/zstd v1.1.3.
+              Stored as one message set (see msgset.py).
+  - silesia-blocks-<size> : derived, no download. Each silesia-mini file cut into
+              fixed-size blocks, up to BLOCK_BUDGET bytes of them per file, as
+              one message set per file.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import tarfile
 import urllib.request
 import zipfile
 from pathlib import Path
+
+import msgset
 
 CORPUS_DIR = Path(__file__).resolve().parent
 DATA_DIR = CORPUS_DIR / "data"
@@ -34,6 +47,21 @@ SILESIA_FILES = ["dickens", "mozilla", "mr", "nci", "ooffice", "osdb",
 SILESIA_MINI = ["dickens", "samba", "x-ray", "osdb", "sao", "xml"]
 SILESIA_BASE = "https://github.com/MiloszKrajewski/SilesiaCorpus/raw/master"
 ENWIK8_URL = "https://mattmahoney.net/dc/enwik8.zip"
+
+CANTERBURY_BASE = ("https://raw.githubusercontent.com/pfalcon/canterbury-corpus/"
+                   "c380ef9dc1dc62691757fdfeebdc2f85710e1e46")
+CANTERBURY_FILES = ["alice29.txt", "asyoulik.txt", "cp.html", "fields.c", "grammar.lsp",
+                    "kennedy.xls", "lcet10.txt", "plrabn12.txt", "ptt5", "sum", "xargs.1"]
+CANTERBURY_LARGE_FILES = ["E.coli", "bible.txt", "world192.txt"]
+
+GITHUB_USERS_URL = ("https://github.com/facebook/zstd/releases/download/v1.1.3/"
+                    "github_users_sample_set.tar.gz")
+
+# Message-set block sizes, and how many bytes of blocks to keep per source file:
+# enough messages for stable timing (1024 at 1 KiB) while keeping the slowest
+# codec settings (brotli/xz at high levels, ~0.3-0.7 ms per call) to seconds.
+BLOCK_SIZES = {"1k": 1024, "4k": 4096, "16k": 16384, "64k": 65536}
+BLOCK_BUDGET = 1 << 20
 
 _CHUNK = 1 << 20
 
@@ -96,27 +124,38 @@ def _ensure(dataset_id: str, url: str, tier: str, desc: str) -> dict:
         else:
             out_path.write_bytes(cache.read_bytes())
 
+    return _locked(dataset_id, out_path, tier, desc)
+
+
+def _locked(dataset_id: str, out_path: Path, tier: str, desc: str) -> dict:
+    """Verify `out_path` against the trust-on-first-use lock (recording it the
+    first time) and describe it as a dataset."""
     digest = _sha256(out_path)
     lock = _load_lock()
     expected = lock.get(dataset_id)
     if expected and expected != digest:
         raise SystemExit(
             f"[corpus] sha256 mismatch for '{dataset_id}': got {digest}, "
-            f"locked {expected}. Delete data/{dataset_id} to re-fetch, or fix the lock."
+            f"locked {expected}. Delete data/{out_path.name} to re-fetch, or fix the lock."
         )
     if not expected:
         lock[dataset_id] = digest
         _save_lock(lock)
         print(f"[corpus] locked {dataset_id} sha256={digest[:12]}…")
 
-    return {
+    ds = {
         "id": dataset_id,
         "path": str(out_path.resolve()),
         "bytes": out_path.stat().st_size,
         "sha256": digest,
         "tier": tier,
         "description": desc,
+        "kind": "file",
     }
+    if out_path.suffix == msgset.SUFFIX:
+        messages = msgset.read(out_path)
+        ds.update(kind="msgset", messages=len(messages), bytes=sum(map(len, messages)))
+    return ds
 
 
 def resolve_enwik8() -> list[dict]:
@@ -135,3 +174,76 @@ def resolve_silesia_mini() -> list[dict]:
         _ensure(name, f"{SILESIA_BASE}/{name}.zip", "silesia-mini", f"Silesia (mini): {name}")
         for name in SILESIA_MINI
     ]
+
+
+def resolve_canterbury() -> list[dict]:
+    return [
+        _ensure(name, f"{CANTERBURY_BASE}/canterbury/{name}", "canterbury",
+                f"Canterbury corpus: {name}")
+        for name in CANTERBURY_FILES
+    ]
+
+
+def resolve_canterbury_large() -> list[dict]:
+    return [
+        _ensure(name, f"{CANTERBURY_BASE}/large/{name}", "canterbury-large",
+                f"Large Canterbury corpus: {name}")
+        for name in CANTERBURY_LARGE_FILES
+    ]
+
+
+def resolve_github_users() -> list[dict]:
+    out_path = DATA_DIR / f"github-users{msgset.SUFFIX}"
+    if not out_path.exists():
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        cache = CACHE_DIR / Path(GITHUB_USERS_URL).name
+        if not cache.exists():
+            _download(GITHUB_USERS_URL, cache)
+        with tarfile.open(cache) as t:
+            members = sorted((m for m in t.getmembers() if m.isfile() and m.name.endswith(".json")),
+                             key=lambda m: m.name)
+            messages = [t.extractfile(m).read() for m in members]
+        msgset.write(out_path, messages)
+    return [_locked("github-users", out_path, "github-users",
+                    "zstd github-users sample set: ~9K JSON records of ~1 KB")]
+
+
+def resolve_silesia_blocks(label: str) -> list[dict]:
+    block = BLOCK_SIZES[label]
+    out = []
+    for src in resolve_silesia_mini():
+        dataset_id = f"{src['id']}.{label}"
+        out_path = DATA_DIR / f"{dataset_id}{msgset.SUFFIX}"
+        if not out_path.exists():
+            data = Path(src["path"]).read_bytes()
+            msgset.write(out_path, msgset.blocks(data, block, BLOCK_BUDGET))
+        out.append(_locked(dataset_id, out_path, f"silesia-blocks-{label}",
+                           f"Silesia {src['id']} in {block}-byte blocks"))
+    return out
+
+
+def resolve_ecosystem_large() -> list[dict]:
+    """The one large file of the ecosystem comparison: Silesia's dickens (10 MB of text)."""
+    return [_ensure("dickens", f"{SILESIA_BASE}/dickens.zip", "ecosystem-large",
+                    "Silesia: dickens (ecosystem comparison, large)")]
+
+
+def resolve_ecosystem_extra() -> list[dict]:
+    """The two files that bracket dickens: Silesia's xml (5 MB, highly repetitive) and x-ray
+    (8 MB, hard to compress). One-shot only; they check that dickens' text results hold."""
+    return [_ensure(name, f"{SILESIA_BASE}/{name}.zip", "ecosystem-extra",
+                    f"Silesia: {name} (ecosystem comparison, extra)")
+            for name in ("xml", "x-ray")]
+
+
+def resolve_ecosystem_small() -> list[dict]:
+    """The small-message side of the ecosystem comparison: dickens in 4 KB blocks."""
+    src = resolve_ecosystem_large()[0]
+    dataset_id = "dickens.4k"
+    out_path = DATA_DIR / f"{dataset_id}{msgset.SUFFIX}"
+    if not out_path.exists():
+        data = Path(src["path"]).read_bytes()
+        msgset.write(out_path, msgset.blocks(data, BLOCK_SIZES["4k"], BLOCK_BUDGET))
+    return [_locked(dataset_id, out_path, "ecosystem-small",
+                    "Silesia dickens in 4096-byte blocks (ecosystem comparison, small)")]
+

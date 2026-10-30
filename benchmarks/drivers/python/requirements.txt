@@ -1,0 +1,6 @@
+# Python competitors for the ecosystem benchmarks (benchmark-only; pinned).
+# The runner creates .venv with Python 3.14 (for compression.zstd) and installs these.
+cramjam==2.14.0
+zstandard==0.25.0
+brotli==1.2.1
+lz4==4.4.5
