@@ -104,6 +104,21 @@ Regression diff between two runs (same machine):
 python3 benchmarks/report.py new.json --baseline results/baseline-c.json
 ```
 
+## Publishing
+
+The published pages (`docs/benchmarks/`), the charts in them and the benchmark block of each README are generated from the ecosystem sweep by `publish.py`; none of them is edited by hand. To refresh after a new run:
+
+```sh
+benchmarks/run_ecosystem.sh                          # on each machine; memory: python3 benchmarks/memory.py
+# copy each machine's run directory (the *ecosystem*.json files and one *memory*.json) next to each other, then:
+python3 -m venv benchmarks/.venv-publish && benchmarks/.venv-publish/bin/pip install -r benchmarks/requirements-publish.txt
+benchmarks/.venv-publish/bin/python benchmarks/publish.py all --runs c8g=<c8g run dir> c8i=<c8i run dir>
+git diff --stat                                      # review: summary, pages, README blocks, PNGs
+python3 benchmarks/publish.py --check                # pages and README blocks match the summary (stdlib only)
+```
+
+`summarize` (stdlib only) writes `benchmarks/published/summary.json` and `meta.json` from the run directories; `render` turns them into PNGs, markdown pages and the text between the `<!-- bench:start -->` and `<!-- bench:end -->` markers in the READMEs. The raw run JSON is not committed (attach it to a GitHub release); the summary holds everything the pages use. The machine names in `--runs` (`c8g`, `c8i`) are labelled in `publish.py`.
+
 ## Layout
 
 ```
