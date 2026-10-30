@@ -54,13 +54,13 @@ NUMBER_WORDS = {
 BINDING_SECTIONS = [
     ("Installation", r"^install"),
     ("Quick start", r"^quick start"),
+    ("Performance", r"^performance"),
     ("Supported algorithms", r"^(supported )?algorithms"),
     ("Raw blocks and output capacity", r"^raw blocks"),
     ("Streaming", r"streaming"),
     ("Compression levels", r"levels"),
     ("Errors and limits", r"^errors?\b"),
     ("Concurrency", r"concurrency|thread"),
-    ("Performance", r"^performance"),
     ("License", r"^license"),
 ]
 ROOT_SECTIONS = [
@@ -332,6 +332,20 @@ def check_header_and_footer(rel: str, lines: list[str], problems: list[str]) -> 
         problems.append(f"{rel}: must end with a '---' rule and a line ending 'Built by [Nico Dupont](https://nico.codes).'")
 
 
+def _section_problems(rel: str, required, heads) -> list[str]:
+    out = []
+    pos = -1
+    for name, pattern in required:
+        hit = next((n for n, (i, text) in enumerate(heads) if re.search(pattern, text.strip().lower())), None)
+        if hit is None:
+            out.append(f"{rel}: missing required section '{name}' (see docs/readme-skeleton.md)")
+            continue
+        if hit < pos:
+            out.append(f"{rel}:{heads[hit][0] + 1}: section '{name}' is out of order (see docs/readme-skeleton.md)")
+        pos = max(pos, hit)
+    return out
+
+
 def check_sections(rel: str, key: str, lines: list[str], problems: list[str]) -> None:
     required = ROOT_SECTIONS if key == "root" else BINDING_SECTIONS
     if key == "c":
@@ -340,15 +354,7 @@ def check_sections(rel: str, key: str, lines: list[str], problems: list[str]) ->
     for i, text in heads:
         if re.match(r"^(table of contents|contents|toc)$", text.strip().lower()):
             problems.append(f"{rel}:{i + 1}: remove the table of contents; READMEs don't carry one (see docs/readme-skeleton.md)")
-    pos = -1
-    for name, pattern in required:
-        hit = next((n for n, (i, text) in enumerate(heads) if re.search(pattern, text.strip().lower())), None)
-        if hit is None:
-            problems.append(f"{rel}: missing required section '{name}' (see docs/readme-skeleton.md)")
-            continue
-        if hit < pos:
-            problems.append(f"{rel}:{heads[hit][0] + 1}: section '{name}' is out of order (see docs/readme-skeleton.md)")
-        pos = max(pos, hit)
+    problems.extend(_section_problems(rel, required, heads))
 
 
 BLOCK_START = re.compile(r"^(#|\||<|>|```|~~~|!\[|\[!\[|---|===)")

@@ -22,23 +22,23 @@ Required, in this order. Extra sections may go anywhere between them. Headings a
 
 | # | Section | Heading must match | Contents |
 |---|---------|--------------------|----------|
-| 1 | Title, badges, pitch | (H1) | One sentence: "Unified X interface for eight compression algorithms ... over a single high-performance C core. Same API for every algorithm." Markdown badges only, in this order: a live version badge (the registry's `img.shields.io/{pypi,npm,crates}/v/...` where the package is published, otherwise `img.shields.io/github/v/{release,tag}/...`), other registry badges (downloads, language versions), a hosted API docs badge where the registry generates one (pkg.go.dev, docs.rs), the CI status badge for the binding's workflow, then the license badge. |
+| 1 | Title, badges, pitch | (H1) | One to two benefit-led sentences a package-registry visitor understands (one API for every algorithm, what ships, what it is backed by); the Python README is the model. No numeric performance claims in the pitch, the chart carries them. Markdown badges only, in this order: a live version badge (the registry's `img.shields.io/{pypi,npm,crates}/v/...` where the package is published, otherwise `img.shields.io/github/v/{release,tag}/...`), other registry badges (downloads, language versions), a hosted API docs badge where the registry generates one (pkg.go.dev, docs.rs), the CI status badge for the binding's workflow, then the license badge. |
 | 2 | Installation | `Install…` | The one command, then what the build needs (toolchain, wheel contents, runtimes). |
 | 3 | Quick start | `Quick start` | A complete one-shot compress and decompress that runs as pasted. |
-| 4 | Supported algorithms | `Algorithms` or `Supported algorithms` | The generated table. Prose underneath may cover availability checks and aliases. |
-| 5 | Raw blocks and output capacity | `Raw blocks…` | The capacity argument for `deflate`, `lz4_raw` and `lzo`, with one example. Keep the paragraph identical in substance across bindings. |
-| 6 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
-| 7 | Compression levels | `…levels` | `1` fastest to `10` smallest, default `5`, mapped to each codec's native range. |
-| 8 | Errors and limits | `Error…` | The error type and how to read the status code, `version()`, `set_max_decompressed_size` and its default. |
-| 9 | Concurrency | `…concurrency…` or `…thread…` | What is safe to share between threads, goroutines or workers, and what the binding does about locks. A short paragraph is fine, but it must exist: the bindings differ, and readers compare them. |
-| 10 | Performance | `Performance` | See below. |
+| 4 | Performance | `Performance` | See below. The generated chart block, directly after Quick start. |
+| 5 | Supported algorithms | `Algorithms` or `Supported algorithms` | The generated table. Prose underneath may cover availability checks and aliases. |
+| 6 | Raw blocks and output capacity | `Raw blocks…` | The capacity argument for `deflate`, `lz4_raw` and `lzo`, with one example. Keep the paragraph identical in substance across bindings. |
+| 7 | Streaming | `…streaming…` | The idiomatic streaming API for the language, including how it is flushed or closed. |
+| 8 | Compression levels | `…levels` | `1` fastest to `10` smallest, default `5`, mapped to each codec's native range. |
+| 9 | Errors and limits | `Error…` | The error type and how to read the status code, `version()`, `set_max_decompressed_size` and its default. |
+| 10 | Concurrency | `…concurrency…` or `…thread…` | What is safe to share between threads, goroutines or workers, and what the binding does about locks. A short paragraph is fine, but it must exist: the bindings differ, and readers compare them. |
 | 11 | License | `License` | `MIT. See LICENSE.`, then a `---` rule and the footer line. |
 
 **Platform support** (runtimes, operating systems) is optional and goes between Concurrency and Performance when present.
 
 ### Performance
 
-Required, short and specific. The required line is "overhead versus native C is X to Yx" with a link to the benchmarks. Add only what is true of this binding (GIL release threshold, cgo call cost, bundle size). Add a table against the language's ecosystem alternatives only once a baseline driver for that language exists in `benchmarks/`, and only with numbers we are willing to stand behind. Do not repeat the cross-language chart here; it lives in the root README and the benchmarks README.
+Required, short and specific, and generated: the block between `<!-- bench:start -->` and `<!-- bench:end -->` written by `benchmarks/publish.py` holds the chart (a `<picture>` with light and dark images at absolute URLs), a one-sentence caption, a measured-on line, and links to the benchmark pages. Do not hand-edit it, and do not compare against the C core in binding READMEs (that lives in `docs/benchmarks/bindings.md`). Hand-written text goes after the block and only says what is true of this binding (GIL release, cgo call cost, bundle size); keep numbers out of it, they go stale. The chart is generated and the pages carry the full tables, so do not add a table or repeat the cross-language chart here.
 
 ## Root README sections
 

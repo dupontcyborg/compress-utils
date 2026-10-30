@@ -5,18 +5,22 @@
 [![Rust build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_rust.yml?label=rust)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Unified, safe Rust interface for eight compression algorithms — Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA, and Snappy — over a single high-performance C core. Same API for every algorithm.
+One safe Rust API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, on par with or faster than the pure-Rust flate2 (miniz_oxide) and brotli crates. Builds from bundled C sources with just a C compiler, no system libraries, all backed by one C core.
 
 ## Installation
 
-```toml
-[dependencies]
-compress-utils = { git = "https://github.com/dupontcyborg/compress-utils" }
+```sh
+cargo add compress-utils
 ```
 
-The crate compiles the bundled C sources from source with the `cc` crate, with no prebuilt library and no network beyond the crate fetch, so it works offline and on docs.rs. You need only a **C/C++ compiler** (`gcc`, `clang` or MSVC). The first build compiles the codecs and is then cached by Cargo.
+or in `Cargo.toml`:
 
-The crate is pure C: every codec, including Snappy (our own C implementation), compiles to C, so there is no `libc++` or `libstdc++` runtime dependency. Windows is supported by the C core, and the crate's source build works with MSVC.
+```toml
+[dependencies]
+compress-utils = "0.11"
+```
+
+Needs Rust 1.71 or later and a C/C++ compiler (`gcc`, `clang` or MSVC); the bundled C sources are compiled by the crate's build script, so it works offline and on docs.rs, and the result is cached by Cargo. Tested on Linux, macOS and Windows.
 
 ## Quick start
 
@@ -33,6 +37,21 @@ fn main() -> Result<(), compress_utils::Error> {
 ```
 
 `decompress` recovers the size from the wire format when the codec records it (zstd, xz, lz4, snappy) and otherwise has the C core grow the output buffer as it decodes (copied once into the result), so you don't need to know which is which. It is bounded by `set_max_decompressed_size` (default 1 GiB) to stay safe against malformed "decompression bomb" inputs.
+
+## Performance
+
+<!-- bench:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-rust-dark.png">
+  <img src="https://raw.githubusercontent.com/dupontcyborg/compress-utils/main/docs/benchmarks/img/readme-rust-light.png" alt="Compression ratio against throughput in MB/s on a log axis for compress-utils for Rust and brotli crate, bzip2 crate, flate2 (miniz_oxide), flate2 + zlib-rs, lz4_flex, snap, xz2 crate and zstd crate, one row per algorithm (zstd, brotli, zlib, xz, lz4, snappy, bz2) with compress on the left and decompress on the right, dickens one-shot on AWS c8g.xlarge (Graviton4, arm64), 2026-10-29" width="830">
+</picture>
+
+compress-utils for Rust against other Rust compression libraries: speed against compression ratio.
+
+Measured on AWS c8g.xlarge (Graviton4), dickens (10.2 MB of text), one-shot, 2026-10-29.
+
+Full results [here](https://github.com/dupontcyborg/compress-utils/blob/main/docs/benchmarks/rust.md).
+<!-- bench:end -->
 
 ## Supported algorithms
 
@@ -54,17 +73,15 @@ fn main() -> Result<(), compress_utils::Error> {
 | LZO1X     | `Algorithm::Lzo`             | Raw LZO1X block (decompression only)                                                     |
 <!-- END:algorithms -->
 
-Wire formats match the other compress-utils bindings and the reference tools (for example `Gzip` is RFC 1952, interoperable with the `gzip` CLI). The test suite round-trips every codec against independent pure-Rust implementations. `Algorithm::Zstd.available()` reports whether an algorithm was compiled in.
+Wire formats match the other compress-utils bindings and the reference tools (for example `Gzip` is RFC 1952, interoperable with the `gzip` CLI). `Algorithm::Zstd.available()` reports whether an algorithm was compiled in.
 
 ### Raw blocks and output capacity
 
-Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size. `decompress_with_capacity` takes an upper bound on the output and returns only the bytes actually decoded:
+Raw block formats such as those inside Parquet and ORC pages don't record their decompressed size, so `decompress_with_capacity` takes an upper bound on the output and returns only the bytes actually decoded. More in the [advanced guide](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/rust-advanced.md#raw-blocks-and-output-capacity).
 
 ```rust
 let page = compress_utils::decompress_with_capacity(Algorithm::Lz4Raw, &block, page_size)?;
 ```
-
-Without a capacity, `decompress` decodes `Lz4Raw` blocks with the incremental stream decoder, which is slower, so pass one when you know the size. Every other algorithm accepts a capacity too, which skips the size probe and decodes straight into a buffer of that size.
 
 ## Streaming (`std::io::Read` / `Write`)
 
@@ -87,25 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Stopping at the end of a stream
-
-By default a `Decompressor` decodes concatenated zstd/LZ4 frames, gzip members and xz streams as one stream, and expects the source to end where the compressed data does. When something else follows it, such as the next message on a socket or another record in the same file, use `Decompressor::single_stream`. It stops at the end of the first frame, and `read` then returns `Ok(0)`:
-
-```rust
-use std::io::{Cursor, Read};
-use compress_utils::{Algorithm, Decompressor};
-
-let mut d = Decompressor::single_stream(src, Algorithm::Zstd)?;
-let mut message = Vec::new();
-d.read_to_end(&mut message)?;
-
-// It reads ahead in chunks, so take back what it read past the end, then
-// carry on with the source.
-let (src, unused) = d.into_parts()?;
-let mut rest = Cursor::new(unused).chain(src);
-```
-
-`is_eof()` reports whether the end has been decoded, and `unused()` borrows the bytes read past it. Read until `read` returns `Ok(0)` before calling `into_parts()`, even if you stop at the end of your own data (as `read_exact` does): until then part of the frame and the bytes after it can still be inside the decompressor, so `into_parts()` returns an `IntoPartsError`, whose `into_inner()` hands the decompressor back to keep reading. Raw LZ4 (which has no end marker) and LZO don't support it, and return `Status::UnsupportedAlgo`. Single-stream Snappy emits nothing until its whole block has arrived, and rejects a block declaring more than `set_max_decompressed_size` (as set when the decompressor was created) with `Status::SizeLimit`.
+To stop at the end of one frame and take back the bytes after it, use `Decompressor::single_stream`; see [stopping at the end of a stream](https://github.com/dupontcyborg/compress-utils/blob/main/docs/bindings/rust-advanced.md#stopping-at-the-end-of-a-stream).
 
 ## Compression levels
 
@@ -113,7 +112,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 
 ## Errors and limits
 
-Decompressing data you don't control? See [Untrusted input](https://github.com/dupontcyborg/compress-utils#untrusted-input) for what the library guards against and which limits to set.
+Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `set_max_decompressed_size`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```rust
 compress_utils::version();                            // e.g. "0.11.2"
@@ -129,11 +128,7 @@ match compress_utils::decompress(algo, bad) {
 
 ## Concurrency
 
-The one-shot `compress` and `decompress` functions are safe to call from any number of threads. A `Compressor` or `Decompressor` is not safe for concurrent use because each owns a non-thread-safe C stream handle, so use one stream per thread.
-
-## Performance
-
-Overhead versus native C is **0.95–1.00× on compress and 0.87–1.04× on decompress**, so the binding is effectively free. The one outlier is Snappy compress at 0.73×: safe Rust cannot hand out an uninitialized output buffer, so the one-shot path zeroes `compress_bound` bytes before the call, and on the fastest codec that memset is a visible share of the total. Compression ratio is byte-identical to every other binding. See the [language comparison](https://github.com/dupontcyborg/compress-utils/blob/main/benchmarks/README.md#language-comparison) for methodology and the full chart.
+The one-shot `compress` and `decompress` functions are safe to call from any number of threads. A `Compressor` or `Decompressor` is not safe for concurrent use, so use one stream per thread.
 
 ## License
 

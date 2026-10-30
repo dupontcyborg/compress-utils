@@ -30,3 +30,6 @@ drivers/python/build/
 
 # JavaScript competitors (drivers/wasm/package.json; pinned by package-lock.json, tracked).
 drivers/wasm/node_modules/
+
+# Publishing venv (matplotlib for charts; see publish.py)
+.venv-publish/
