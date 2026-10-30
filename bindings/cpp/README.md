@@ -4,7 +4,7 @@
 [![C/C++ build](https://img.shields.io/github/actions/workflow/status/dupontcyborg/compress-utils/build_and_test_c_cpp.yml?label=c%2Fc%2B%2B)](https://github.com/dupontcyborg/compress-utils/actions/workflows/build_and_test_c_cpp.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-One header-only C++20 API for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, with performance on par with the reference zstd, brotli, LZ4, xz and bzip2 libraries. RAII wrappers over one C core: no separate C++ library to build, just include the header and link the C library.
+A single-header C++20 wrapper for Zstandard, Brotli, zlib, gzip, bzip2, LZ4, XZ/LZMA and Snappy, plus raw DEFLATE, LZ4 blocks and LZO decoding, over one C core that you build and link. Performance on par with the reference zstd, brotli, LZ4, xz and bzip2 libraries.
 
 ## Installation
 
