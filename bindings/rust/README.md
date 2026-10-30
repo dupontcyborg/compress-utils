@@ -115,7 +115,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `set_max_decompressed_size`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```rust
-compress_utils::version();                            // e.g. "0.11.2"
+compress_utils::version();                            // e.g. "0.12.0"
 compress_utils::set_max_decompressed_size(256 << 20); // cap decompress for every algorithm (default 1 GiB; 0 = unbounded)
 decompressor.set_max_output(256 << 20);               // a Decompressor has no limit unless set
 

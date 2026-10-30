@@ -148,7 +148,7 @@ try {
 }
 ```
 
-`await version()` returns the library version (for example `"0.11.2"`), and `await setMaxDecompressedSize(bytes)` caps `decompress` for every algorithm (default 1 GiB; `0` = unbounded). Streams have no limit unless you pass one: `createDecompressStream({ maxOutput })` and `decompressionStream({ maxOutput })` throw a `CompressError` once the output passes it.
+`await version()` returns the library version (for example `"0.12.0"`), and `await setMaxDecompressedSize(bytes)` caps `decompress` for every algorithm (default 1 GiB; `0` = unbounded). Streams have no limit unless you pass one: `createDecompressStream({ maxOutput })` and `decompressionStream({ maxOutput })` throw a `CompressError` once the output passes it.
 
 ## Concurrency
 

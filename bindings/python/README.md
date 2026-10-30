@@ -106,7 +106,7 @@ Every algorithm accepts a `level` from **1 (fastest) to 10 (smallest)**. The bin
 Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `set_max_decompressed_size`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```python
-cu.version()                                  # e.g. "0.11.2"
+cu.version()                                  # e.g. "0.12.0"
 cu.set_max_decompressed_size(256 * 1024**2)   # cap decompress() for every algorithm
                                               # (default: 1 GiB; 0 = unbounded)
 ds = cu.DecompressStream("gzip", max_output=256 * 1024**2)  # streams: no limit unless set

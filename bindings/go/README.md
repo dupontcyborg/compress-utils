@@ -102,7 +102,7 @@ Every algorithm takes a level from **1 (fastest) to 10 (smallest)**, and the C c
 Decompression is bounded by default: output is capped at 1 GiB, so a hostile or corrupt input cannot exhaust memory. Change the cap with `SetMaxDecompressedSize`, and see the [untrusted input guidance](https://github.com/dupontcyborg/compress-utils#untrusted-input) in the project README for what else to set when you decompress data you don't control.
 
 ```go
-cu.Version()                              // e.g. "0.11.2"
+cu.Version()                              // e.g. "0.12.0"
 cu.SetMaxDecompressedSize(256 << 20)      // cap Decompress for every algorithm (default 1 GiB; 0 = unbounded)
 r.SetMaxOutput(256 << 20)                 // a Reader has no limit unless set
 
