@@ -84,8 +84,8 @@
         "lib/lz4hc.c",
         "lib/xxhash.c"
       ],
-      "tag": "v1.10.0",
-      "tree_sha256": "876d382fa3b47a7d5a127e6ae6864952b72050f44ed37d8922aaa99ff360a93f",
+      "tag": "v1.11.0",
+      "tree_sha256": "f696a14ebddc91c6e807533556a8cf3d1db12016099104c930ed0a2eab3a2a4f",
       "url": "https://github.com/lz4/lz4.git"
     },
     "xz": {

@@ -4,6 +4,6 @@
   "brotli": { "url": "https://github.com/google/brotli.git",       "tag": "v1.2.1" },
   "zlib":   { "url": "https://github.com/zlib-ng/zlib-ng.git",      "tag": "2.3.3", "tag_regex": "\\d+\\.\\d+\\.\\d+" },
   "bz2":    { "url": "https://gitlab.com/bzip2/bzip2.git",         "tag": "bzip2-1.0.8" },
-  "lz4":    { "url": "https://github.com/lz4/lz4.git",             "tag": "v1.10.0" },
+  "lz4":    { "url": "https://github.com/lz4/lz4.git",             "tag": "v1.11.0" },
   "xz":     { "url": "https://github.com/tukaani-project/xz.git",  "tag": "v5.8.4" }
 }

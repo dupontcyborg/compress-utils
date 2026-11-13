@@ -57,10 +57,10 @@ describe("fast compressor uses the 64-bit register path", () => {
     const big = textInput(512 * 1024);
     const small = textInput(40_000);
 
-    // 261,961 bytes with the 5-byte hash (patched); 252,175 with the 4-byte hash (unpatched wasm32).
+    // 249,280 bytes with the 5-byte hash (patched); 240,712 with the 4-byte hash (unpatched wasm32), at lz4 v1.11.0.
     it("level 1 on 512 KiB gives the 5-byte-hash output", async () => {
         const packed = await compress(big, { level: 1 });
-        expect(packed.byteLength).toBe(261_961);
+        expect(packed.byteLength).toBe(249_280);
         expect(same(await decompress(packed), big)).toBe(true);
     });
 
@@ -73,7 +73,7 @@ describe("fast compressor uses the 64-bit register path", () => {
 
     it("level 1 on 40 KB (16-bit table) is unchanged by the patch", async () => {
         const packed = await compress(small, { level: 1 });
-        expect(packed.byteLength).toBe(20_377);
+        expect(packed.byteLength).toBe(20_166);
         expect(same(await decompress(packed), small)).toBe(true);
     });
 });
