@@ -133,7 +133,7 @@ try {
 ```
 
 ```cpp
-std::string v  = cu::version();                    // e.g. "0.12.0"
+std::string v  = cu::version();                    // e.g. "0.12.1"
 bool        ok = cu::is_available(cu::Algorithm::Zstd);
 
 // Cap cu::decompress for every algorithm (default 1 GiB; 0 = unbounded).
