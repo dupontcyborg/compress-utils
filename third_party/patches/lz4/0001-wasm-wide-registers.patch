@@ -9,7 +9,7 @@ Effect: the fast compressor (our levels 1 and 2; level 1 measured) compresses ab
 The replaced lines keep the line count, and the patch only matters on __wasm32__, so every other target preprocesses to exactly the same code. The table-type choice (byPtr/byU32, keyed on sizeof(void*)) is deliberately untouched.
 
 diff --git a/lib/lz4.c b/lib/lz4.c
-index a2f7abe..80f2ff9 100644
+index 9abae8b..ac9f504 100644
 --- a/lib/lz4.c
 +++ b/lib/lz4.c
 @@ -319,8 +319,8 @@ static int LZ4_isAligned(const void* ptr, size_t alignment)
