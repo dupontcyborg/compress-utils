@@ -377,23 +377,29 @@ class TestThreading(unittest.TestCase):
 
     def _helper_ticks_during(self, work):
         # With a 10 s switch interval, a thread holding the GIL is never made to give it up, so a helper thread can only count while `work` has released it. Returns how often the helper ran.
-        count, go, stop = [0], threading.Event(), threading.Event()
+        # `work` can finish in well under a millisecond, and on a loaded machine the helper may not have been scheduled yet when it starts, so the helper must be seen running first, and `work` repeats (for a bounded time) until the helper has run at least once.
+        count, stop = [0], threading.Event()
 
         def helper():
-            go.wait()
             while not stop.is_set():
                 count[0] += 1
                 time.sleep(0)  # releases the GIL so the caller can get it back
 
         thread = threading.Thread(target=helper)
-        thread.start()
         old_interval = sys.getswitchinterval()
+        # Set before the helper starts: a wait for the GIL that began under the old interval would still force a hand-off after it.
         sys.setswitchinterval(10)
+        thread.start()
         try:
-            go.set()
+            deadline = time.monotonic() + 5
+            while count[0] == 0 and time.monotonic() < deadline:
+                time.sleep(0.001)
             before = count[0]
-            work()
-            return count[0] - before
+            deadline = time.monotonic() + 5
+            while True:
+                work()
+                if count[0] > before or time.monotonic() >= deadline:
+                    return count[0] - before
         finally:
             sys.setswitchinterval(old_interval)
             stop.set()
