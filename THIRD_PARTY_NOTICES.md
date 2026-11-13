@@ -151,7 +151,7 @@ bzip2/libbzip2 version 1.0.8 of 13 July 2019
 
 ## LZ4
 
-- **Source**: https://github.com/lz4/lz4 at `v1.10.0` (`third_party/lz4/`)
+- **Source**: https://github.com/lz4/lz4 at `v1.11.0` (`third_party/lz4/`)
 - **License**: BSD-2-Clause
 - **Note**: Only the LZ4 library (`lib/`) is included; this is its license.
 
