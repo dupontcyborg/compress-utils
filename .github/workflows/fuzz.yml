@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install clang + libFuzzer
         # llvm-18 provides llvm-symbolizer, which turns sanitizer reports into
