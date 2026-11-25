@@ -103,7 +103,7 @@
     "check": "biome check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.8",
     "@playwright/test": "^1.60.0",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^5.0.5",
