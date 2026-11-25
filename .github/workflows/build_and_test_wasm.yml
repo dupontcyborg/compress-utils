@@ -47,7 +47,7 @@ jobs:
       run:
         working-directory: bindings/wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       # `npm install` rather than `npm ci`: Biome's per-platform optional
@@ -63,7 +63,7 @@ jobs:
     name: Build .wasm artifacts (Linux x86_64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -105,7 +105,7 @@ jobs:
         run: npm run test:size
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-artifacts
           path: bindings/wasm/dist/
@@ -123,7 +123,7 @@ jobs:
       run:
         working-directory: bindings/wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: wasm-artifacts
@@ -145,10 +145,10 @@ jobs:
         with: { node-version: "24" }
       - name: Setup Bun
         if: matrix.runtime == 'bun'
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
       - name: Setup Deno
         if: matrix.runtime == 'deno'
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with: { deno-version: "v2.x" }
 
       # vitest + bun test need node_modules for their own dependencies.
@@ -189,7 +189,7 @@ jobs:
       run:
         working-directory: bindings/wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: wasm-artifacts
@@ -213,7 +213,7 @@ jobs:
           # HOME isn't owned by the running user.
           HOME: /root
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-trace-${{ matrix.browser }}
@@ -238,7 +238,7 @@ jobs:
       run:
         working-directory: bindings/wasm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: wasm-artifacts
