@@ -53,7 +53,7 @@ serde_json = "1"
 # Python + CLI channels; Rust still self-consistency-tests it.
 flate2 = "1"          # gzip + zlib, miniz_oxide backend (pure Rust)
 brotli = "9"          # pure Rust
-lz4_flex = { version = "0.11", features = ["frame"] }
+lz4_flex = { version = "0.14", features = ["frame"] }
 snap = "1"            # pure-Rust Snappy (raw block)
 ruzstd = "0.7"        # pure-Rust zstd decoder (outbound-only ref)
 lzma-rs = "0.3"       # pure-Rust xz
