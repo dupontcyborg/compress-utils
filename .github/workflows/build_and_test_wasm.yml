@@ -105,7 +105,7 @@ jobs:
         run: npm run test:size
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-artifacts
           path: bindings/wasm/dist/
@@ -213,7 +213,7 @@ jobs:
           # HOME isn't owned by the running user.
           HOME: /root
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-trace-${{ matrix.browser }}
